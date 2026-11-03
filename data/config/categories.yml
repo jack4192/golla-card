@@ -1,0 +1,29 @@
+# 업종 코드 20개
+# channel: 이 업종의 주된 결제 경로
+#   offline_qr  결제화면에서 QR·바코드
+#   online      온라인 결제
+#   transit_nfc 개찰구·단말기 NFC 태그
+#   auto_debit  자동이체 (결제화면을 거치지 않음)
+# placement_target: 결제화면 카드 배치 대상인지. 자동이체는 실적에만 들어간다.
+
+categories:
+  - { code: CAFE,     name: 카페,             channel: offline_qr,  placement_target: true }
+  - { code: CVS,      name: 편의점,           channel: offline_qr,  placement_target: true }
+  - { code: REST,     name: 일반음식점,       channel: offline_qr,  placement_target: true }
+  - { code: FASTFOOD, name: 패스트푸드,       channel: offline_qr,  placement_target: true }
+  - { code: BAKERY,   name: 제과,             channel: offline_qr,  placement_target: true }
+  - { code: DELIVERY, name: 배달앱,           channel: online,      placement_target: true }
+  - { code: MART,     name: 대형마트,         channel: offline_qr,  placement_target: true }
+  - { code: SUPER,    name: 슈퍼·식자재,      channel: offline_qr,  placement_target: true }
+  - { code: ONLINE,   name: 온라인쇼핑,       channel: online,      placement_target: true }
+  - { code: FUEL,     name: 주유,             channel: offline_qr,  placement_target: true }
+  - { code: MOVIE,    name: 영화,             channel: offline_qr,  placement_target: true }
+  - { code: BOOK,     name: 도서·공연,        channel: offline_qr,  placement_target: true }
+  - { code: BEAUTY,   name: 뷰티·드럭스토어,  channel: offline_qr,  placement_target: true }
+  - { code: APPAREL,  name: 의류,             channel: offline_qr,  placement_target: true }
+  - { code: MEDICAL,  name: 병원·약국,        channel: offline_qr,  placement_target: true }
+  - { code: EDU,      name: 학원,             channel: offline_qr,  placement_target: true }
+  - { code: TRANSIT,  name: 버스·지하철,      channel: transit_nfc, placement_target: true }
+  - { code: TAXI,     name: 택시,             channel: offline_qr,  placement_target: true }
+  - { code: TELECOM,  name: 통신,             channel: auto_debit,  placement_target: false }
+  - { code: SUBSCR,   name: 구독,             channel: auto_debit,  placement_target: false }

@@ -1,0 +1,130 @@
+# 결제 분포. 전부 가정값이다 (공개 통계 보정은 나중에 이 파일 숫자만 바꾼다).
+
+noise: 0.15   # 이 비율만큼은 평소 패턴과 무관한 업종을 뽑는다
+
+# 공휴일은 주말처럼 다룬다. 2026년 대체공휴일·추석 날짜는 확인 필요.
+holidays: [2026-08-17, 2026-09-24, 2026-09-25, 2026-10-05, 2026-10-09]
+
+slots:
+  MORNING:   [7, 8, 9, 10]
+  LUNCH:     [11, 12, 13]
+  AFTERNOON: [14, 15, 16, 17]
+  EVENING:   [18, 19, 20, 21]
+  NIGHT:     [22, 23]
+
+# 시간대별로 결제하는 동네. home/work/weekend는 사용자 설정의 동네를 가리킨다.
+# 회사가 없는 사용자(재택)는 work 대신 home을 쓴다.
+zone_by_slot:
+  weekday: { MORNING: work, LUNCH: work, AFTERNOON: work, EVENING: { work: 0.5, home: 0.5 }, NIGHT: home }
+  weekend: { MORNING: home, LUNCH: { weekend: 0.6, home: 0.4 }, AFTERNOON: { weekend: 0.6, home: 0.4 }, EVENING: { weekend: 0.5, home: 0.5 }, NIGHT: home }
+
+# 같은 동네·업종에서는 단골 3곳 중 하나를 고를 확률
+favorite_prob: 0.7
+
+# 주말·공휴일에 업종 가중치에 곱하는 값 (모든 유형 공통, 유형별 값이 있으면 그걸 씀)
+weekend_boost: { MART: 2.0, MOVIE: 2.0, APPAREL: 1.5, FUEL: 1.5 }
+
+archetypes:
+  OFFICE:
+    per_day: { weekday: 3.0, weekend: 2.5 }
+    amount_mult: 1.0
+    slot_weight:
+      weekday: { MORNING: 0.22, LUNCH: 0.30, AFTERNOON: 0.15, EVENING: 0.25, NIGHT: 0.08 }
+      weekend: { MORNING: 0.10, LUNCH: 0.30, AFTERNOON: 0.25, EVENING: 0.28, NIGHT: 0.07 }
+    category_weight:
+      MORNING:   { CAFE: 45, CVS: 25, BAKERY: 15, FASTFOOD: 10, MEDICAL: 5 }
+      LUNCH:     { REST: 60, CAFE: 25, FASTFOOD: 10, MEDICAL: 3, CVS: 2 }
+      AFTERNOON: { CAFE: 30, CVS: 25, ONLINE: 20, BEAUTY: 8, APPAREL: 7, MEDICAL: 5, BOOK: 5 }
+      EVENING:   { REST: 35, DELIVERY: 20, CVS: 15, SUPER: 10, MART: 5, MOVIE: 5, BOOK: 5, TAXI: 5 }
+      NIGHT:     { CVS: 45, DELIVERY: 35, ONLINE: 20 }
+    commute: { days: weekday, out: [8, 0, 30], back: [19, 0, 45] }   # [시, 분, 표준편차(분)]
+
+  STUDENT:
+    per_day: { weekday: 2.5, weekend: 2.2 }
+    amount_mult: 0.6
+    slot_weight:
+      weekday: { MORNING: 0.15, LUNCH: 0.30, AFTERNOON: 0.25, EVENING: 0.20, NIGHT: 0.10 }
+      weekend: { MORNING: 0.05, LUNCH: 0.30, AFTERNOON: 0.30, EVENING: 0.25, NIGHT: 0.10 }
+    category_weight:
+      MORNING:   { CAFE: 35, CVS: 40, BAKERY: 15, FASTFOOD: 10 }
+      LUNCH:     { REST: 45, FASTFOOD: 25, CAFE: 20, CVS: 10 }
+      AFTERNOON: { CAFE: 35, CVS: 30, ONLINE: 15, BOOK: 10, BEAUTY: 5, APPAREL: 5 }
+      EVENING:   { REST: 30, CVS: 20, FASTFOOD: 15, DELIVERY: 15, MOVIE: 10, CAFE: 10 }
+      NIGHT:     { CVS: 55, DELIVERY: 25, ONLINE: 20 }
+    commute: { days: weekday, out: [9, 0, 50], back: [18, 0, 90] }
+
+  FAMILY:
+    per_day: { weekday: 2.0, weekend: 3.5 }
+    amount_mult: 1.0
+    slot_weight:
+      weekday: { MORNING: 0.15, LUNCH: 0.25, AFTERNOON: 0.15, EVENING: 0.35, NIGHT: 0.10 }
+      weekend: { MORNING: 0.10, LUNCH: 0.30, AFTERNOON: 0.30, EVENING: 0.25, NIGHT: 0.05 }
+    category_weight:
+      MORNING:   { CAFE: 40, BAKERY: 30, CVS: 20, MEDICAL: 10 }
+      LUNCH:     { REST: 60, CAFE: 30, FASTFOOD: 10 }
+      AFTERNOON: { ONLINE: 25, CAFE: 20, MEDICAL: 15, SUPER: 15, BEAUTY: 10, APPAREL: 10, BAKERY: 5 }
+      EVENING:   { SUPER: 25, REST: 25, MART: 20, DELIVERY: 15, FUEL: 10, CVS: 5 }
+      NIGHT:     { ONLINE: 50, CVS: 30, DELIVERY: 20 }
+    weekend_boost: { MART: 2.0, FUEL: 2.0, APPAREL: 1.5, MOVIE: 2.0 }
+    commute: { days: weekday, out: [8, 30, 20], back: [18, 30, 30] }
+    monthly_fixed: [ { category: EDU, day: 10, amount: 250000 } ]       # 학원비
+
+  NIGHTOWL:
+    per_day: { weekday: 2.5, weekend: 2.0 }
+    amount_mult: 1.0
+    slot_weight:
+      weekday: { MORNING: 0.15, LUNCH: 0.30, AFTERNOON: 0.15, EVENING: 0.20, NIGHT: 0.20 }
+      weekend: { MORNING: 0.05, LUNCH: 0.30, AFTERNOON: 0.25, EVENING: 0.20, NIGHT: 0.20 }
+    category_weight:
+      MORNING:   { CAFE: 50, CVS: 35, BAKERY: 15 }
+      LUNCH:     { REST: 55, CAFE: 25, FASTFOOD: 20 }
+      AFTERNOON: { CAFE: 45, CVS: 30, ONLINE: 25 }
+      EVENING:   { REST: 30, CVS: 25, DELIVERY: 25, FASTFOOD: 20 }
+      NIGHT:     { CVS: 40, DELIVERY: 40, TAXI: 10, ONLINE: 10 }
+    commute: { days: weekday, out: [9, 30, 30], back: [22, 0, 40] }
+
+  REMOTE:
+    per_day: { weekday: 2.0, weekend: 2.0 }
+    amount_mult: 1.0
+    slot_weight:
+      weekday: { MORNING: 0.15, LUNCH: 0.30, AFTERNOON: 0.25, EVENING: 0.20, NIGHT: 0.10 }
+      weekend: { MORNING: 0.15, LUNCH: 0.30, AFTERNOON: 0.25, EVENING: 0.20, NIGHT: 0.10 }
+    category_weight:
+      MORNING:   { CAFE: 40, BAKERY: 30, CVS: 30 }
+      LUNCH:     { DELIVERY: 40, REST: 35, FASTFOOD: 15, CVS: 10 }
+      AFTERNOON: { ONLINE: 40, CAFE: 35, SUPER: 10, BOOK: 10, MEDICAL: 5 }
+      EVENING:   { REST: 30, DELIVERY: 25, SUPER: 20, ONLINE: 15, MOVIE: 10 }
+      NIGHT:     { ONLINE: 45, CVS: 30, DELIVERY: 25 }
+    commute: { days: twice_a_week, out: [10, 0, 60], back: [17, 0, 60] }
+
+# 업종별 결제 금액: 로그정규분포 [중앙값(원), 퍼짐 sigma]. 100원 단위로 맞춘다.
+amount:
+  CAFE: [5500, 0.35]
+  CVS: [4500, 0.60]
+  REST: [11000, 0.35]
+  FASTFOOD: [9000, 0.30]
+  BAKERY: [8000, 0.45]
+  DELIVERY: [24000, 0.35]
+  MART: [70000, 0.55]
+  SUPER: [25000, 0.55]
+  ONLINE: [35000, 0.70]
+  FUEL: [60000, 0.30]
+  MOVIE: [14000, 0.25]
+  BOOK: [18000, 0.45]
+  BEAUTY: [22000, 0.50]
+  APPAREL: [50000, 0.50]
+  MEDICAL: [12000, 0.60]
+  TAXI: [12000, 0.45]
+
+# 교통 요금 (확인 필요). 거리 추가 요금은 아래 값 중 하나를 무작위로 더한다.
+transit:
+  modes: { 수도권 지하철: [1550, 0.7], 서울 시내버스: [1500, 0.3] }   # [기본요금, 비율]
+  surcharge: [0, 0, 0, 100, 200]
+  weekend_rides_per_day: 1.0
+
+# 자동이체 (가정값). 통신비는 사용자마다 범위 안에서 한 번 정해 매달 같은 금액.
+recurring:
+  TELECOM: { day: 25, amount_range: [45000, 85000] }
+  SUBSCR:
+    count_range: [0, 2]
+    prices: { 넷플릭스: 13500, 유튜브 프리미엄: 14900, 티빙: 13900, 쿠팡 와우: 7890 }

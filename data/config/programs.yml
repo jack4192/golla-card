@@ -1,0 +1,20 @@
+# 카드사 혜택 밖의 제도
+
+# K-패스 정부 대중교통비 환급
+# 값은 2024-05 출시 당시 보도 기준이다. 최신 제도로 확인한 뒤 verified: true로 바꾼다.
+# 사용자마다 K-패스로 등록한 카드 1장의 버스·지하철 이용만 횟수에 들어간다.
+kpass:
+  verified: false
+  min_rides: 15            # 월 이 횟수 이상 타야 환급
+  max_rides: 60            # 환급 대상 최대 횟수
+  refund_rate:
+    general: 0.20
+    youth: 0.30
+    low_income: 0.53
+  paid: next_month         # 다음 달에 환급
+
+# 교통 결제 방식 (둘 다 쓴다)
+#   default_card  미리 정한 교통 대표 카드로 찍힘
+#   app_selected  SOL페이를 열고 그 순간 1순위 카드로 NFC 결제
+transit:
+  app_selected_prob: 0.20  # 교통 결제 중 앱을 열고 찍는 비율 (가정값)

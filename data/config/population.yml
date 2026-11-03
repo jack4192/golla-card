@@ -1,0 +1,27 @@
+# 배경 사용자 300명 생성 규칙 (모델 학습·평가용, DB에는 넣지 않음)
+
+archetype_share: { OFFICE: 0.40, STUDENT: 0.20, FAMILY: 0.20, NIGHTOWL: 0.10, REMOTE: 0.10 }
+
+# 습관 비율에 사용자마다 더하는 편차 (정규분포 표준편차, 더한 뒤 다시 합 1로 맞춤)
+habit_jitter_sd: 0.05
+
+# 보유 카드 규칙
+cards:
+  count: { min: 3, max: 5 }
+  must_have_issuer: SHINHAN     # 신한카드 최소 1장
+  min_issuers: 2
+  min_check: 1
+  # 유형별로 신용카드를 뽑을 상대 가중치 (체크는 1)
+  credit_weight: { OFFICE: 1.0, STUDENT: 0.2, FAMILY: 1.2, NIGHTOWL: 1.0, REMOTE: 1.0 }
+
+# 연령대·성별 (통계 보정과 K-패스 청년 구분용)
+age_band: { STUDENT: [20s], OFFICE: [20s, 30s, 40s], FAMILY: [30s, 40s], NIGHTOWL: [20s, 30s], REMOTE: [30s, 40s] }
+youth_kpass_share_20s: 0.8      # 20대 중 청년 K-패스 비율
+
+# 동네 배정: 집·회사(학교) 동네를 아래 후보에서 고른다
+zones:
+  home: [BANGBAE, SILLIM, JEONGJA, MANGWON, YEONNAM, SEONGSU]
+  work: [GANGNAM, SINCHON, PANGYO, GASAN, SEONGSU, HONGDAE]
+  weekend: [SEONGSU, HONGDAE, YEONNAM, GANGNAM, JEONGJA]
+
+# 교통 대표 카드: K-패스 카드가 있으면 그 카드, 없으면 기본 순서 1번
