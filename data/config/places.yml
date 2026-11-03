@@ -1,0 +1,65 @@
+# 가맹점 수집 규칙
+# 오프라인 가맹점은 카카오 로컬 API로 구역마다 실제 위치를 받아 오고(generate/kakao_fetch.py),
+# 온라인·교통·자동이체 가맹점은 아래 online 목록으로 만든다.
+# 평점은 카카오가 주지 않으므로 생성기가 가상으로 붙인다.
+
+# 구역마다 업종별로 뽑을 수 (합계 60)
+per_zone_quota:
+  CAFE: 12
+  CVS: 8
+  REST: 13
+  FASTFOOD: 4
+  BAKERY: 3
+  MART: 2
+  SUPER: 3
+  FUEL: 2
+  MOVIE: 1
+  BOOK: 1
+  BEAUTY: 2
+  APPAREL: 2
+  MEDICAL: 5
+  EDU: 2
+
+# 카카오 검색 방법
+#   group    카테고리 그룹 코드로 검색 (CE7 카페, CS2 편의점, FD6 음식점, MT1 대형마트,
+#            OL7 주유소, HP8 병원, PM9 약국, AC5 학원)
+#   keyword  키워드로 검색. 결과의 place_name에 키워드가 들어 있는 것만 남긴다.
+#   include / exclude  category_name에 이 문자열이 있으면 남기거나 뺀다.
+kakao_sources:
+  CAFE:     [ { group: CE7, exclude: ["제과,베이커리"] } ]
+  CVS:      [ { group: CS2 } ]
+  REST:     [ { group: FD6, exclude: ["패스트푸드", "제과,베이커리", "카페", "간식"] } ]
+  FASTFOOD: [ { group: FD6, include: ["패스트푸드"] } ]
+  BAKERY:   [ { group: FD6, include: ["제과,베이커리"] } ]
+  MART:     [ { group: MT1, include: ["대형마트"] } ]
+  SUPER:    [ { group: MT1, include: ["슈퍼", "식자재"] } ]
+  FUEL:     [ { group: OL7, include: ["주유소"] } ]
+  MOVIE:    [ { keyword: CGV }, { keyword: 메가박스 }, { keyword: 롯데시네마 } ]
+  BOOK:     [ { keyword: 교보문고 }, { keyword: 영풍문고 }, { keyword: 알라딘 } ]
+  BEAUTY:   [ { keyword: 올리브영 } ]
+  APPAREL:  [ { keyword: 유니클로 }, { keyword: 탑텐 }, { keyword: 스파오 }, { keyword: 무신사 스탠다드 } ]
+  MEDICAL:  [ { group: HP8 }, { group: PM9 } ]
+  EDU:      [ { group: AC5 } ]
+
+# 이름 앞부분이 이 목록과 맞으면 브랜드와 지점을 나눈다. (스타벅스 강남R점 → 스타벅스 / 강남R점)
+# 목록에 없는 가게는 이름 전체를 브랜드로 본다.
+known_brands:
+  CAFE: [스타벅스, 투썸플레이스, 이디야커피, 메가MGC커피, 컴포즈커피, 빽다방, 할리스, 폴바셋, 커피빈]
+  CVS: [CU, GS25, 세븐일레븐, 이마트24]
+  FASTFOOD: [맥도날드, 버거킹, 롯데리아, 맘스터치, KFC, 서브웨이]
+  BAKERY: [파리바게뜨, 뚜레쥬르]
+  MART: [이마트, 홈플러스, 롯데마트]
+  SUPER: [GS더프레시, 롯데슈퍼, 이마트에브리데이, 홈플러스 익스프레스]
+  MOVIE: [CGV, 메가박스, 롯데시네마]
+  BOOK: [교보문고, 영풍문고, 알라딘]
+  BEAUTY: [올리브영]
+  APPAREL: [유니클로, 탑텐, 스파오, 무신사 스탠다드]
+
+# 위치가 없는 가맹점
+online:
+  DELIVERY: [배달의민족, 쿠팡이츠, 요기요]
+  ONLINE:   [쿠팡, 네이버쇼핑, 11번가, G마켓, SSG닷컴]
+  TAXI:     [일반 택시, 카카오T]
+  TRANSIT:  [수도권 지하철, 서울 시내버스, 경기 버스]
+  TELECOM:  [SKT, KT, LG U+]
+  SUBSCR:   [넷플릭스, 유튜브 프리미엄, 티빙, 쿠팡 와우]

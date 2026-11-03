@@ -1,0 +1,16 @@
+# 동네 11곳. 좌표는 역 또는 상권 중심의 대략적인 위치다.
+# radius_m: 카카오 검색 반경이자 가상 좌표를 뿌리는 범위.
+# 홍대와 연남처럼 가까운 동네는 가게가 겹칠 수 있어서 merchants 단계에서 kakao_id로 한 번 더 중복을 뺀다.
+
+zones:
+  - { code: BANGBAE, name: 방배,             lat: 37.4814, lng: 126.9976, radius_m: 600 }
+  - { code: GANGNAM, name: 강남역,           lat: 37.4979, lng: 127.0276, radius_m: 600 }
+  - { code: SEONGSU, name: 성수,             lat: 37.5446, lng: 127.0557, radius_m: 600 }
+  - { code: SILLIM,  name: 신림,             lat: 37.4842, lng: 126.9297, radius_m: 600 }
+  - { code: SINCHON, name: 신촌,             lat: 37.5552, lng: 126.9368, radius_m: 600 }
+  - { code: HONGDAE, name: 홍대,             lat: 37.5572, lng: 126.9245, radius_m: 600 }
+  - { code: JEONGJA, name: 정자,             lat: 37.3670, lng: 127.1083, radius_m: 600 }
+  - { code: PANGYO,  name: 판교,             lat: 37.3947, lng: 127.1112, radius_m: 600 }
+  - { code: MANGWON, name: 망원,             lat: 37.5560, lng: 126.9101, radius_m: 600 }
+  - { code: GASAN,   name: 가산디지털단지,   lat: 37.4815, lng: 126.8826, radius_m: 600 }
+  - { code: YEONNAM, name: 연남,             lat: 37.5660, lng: 126.9225, radius_m: 600 }
