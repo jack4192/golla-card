@@ -6,7 +6,7 @@
        카카오 이용약관에서 저장·재배포 조건을 확인하기 전까지 깃에 올리지 않는다.
 
 여기서는 후보를 넉넉히 모으기만 하고, 구역별 업종 수(per_zone_quota)에 맞춰 뽑는 건
-merchants 단계가 시드 고정 난수로 한다.
+merchants 단계가 시드 고정 난수로 한다. 반경을 넓힌 검색은 한 가게가 여러 동네 후보에 들어갈 수 있다.
 """
 
 import csv
@@ -46,7 +46,7 @@ def _get(path: str, params: dict, key: str) -> dict:
 
 def _search(source: dict, zone: dict, key: str) -> list[dict]:
     base = {
-        "x": zone["lng"], "y": zone["lat"], "radius": zone["radius_m"],
+        "x": zone["lng"], "y": zone["lat"], "radius": source.get("radius_m", zone["radius_m"]),
         "size": PAGE_SIZE, "sort": "distance",
     }
     if "group" in source:
@@ -90,7 +90,7 @@ def main() -> None:
             n_before = len(rows)
             for source in srcs:
                 for doc in _search(source, zone, key):
-                    uid = (zone["code"], doc["id"])
+                    uid = (zone["code"], doc["id"])   # 같은 동네 안에서는 먼저 잡힌 업종 하나로만
                     if uid in seen or not _keep(doc, source):
                         continue
                     seen.add(uid)

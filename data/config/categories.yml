@@ -1,4 +1,4 @@
-# 업종 코드 20개
+# 업종 코드 21개
 # channel: 이 업종의 주된 결제 경로
 #   offline_qr  결제화면에서 QR·바코드
 #   online      온라인 결제
@@ -27,3 +27,4 @@ categories:
   - { code: TAXI,     name: 택시,             channel: offline_qr,  placement_target: true }
   - { code: TELECOM,  name: 통신,             channel: auto_debit,  placement_target: false }
   - { code: SUBSCR,   name: 구독,             channel: auto_debit,  placement_target: false }
+  - { code: UTILITY,  name: 공과금,           channel: auto_debit,  placement_target: false }

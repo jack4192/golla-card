@@ -26,6 +26,10 @@ archetypes:
     name: 맞벌이
     habit: { habit: 0.85, random: 0.15 }
     choice_model: { type: category_habit, main_prob: 0.3 }
+  HOME50:
+    name: 출근 없는 50대
+    habit: { habit: 0.85, random: 0.15 }
+    choice_model: { type: category_habit, main_prob: 0.3 }
   NIGHTOWL:
     name: 야근 직장인
     habit: { habit: 0.85, random: 0.15 }
@@ -38,6 +42,7 @@ archetypes:
 # 데모 사용자. cards는 기본 순서(display_order) 순이다.
 # kpass_card: K-패스로 등록한 카드 (정부 환급 횟수는 이 카드로 탄 것만 센다)
 # transit_default: 교통 대표 카드 (앱을 열지 않고 찍으면 이 카드로 결제)
+# amount_level: 일반 결제 금액 배율. 공과금을 포함한 월 지출이 197만, 88만, 212만, 123만, 146만이 되도록 맞춘 값이다.
 demo_users:
   - id: 1
     display_name: 데모 사용자 1
@@ -46,9 +51,10 @@ demo_users:
     gender: F
     zones: { home: BANGBAE, work: GANGNAM, weekend: SEONGSU }
     kpass_tier: general
-    cards: [SH_LIFE_CR, SH_DINE_CR, SH_KPASS_CK, KB_CAFE_CK, HN_DELI_CR]
-    kpass_card: SH_KPASS_CK
-    transit_default: SH_KPASS_CK
+    cards: [SH_LIFE_CR, SH_DINE_CR, SH_KPASS_CR, KB_CAFE_CK, HN_DELI_CR]
+    amount_level: 0.924
+    kpass_card: SH_KPASS_CR
+    transit_default: SH_KPASS_CR
     note: 메인 시연. 신한 생활 카드 카페 한도 소진 → KB 카드 1순위, 외식 카드 실적 28만/30만
 
   - id: 2
@@ -58,22 +64,24 @@ demo_users:
     gender: M
     zones: { home: SILLIM, work: SINCHON, weekend: HONGDAE }
     kpass_tier: youth
-    cards: [SH_KPASS_CK, SH_TRAVEL_CK, HN_TRAVEL_CK]
-    kpass_card: SH_KPASS_CK
-    transit_default: SH_KPASS_CK
+    cards: [SH_KPASS_CR, SH_TRAVEL_CK, HN_TRAVEL_CK]
+    amount_level: 0.802
+    kpass_card: SH_KPASS_CR
+    transit_default: SH_KPASS_CR
     note: 소액 결제가 잦음, K-패스 월 15회 기준
 
   - id: 3
     display_name: 데모 사용자 3
-    archetype: FAMILY
-    age_band: 30s
+    archetype: HOME50
+    age_band: 50s
     gender: F
-    zones: { home: JEONGJA, work: PANGYO, weekend: JEONGJA }
+    zones: { home: JEONGJA, work: null, weekend: JEONGJA }
     kpass_tier: general
     cards: [SH_SHOP_CR, WR_FLAT_CR, WR_LIFE_CK, KB_KPASS_CR]
+    amount_level: 0.953
     kpass_card: KB_KPASS_CR
     transit_default: KB_KPASS_CR
-    note: 주말 마트·주유, 통합할인 카드와 특화 카드의 경쟁
+    note: 평일 낮 동네 소비·홈쇼핑·병원, 주말 마트·주유, 통합할인 카드와 특화 카드의 경쟁
 
   - id: 4
     display_name: 데모 사용자 4
@@ -83,6 +91,7 @@ demo_users:
     zones: { home: MANGWON, work: GASAN, weekend: MANGWON }
     kpass_tier: youth
     cards: [SH_LIFE_CR, HN_DELI_CR, KB_KPASS_CR, SH_BASIC_CK]
+    amount_level: 0.659
     kpass_card: KB_KPASS_CR
     transit_default: KB_KPASS_CR
     note: 배달 금액에 따라 신한 10%와 하나 15%(1.5만 원 이상) 중 승자가 바뀜
@@ -95,6 +104,7 @@ demo_users:
     zones: { home: YEONNAM, work: null, weekend: YEONNAM }
     kpass_tier: general
     cards: [SH_SHOP_CR, SH_TRAVEL_CK, WR_FLAT_CR]
+    amount_level: 0.756
     kpass_card: null
     transit_default: null
     note: 온라인 쇼핑, 실적 구간에 따라 우리 통합 0.7%와 1% 차이
