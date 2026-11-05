@@ -1,0 +1,139 @@
+# 카드 상품 수집 설정 (collector 패키지가 읽는다)
+#
+# 원칙
+#   - 로그인 없이 공개된 카드사 공식 상품 페이지만 읽는다.
+#   - robots.txt 가 허용한 주소만 요청한다. 브라우저로 화면을 그릴 때도 robots.txt 가 막은 요청은 브라우저 안에서 차단한다.
+#   - 접속 차단을 우회하는 수단(우회 프록시, 차단 회피용 위장 등)은 쓰지 않는다. 막히면 '수집 불가'로 기록한다.
+#   - 같은 사이트에는 delay_sec 간격으로 한 번에 하나씩만 요청한다.
+#
+# 카드사별 항목
+#   domains     이 카드사 사이트로 보는 도메인 (렌더링할 때 이 밖의 요청은 막는다)
+#   discovery   상품 상세 주소를 찾는 방법 (위에서부터 차례로 모두 실행해 합친다)
+#                 sitemap         사이트맵에서 pattern 에 맞는 주소
+#                 llms            llms.txt 같은 AI용 목록에서 pattern 으로 id 를 뽑아 url_template 로 주소를 만든다
+#                 static_links    pages 의 HTML 에서 pattern 에 맞는 링크
+#                 rendered_links  pages 를 브라우저로 그린 뒤 HTML 에서 pattern 에 맞는 id
+#                 seeds           config/crawl_seeds.yml 에 사람이 적어 둔 주소
+#   id_pattern  상세 주소에서 상품 id 를 뽑는 정규식 (첫 번째 괄호)
+#   url_template  id 로 표준 상세 주소를 만든다 (없으면 찾은 주소 그대로)
+#   render      상세 페이지를 브라우저로 그려야 하는지
+#   content     혜택 원문이 있는 영역 (CSS 선택자). render_js 가 있으면 그 JS 결과를 쓴다
+#   name        카드명 찾는 방법 (위에서부터 시도): title_split(제목 첫 토막) / title_last(마지막 토막) / og_title / selector:<css> / content_first_line
+#   card_type   from_url (주소에 들어 있는 글자 → 종류) 이 없으면 카드명에 '체크'가 있는지로 판단
+#   exclude     수집하지 않는 이유 (있으면 이 카드사는 건너뛴다)
+
+user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) solpay-student-project/0.1"
+delay_sec: 2.0
+
+issuers:
+  SHINHAN:
+    name: 신한카드
+    domains: [shinhancard.com]
+    discovery:
+      - { type: static_links, pages: ["https://www.shinhancard.com/pconts/html/main.html"],
+          pattern: '/pconts/html/card/apply/(?:credit|check)/\d+_\d+\.html' }
+      - { type: seeds }
+    # 카드 목록은 /mob/ 요청으로 채워지는데 robots.txt 가 /mob/ 을 막는다 → 메인 노출분 + 시드
+    id_pattern: '/apply/(?:credit|check)/(\d+_\d+)\.html'
+    render: false
+    content: [".bs-card-benefit"]
+    name: [title_split]
+    card_type: { from_url: { "/apply/credit/": credit, "/apply/check/": check } }
+
+  KB:
+    name: KB국민카드
+    domains: [kbcard.com]
+    discovery:
+      - { type: sitemap, urls: ["https://card.kbcard.com/CMN/sitemap-desktop.xml"],
+          pattern: 'HCAMCXPRICAC\d+\?[^<\s"'']*cooperationcode=\d+' }
+      - { type: seeds }
+    id_pattern: 'cooperationcode=(\d+)'
+    url_template: "https://card.kbcard.com/CRD/DVIEW/HCAMCXPRICAC0076?mainCC=a&cooperationcode={id}"
+    render: false
+    content: ["#tabCon00", "#tabCon01", "#tabCon02", "#tabCon03"]
+    name: ["selector:.cardTit .tit", "selector:h1.tit"]
+
+  HANA:
+    name: 하나카드
+    domains: [hanacard.co.kr]
+    discovery:
+      - { type: sitemap, urls: ["https://www.hanacard.co.kr/sitemap.xml"],
+          pattern: 'OPI4\d+D\.web\?[^<\s"'']*CD_PD_SEQ=\d+' }
+      - { type: seeds }
+    id_pattern: 'CD_PD_SEQ=(\d+)'
+    url_template: "https://www.hanacard.co.kr/OPI41000000D.web?CD_PD_SEQ={id}"
+    render: false
+    content: ["#tab_detail"]
+    name: ["selector:h3.tit", og_title]
+
+  WOORI:
+    name: 우리카드
+    domains: [wooricard.com]
+    discovery:
+      # 우리카드가 AI 에이전트용으로 공개한 상품 목록 (robots.txt 에서 허용)
+      - { type: llms, url: "https://pc.wooricard.com/llms.txt", pattern: 'ai-data/card_(\d+)\.html' }
+      - { type: seeds }
+    id_pattern: 'cdPrdCd=(\d+)'
+    url_template: "https://pc.wooricard.com/dcpc/yh1/crd/crd01/H1CRD101S02.do?cdPrdCd={id}"
+    render: true            # 혜택을 자바스크립트로 그린다
+    content: ["#content"]
+    render_js: woori_benefit_tab
+    name: ["selector:.crdName", "selector:h1.titH1"]
+
+  HYUNDAI:
+    name: 현대카드
+    domains: [hyundaicard.com]
+    discovery:
+      - { type: rendered_links, pages: ["https://www.hyundaicard.com/cpc/cr/CPCCR0101_01.hc"],
+          pattern: 'cardWcd=([A-Za-z0-9]+)' }
+      - { type: seeds }
+    id_pattern: 'cardWcd=([A-Za-z0-9]+)'
+    url_template: "https://www.hyundaicard.com/cpc/cr/CPCCR0201_01.hc?cardWcd={id}"
+    render: true
+    content: ["#container"]
+    name: ["selector:#container h2", "selector:h2", og_title]
+
+  BC:
+    name: BC카드
+    domains: [bccard.com]
+    discovery:
+      - { type: seeds }     # 카드 목록이 보안 프로그램 설치 화면으로 넘어간다
+    id_pattern: 'gdsno=(\d+)'
+    render: false
+    content: ["#divCardDetail_info"]
+    name: ["selector:#divCardDetail_info h3", "selector:#divCardDetail_info strong"]
+
+  NH:
+    name: NH농협카드
+    domains: [nonghyup.com]
+    discovery:
+      - { type: seeds }     # 카드 목록이 보안 프로그램 설치 화면으로 넘어간다
+    id_pattern: 'CD_WRS_SQNO=(\d+)'
+    url_template: "https://card.nonghyup.com/servlet/IpCc2021R.act?CD_WRS_SQNO={id}"
+    render: false
+    content: ["#sec_tab", "#tabInfoCont1"]
+    name: ["selector:#content h3", "selector:#content h2"]
+
+  TOSS:
+    name: 토스뱅크
+    domains: [tossbank.com]
+    discovery:
+      - { type: sitemap, urls: ["https://www.tossbank.com/sitemap-0.xml"], pattern: '/product-service/card/[\w-]+' }
+    id_pattern: '/product-service/card/([\w-]+)'
+    url_template: "https://www.tossbank.com/product-service/card/{id}"
+    render: true
+    content: ["main"]
+    name: [title_last]
+
+  SAMSUNG:
+    name: 삼성카드
+    exclude: "robots.txt 가 상품 상세 경로 수집을 허용하지 않음 (2026-11-03 확인)"
+  KAKAO:
+    name: 카카오뱅크
+    exclude: "robots.txt 가 상품 페이지 수집을 허용하지 않음 (2026-11-03 확인)"
+  IBK:
+    name: IBK기업은행
+    exclude: "robots.txt 가 수집을 허용하지 않음 (2026-11-03 확인)"
+  LOTTE:
+    name: 롯데카드
+    exclude: "robots.txt 와 상품 페이지 모두 응답 없음·연결 끊김 (2026-11-03). 차단 우회는 하지 않는다"

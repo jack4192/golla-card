@@ -69,6 +69,47 @@ parquet에는 전체가, csv에는 기준 정보와 데모 사용자 5명분만 
 | user_category_habits | 업종별 습관 카드 (직장인·맞벌이·데모 3번). 카드 매칭할 때 쓴다 |
 | payments | 결제 내역 |
 
+## 카드 상품 수집기 (collector/)
+
+카드사 공식 홈페이지의 공개 상품 상세 페이지에서 카드 정보와 혜택을 직접 수집한다.
+카드사별 차이(상품 목록 얻는 법, 카드명 위치, 혜택 영역, 렌더링 필요 여부)는 `config/crawl.yml`에 모으고 코드는 공통으로 쓴다.
+
+```bash
+cd .. && docker compose up -d && cd data   # DB (레포 루트 .env)
+uv run playwright install chromium         # 처음 한 번 (렌더링이 필요한 우리·현대·토스용)
+uv run python -m collector discover        # ① 상품 상세 주소 찾기
+uv run python -m collector fetch           # ② 원문 수집 (이미 받은 카드는 건너뜀)
+uv run python -m collector parse           # ③ 규칙 파서: 카드명·종류·연회비·출시일·대표 혜택 문구
+uv run python -m collector structure       # ④ Gemini 구조화: 업종·할인율·시간대·건당/월 한도·실적 구간
+uv run python -m collector load            # ⑤ DB 적재
+uv run python -m collector report          # 카드사별 결과 요약
+```
+
+`--issuer KB`(카드사 지정), `--limit 5`(시험용), `--force`(다시) 옵션이 있다.
+
+**수집 원칙**
+- 로그인 없이 공개된 카드사 공식 상품 페이지만 읽는다.
+- robots.txt가 허용한 주소만 요청한다. robots.txt가 응답하지 않으면 막힌 것으로 본다.
+- 브라우저로 화면을 그릴 때도 robots.txt가 막은 요청과 카드사 도메인 밖 요청은 브라우저 안에서 차단한다.
+- 접속 차단을 우회하는 수단은 쓰지 않는다. 막히면 '수집 불가'로 기록한다.
+- 같은 사이트에는 2초 간격으로 한 번에 하나씩 요청한다.
+- 원문은 `cache/crawl/`에만 두고 깃에 올리지 않는다. 근거(`evidence.jsonl`)에는 주소·시각·해시만 남긴다.
+
+**카드사별 상태 (2026-11-03)**
+
+| 카드사 | 상품 목록 | 비고 |
+|---|---|---|
+| KB국민, 하나 | 사이트맵 | |
+| 우리 | 우리카드가 AI용으로 공개한 `llms.txt` | 상세는 화면을 그려야 함 |
+| 현대 | 카드 목록 페이지를 그려서 | |
+| 토스뱅크 | 사이트맵 | |
+| 신한 | 메인 노출분 + 시드 | 목록 요청 경로(`/mob/`)가 robots.txt 금지 |
+| BC, NH농협 | 시드만 | 목록이 보안 프로그램 설치 화면으로 넘어감 |
+| 삼성, 카카오뱅크, IBK | 수집 안 함 | robots.txt 불허 |
+| 롯데 | 수집 안 함 | 응답 없음·연결 끊김 |
+
+자동으로 목록을 얻을 수 없는 카드사는 `config/crawl_seeds.yml`에 상세 페이지 주소를 적으면 수집한다.
+
 ## 아직 안 한 것
 
 - 혜택·실적·한도·K-패스 환급 계산 (`generate/benefit.py`에 계산 규칙만 있음)
