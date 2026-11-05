@@ -1,5 +1,8 @@
 """가상 데이터 생성 진입점.
 
+이 데이터는 카드 배치 알고리즘을 구축할 때 쓰는 사용자의 과거 소비 데이터다.
+알고리즘은 배치 시각 이전의 결제만 입력으로 쓰고, 학습과 평가는 시간순으로 나눈다.
+
 실행: uv run python -m generate.main
 결과: data/out/parquet/*.parquet (전체), data/out/csv/*.csv (마스터 + 데모 사용자 5명)
 지금은 소비 데이터만 만든다. 혜택·실적은 실제 카드 상품을 매칭할 때 계산한다.
@@ -28,15 +31,16 @@ def main() -> None:
 
     cards = load_cards(load_config("cards"))
     tables = build_masters(cards)
-    merchants = build_merchants(rng)
+    merchants, merchant_zones = build_merchants(rng)
     tables["merchants"] = merchants
+    tables["merchant_zones"] = merchant_zones
     print(f"가맹점 {len(merchants)}곳 ({'카카오' if (CACHE_DIR / 'kakao_places.csv').exists() else '가상 좌표'})")
 
     users = build_users(rng, cards, dists, settings["n_background_users"])
     tables.update(users_frames(rng, users, settings["start_date"]))
 
     sim = Simulator(settings, dists, load_config("programs"), load_config("categories")["categories"],
-                    load_config("places"), merchants)
+                    load_config("places"), merchants, merchant_zones)
     pay = simulate(sim, users)
     pay.insert(0, "payment_id", range(1, len(pay) + 1))
     tables["payments"] = pay

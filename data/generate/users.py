@@ -2,6 +2,9 @@
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from statistics import NormalDist
+
+import math
 
 import numpy as np
 import pandas as pd
@@ -37,8 +40,12 @@ class User:
     bill_card: int | None = None                # 자동이체·고정 결제에 쓰는 카드
     telecom: tuple[str, int] | None = None      # (통신사, 금액)
     subscriptions: list[tuple[str, int, int]] = field(default_factory=list)  # (서비스, 금액, 결제일)
+    utilities: list[tuple[str, int]] = field(default_factory=list)           # (공과금 항목, 납부일)
     choice_model: str = "main_card"
     category_habit: dict[str, int] = field(default_factory=dict)   # 업종 → 늘 쓰는 user_card_id
+    count_level: float = 1.0                    # 일반 결제 건수 배율
+    amount_level: float = 1.0                   # 일반 결제 금액 배율
+    favorite_prob: float = 0.7                  # 단골 3곳 중에서 고를 확률
 
     def card(self, user_card_id: int) -> UserCard:
         return next(uc for uc in self.cards if uc.user_card_id == user_card_id)
@@ -47,6 +54,19 @@ class User:
 def _normalize(d: dict) -> dict:
     s = sum(d.values())
     return {k: v / s for k, v in d.items()}
+
+
+def _spend_levels(rng, rule: dict, n: int) -> list[tuple[float, float]]:
+    """사용자별 (건수 배율, 금액 배율). 분포를 n등분해 나눠 주므로 인원이 적어도 설정값에서 크게 벗어나지 않는다."""
+    even = [NormalDist().inv_cdf((i + 0.5) / n) for i in range(n)]
+    rho = rule["correlation"]
+    z_count = rng.permutation(even)
+    z_amount = rho * z_count + math.sqrt(1 - rho ** 2) * rng.permutation(even)
+
+    def level(spec: dict, z: float) -> float:
+        return float(np.clip(spec["median"] * math.exp(spec["sigma"] * z), *spec["range"]))
+
+    return [(level(rule["count"], c), level(rule["amount"], m)) for c, m in zip(z_count, z_amount)]
 
 
 def _pick_background_cards(rng, cards: list[Card], archetype: str, rules: dict) -> list[Card]:
@@ -97,6 +117,12 @@ def _finish(rng, u: User, dists: dict, kpass_code: str | None, transit_code: str
     for name in rng.choice(names, size=n_sub, replace=False):
         u.subscriptions.append((str(name), rec["SUBSCR"]["prices"][name], int(rng.integers(1, 29))))
 
+    util = rec["UTILITY"]
+    if rng.random() < util["payer_share"].get(u.archetype, 1.0):
+        for item in util["items"]:
+            if u.archetype in item.get("only", [u.archetype]):
+                u.utilities.append((item["name"], int(rng.integers(1, 29))))
+
 
 def build_users(rng: np.random.Generator, cards: list[Card], dists: dict, n_background: int) -> list[User]:
     personas = load_config("personas")
@@ -120,6 +146,7 @@ def build_users(rng: np.random.Generator, cards: list[Card], dists: dict, n_back
             age_band=p["age_band"], gender=p["gender"], zones=dict(p["zones"]), kpass_tier=p["kpass_tier"],
             cards=make_cards([by_code[c] for c in p["cards"]]),
             habit=dict(personas["archetypes"][p["archetype"]]["habit"]), loc_consent=True,
+            amount_level=p["amount_level"], favorite_prob=dists["favorite_prob"],
         )
         _finish(rng, u, dists, p["kpass_card"], p["transit_default"])
         _set_choice(rng, u, personas["archetypes"][p["archetype"]], categories)
@@ -127,14 +154,19 @@ def build_users(rng: np.random.Generator, cards: list[Card], dists: dict, n_back
 
     archetypes = list(pop["archetype_share"])
     share = np.array([pop["archetype_share"][a] for a in archetypes])
+    # 유형은 설정한 비율대로 정확히 나눈 뒤 순서만 섞는다
+    assigned = rng.permutation(np.searchsorted(np.cumsum(share / share.sum()), (np.arange(n_background) + 0.5) / n_background))
+    levels = _spend_levels(rng, pop["spend_level"], n_background)
+    favorite = rng.permutation(np.linspace(*pop["favorite_prob_range"], n_background))
     for i in range(n_background):
         uid = BACKGROUND_ID_START + i
-        a = str(rng.choice(archetypes, p=share / share.sum()))
+        a = archetypes[assigned[i]]
         age = str(rng.choice(pop["age_band"][a]))
         picked = _pick_background_cards(rng, cards, a, pop["cards"])
         rng.shuffle(picked)
         habit = {k: max(0.02, v + rng.normal(0, pop["habit_jitter_sd"]))
                  for k, v in personas["archetypes"][a]["habit"].items()}
+        count_level, amount_level = levels[i]
         u = User(
             user_id=uid, user_type="background", display_name=f"배경 사용자 {uid}", archetype=a,
             age_band=age, gender=str(rng.choice(["M", "F"])),
@@ -145,6 +177,7 @@ def build_users(rng: np.random.Generator, cards: list[Card], dists: dict, n_back
             },
             kpass_tier="youth" if age == "20s" and rng.random() < pop["youth_kpass_share_20s"] else "general",
             cards=make_cards(picked), habit=_normalize(habit), loc_consent=bool(rng.random() < 0.6),
+            count_level=count_level, amount_level=amount_level, favorite_prob=float(favorite[i]),
         )
         kpass = next((uc.card.code for uc in u.cards if "kpass" in uc.card.tags), None)
         _finish(rng, u, dists, kpass, kpass or u.cards[0].card.code)

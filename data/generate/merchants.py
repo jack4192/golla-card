@@ -39,25 +39,39 @@ def _rating(rng: np.random.Generator) -> float:
     return round(float(np.clip(rng.normal(4.1, 0.35), 2.5, 5.0)), 1)
 
 
-def _from_kakao(rng, zones, places) -> list[dict]:
+def _from_kakao(rng, zones, places) -> tuple[list[dict], list[tuple[str, str]]]:
+    """(가게 목록, (kakao_id, 동네) 목록). 반경이 넓은 업종은 한 가게가 여러 동네에서 뽑힐 수 있어서
+    가게는 한 번만 만들고, 어느 동네에서 갈 수 있는지는 따로 돌려준다."""
     raw = pd.read_csv(CACHE_DIR / "kakao_places.csv", dtype={"kakao_id": str})
-    raw = raw.sort_values(["zone_code", "category_code", "kakao_id"]).drop_duplicates("kakao_id")
-    rows = []
+    # 한 가게가 여러 업종으로 잡혔으면 places.yml 에 먼저 적힌 업종 하나로
+    order = {c: i for i, c in enumerate(places["kakao_sources"])}
+    raw = raw.assign(_o=raw.category_code.map(order)).sort_values(["_o", "zone_code", "kakao_id"])
+    raw = raw[raw.kakao_id.map(raw.drop_duplicates("kakao_id").set_index("kakao_id").category_code)
+              == raw.category_code]
+
+    picked: dict[str, dict] = {}
+    links: list[tuple[str, str]] = []
     for z in zones:
         for cat, quota in places["per_zone_quota"].items():
-            cand = raw[(raw.zone_code == z["code"]) & (raw.category_code == cat)]
+            cand = raw[(raw.zone_code == z["code"]) & (raw.category_code == cat)].sort_values("kakao_id")
             if cand.empty:
                 continue
             pick = cand.iloc[sorted(rng.choice(len(cand), size=min(quota, len(cand)), replace=False))]
             for _, r in pick.iterrows():
+                links.append((r.kakao_id, z["code"]))
+                dist = float(r.distance_m) if pd.notna(r.distance_m) else 0.0
+                prev = picked.get(r.kakao_id)
+                if prev is not None and prev["_dist"] <= dist:
+                    continue
                 brand, branch = _split_brand(r.place_name, places["known_brands"].get(cat, []))
-                rows.append({
+                picked[r.kakao_id] = {
                     "brand": brand, "branch_name": branch, "place_name": r.place_name,
                     "category_code": cat, "zone_code": z["code"], "lat": float(r.lat), "lng": float(r.lng),
                     "address": r.road_address_name if isinstance(r.road_address_name, str) else r.address_name,
-                    "source": "kakao", "kakao_id": r.kakao_id,
-                })
-    return rows
+                    "source": "kakao", "kakao_id": r.kakao_id, "_dist": dist,
+                }
+    rows = [{k: v for k, v in r.items() if k != "_dist"} for r in picked.values()]
+    return rows, links
 
 
 def _synthetic(rng, zones, places) -> list[dict]:
@@ -85,12 +99,15 @@ def _synthetic(rng, zones, places) -> list[dict]:
     return rows
 
 
-def build_merchants(rng: np.random.Generator) -> pd.DataFrame:
+def build_merchants(rng: np.random.Generator) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(merchants, merchant_zones). zone_code 는 가장 가까운 동네, merchant_zones 는 갈 수 있는 동네 전부."""
     zones = load_config("zones")["zones"]
     places = load_config("places")
 
-    use_kakao = (CACHE_DIR / "kakao_places.csv").exists()
-    rows = _from_kakao(rng, zones, places) if use_kakao else _synthetic(rng, zones, places)
+    if (CACHE_DIR / "kakao_places.csv").exists():
+        rows, links = _from_kakao(rng, zones, places)
+    else:
+        rows, links = _synthetic(rng, zones, places), None
     for r in rows:
         r.update(is_online=False, rating=_rating(rng))
 
@@ -106,4 +123,12 @@ def build_merchants(rng: np.random.Generator) -> pd.DataFrame:
     df.insert(0, "merchant_id", range(1, len(df) + 1))
     df["normalized_name"] = df["place_name"].map(_normalize)
     df["is_demo_fixed"] = False
-    return df
+
+    off = df[~df.is_online]
+    if links is None:
+        mz = off[["merchant_id", "zone_code"]]
+    else:
+        id_of = dict(zip(off.kakao_id, off.merchant_id))
+        mz = pd.DataFrame([{"merchant_id": id_of[k], "zone_code": z} for k, z in links]).drop_duplicates()
+    mz = mz.sort_values(["zone_code", "merchant_id"]).reset_index(drop=True)
+    return df, mz

@@ -17,6 +17,12 @@ import pandas as pd
 from .users import User
 
 KST = ZoneInfo("Asia/Seoul")
+DAYS_PER_MONTH = 30.4
+
+
+def _lognormal_won(rng, median: float, sigma: float) -> int:
+    """로그정규분포에서 뽑아 100원 단위로 맞춘 금액."""
+    return max(100, int(round(median * math.exp(sigma * rng.normal()) / 100)) * 100)
 
 
 def _weighted(rng, d: dict) -> str:
@@ -26,7 +32,8 @@ def _weighted(rng, d: dict) -> str:
 
 
 class Simulator:
-    def __init__(self, settings, dists, programs, categories, places, merchants: pd.DataFrame):
+    def __init__(self, settings, dists, programs, categories, places,
+                 merchants: pd.DataFrame, merchant_zones: pd.DataFrame):
         self.seed = settings["seed"]
         self.start = settings["start_date"]
         as_of = settings["as_of"]
@@ -37,17 +44,21 @@ class Simulator:
         self.d = dists
         self.prog = programs
         self.holidays = set(dists["holidays"])
+        self.utility_items = {i["name"]: i for i in dists["recurring"]["UTILITY"]["items"]}
         self.channel = {c["code"]: c["channel"] for c in categories}
         self.noise_cats = [c["code"] for c in categories
                            if c["placement_target"] and c["code"] not in ("TRANSIT", "EDU")]
         self.online_cats = set(places["online"])
 
         off = merchants[~merchants.is_online]
-        self.by_zone_cat = {k: sorted(g.merchant_id.tolist()) for k, g in off.groupby(["zone_code", "category_code"])}
+        mz = merchant_zones.merge(off[["merchant_id", "category_code"]], on="merchant_id")
+        self.by_zone_cat = {k: sorted(g.merchant_id.tolist()) for k, g in mz.groupby(["zone_code", "category_code"])}
         self.any_zone_cat = {k: sorted(g.merchant_id.tolist()) for k, g in off.groupby("category_code")}
         on = merchants[merchants.is_online]
         self.online = {k: sorted(g.merchant_id.tolist()) for k, g in on.groupby("category_code")}
         self.online_by_name = dict(zip(on.place_name, on.merchant_id))
+        self.home_shopping = sorted(self.online_by_name[n] for n in places["home_shopping"])
+        self.online["ONLINE"] = [m for m in self.online["ONLINE"] if m not in self.home_shopping]
 
     # ---------- 하루 일정 ----------
     def _is_weekend(self, day: date) -> bool:
@@ -68,6 +79,10 @@ class Simulator:
         for name, price, dom in u.subscriptions:
             if day.day == dom:
                 ev.append((self._at(day, 7, rng.uniform(0, 60)), "auto_debit", "SUBSCR", (name, price)))
+        for name, dom in u.utilities:
+            if day.day == dom:
+                bill = (name, self._utility_bill(rng, name, day))
+                ev.append((self._at(day, 7, rng.uniform(0, 60)), "auto_debit", "UTILITY", bill))
         for fx in a.get("monthly_fixed", []):
             if day.day == fx["day"]:
                 ev.append((self._at(day, 16, rng.uniform(0, 120)), "fixed", fx["category"], fx["amount"]))
@@ -78,21 +93,33 @@ class Simulator:
         if commute_today:
             for h, m, sd in (cm["out"], cm["back"]):
                 ev.append((self._at(day, h, m + rng.normal(0, sd)), "transit", "TRANSIT", None))
-        if weekend:
-            for _ in range(rng.poisson(self.d["transit"]["weekend_rides_per_day"])):
-                ev.append((self._at(day, int(rng.integers(10, 21)), rng.uniform(0, 60)), "transit", "TRANSIT", None))
+        default_rides = {"weekday": 0.0, "weekend": self.d["transit"]["weekend_rides_per_day"]}
+        for _ in range(rng.poisson(a.get("rides_per_day", default_rides)[dtype])):
+            ev.append((self._at(day, int(rng.integers(10, 21)), rng.uniform(0, 60)), "transit", "TRANSIT", None))
 
-        # 일반 결제
-        for _ in range(rng.poisson(a["per_day"][dtype])):
-            slot = _weighted(rng, a["slot_weight"][dtype])
-            hour = int(rng.choice(self.d["slots"][slot]))
-            ev.append((self._at(day, hour, rng.uniform(0, 60)), "regular", None, slot))
+        # 일반 결제와 충동·대형 결제 (대형 결제는 배경 사용자만)
+        n_regular = rng.poisson(a["per_day"][dtype] * u.count_level)
+        n_impulse = rng.poisson(self.d["impulse"]["per_month"] / DAYS_PER_MONTH) if u.user_type == "background" else 0
+        for kind, n in (("regular", n_regular), ("impulse", n_impulse)):
+            for _ in range(n):
+                slot = _weighted(rng, a["slot_weight"][dtype])
+                hour = int(rng.choice(self.d["slots"][slot]))
+                ev.append((self._at(day, hour, rng.uniform(0, 60)), kind, None, slot))
+
+        # 심야 결제
+        dawn = self.d["dawn"]
+        rate = dawn["per_day"] * dawn["archetype_mult"].get(u.archetype, 1.0) * u.count_level
+        for _ in range(rng.poisson(rate)):
+            hour = int(_weighted(rng, dawn["hour_weight"]))
+            ev.append((self._at(day, hour, rng.uniform(0, 60)), "regular", None, "DAWN"))
 
         ev.sort(key=lambda e: e[0])
         return [e for e in ev if e[0] < self.as_of]
 
     # ---------- 업종·가맹점·금액 ----------
     def _category(self, rng, u: User, slot: str, weekend: bool) -> str:
+        if slot == "DAWN":
+            return _weighted(rng, self.d["dawn"]["category_weight"])
         if rng.random() < self.d["noise"]:
             return str(rng.choice(self.noise_cats))
         a = self.d["archetypes"][u.archetype]
@@ -108,6 +135,9 @@ class Simulator:
         return u.zones.get(key) or u.zones["home"]
 
     def _merchant(self, rng, u: User, zone: str, cat: str, favs: dict) -> int | None:
+        home_shopping = self.d["archetypes"][u.archetype].get("home_shopping_share")
+        if cat == "ONLINE" and home_shopping and rng.random() < home_shopping:
+            return int(rng.choice(self.home_shopping))
         if cat in self.online_cats:
             return int(rng.choice(self.online[cat]))
         pool = self.by_zone_cat.get((zone, cat))
@@ -124,14 +154,37 @@ class Simulator:
         key = (zone, cat)
         if key not in favs:
             favs[key] = [int(x) for x in rng.choice(pool, size=min(3, len(pool)), replace=False)]
-        if rng.random() < self.d["favorite_prob"]:
+        if rng.random() < u.favorite_prob:
             return int(rng.choice(favs[key]))
         return int(rng.choice(pool))
 
-    def _amount(self, rng, u: User, cat: str) -> int:
-        median, sigma = self.d["amount"][cat]
-        median *= self.d["archetypes"][u.archetype]["amount_mult"]
-        return max(100, int(round(median * math.exp(sigma * rng.normal()) / 100)) * 100)
+    def _amount(self, rng, u: User, cat: str, slot: str) -> int:
+        spec = self.d["amount"][cat]
+        if isinstance(spec, dict) and "by_slot" in spec:
+            spec = spec["by_slot"][slot]
+        elif isinstance(spec, dict):
+            kinds = spec["mix"]
+            weights = np.array([k["weight"] for k in kinds], dtype=float)
+            spec = kinds[rng.choice(len(kinds), p=weights / weights.sum())]["amount"]
+        median, sigma = spec
+        median *= self.d["archetypes"][u.archetype]["amount_mult"] * u.amount_level
+        return _lognormal_won(rng, median, sigma)
+
+    def _impulse_category(self, rng) -> str:
+        return _weighted(rng, {cat: spec["weight"] for cat, spec in self.d["impulse"]["category"].items()})
+
+    def _impulse_amount(self, rng, u: User, cat: str) -> int:
+        rule = self.d["impulse"]
+        median = rule["category"][cat]["median"] * self.d["archetypes"][u.archetype]["amount_mult"] * u.amount_level
+        lo, hi = rule["range"]
+        while not lo <= (won := _lognormal_won(rng, median, rule["sigma"])) <= hi:
+            pass
+        return won
+
+    def _utility_bill(self, rng, name: str, day: date) -> int:
+        item = self.utility_items[name]
+        median, sigma = item["amount"]
+        return _lognormal_won(rng, median * item.get("month_mult", {}).get(day.month, 1.0), sigma)
 
     def _transit(self, rng) -> tuple[str, int]:
         modes = self.d["transit"]["modes"]
@@ -175,11 +228,11 @@ class Simulator:
                         reason, select_mode = "default_card", "default_card"
                 else:
                     slot = extra
-                    cat = self._category(rng, u, slot, weekend)
+                    cat = self._category(rng, u, slot, weekend) if kind == "regular" else self._impulse_category(rng)
                     merchant_id = self._merchant(rng, u, self._zone(rng, u, slot, weekend), cat, favs)
                     if merchant_id is None:
                         continue
-                    amount = self._amount(rng, u, cat)
+                    amount = self._amount(rng, u, cat, slot) if kind == "regular" else self._impulse_amount(rng, u, cat)
                     uc_id, reason = self._choose(rng, u, cat)
 
                 card = u.card(uc_id).card
