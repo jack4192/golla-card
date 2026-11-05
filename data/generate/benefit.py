@@ -115,10 +115,10 @@ def load_cards(cfg: dict) -> list[Card]:
     for i, c in enumerate(cfg["cards"], start=1):
         tiers = {
             g: tuple(sorted((t["min"], t["cap"]) for t in spec["tiers"]))
-            for g, spec in c["cap_groups"].items()
+            for g, spec in c.get("cap_groups", {}).items()
         }
         benefits = []
-        for b in c["benefits"]:
+        for b in c.get("benefits", []):
             bid += 1
             rbt = b.get("rate_by_tier")
             benefits.append(Benefit(

@@ -16,6 +16,7 @@ from generate.payments import Simulator, simulate
 from generate.users import build_users
 
 P = OUT_DIR / "parquet"
+FULL_MONTHS = ["202607", "202608", "202609", "202610"]   # 기간 안의 온전한 달
 
 
 @pytest.fixture(scope="module")
@@ -47,6 +48,14 @@ def test_가맹점_업종과_결제_업종이_같음(t):
                             suffixes=("", "_m"), how="left")
     assert m.merchant_id.notna().all()
     assert (m.category_code == m.category_code_m).all()
+
+
+def test_기간(t):
+    paid = t["payments"].paid_at.dt.tz_convert("Asia/Seoul")
+    assert paid.min().date().isoformat() == "2026-07-01"
+    assert paid.max().date().isoformat() == "2026-11-05"
+    assert (t["users"].created_at.dt.tz_convert("Asia/Seoul").dt.strftime("%Y-%m-%d") == "2026-07-01").all()
+    assert (pd.to_datetime(t["user_cards"].issued_at) <= pd.Timestamp("2026-07-01")).all()
 
 
 def test_금액(t):
@@ -86,6 +95,16 @@ def test_공과금(t):
     # 고지서 카드로 나간다
     bill_cards = t["user_cards"].query("is_bill_card").set_index("user_id").user_card_id
     assert (bills.user_card_id == bills.user_id.map(bill_cards)).all()
+
+
+def test_카드_구성(t):
+    c = t["card_catalog"]
+    assert c.groupby("issuer_code").size().to_dict() == {"HANA": 10, "KB": 10, "SHINHAN": 20, "WOORI": 10}
+    assert c.card_type.value_counts().to_dict() == {"check": 20, "credit": 30}
+    assert c.card_code.is_unique and c.card_name.is_unique
+    assert c.card_name.str.endswith("(가칭)").all()
+    assert c.tags.str.contains("kpass").sum() == 8
+    assert t["payments"].card_id.nunique() == 50                             # 모든 카드가 실제로 쓰인다
 
 
 def test_보유_카드_규칙(t):
@@ -168,18 +187,18 @@ def test_데모_3번은_출근_없는_50대_여성(t):
     assert 0.3 <= online.place_name.isin(home_shopping).mean() <= 0.5
     assert not pay[pay.user_id != 3].place_name.isin(home_shopping).any()   # 홈쇼핑은 3번만
 
-    assert (mine.category_code == "EDU").sum() == 3 + 1                      # 8~11월 학원비
+    assert (mine.category_code == "EDU").sum() == 4                          # 7~10월 학원비 (11월은 납부일 전)
     month = mine.paid_at.dt.tz_convert("Asia/Seoul").dt.strftime("%Y%m")
-    rides = mine[(mine.category_code == "TRANSIT") & month.isin(["202608", "202609", "202610"])]
-    assert len(rides) / 3 >= 15                                              # K-패스 월 15회는 채운다
+    rides = mine[(mine.category_code == "TRANSIT") & month.isin(FULL_MONTHS)]
+    assert len(rides) / len(FULL_MONTHS) >= 15                               # K-패스 월 15회는 채운다
 
 
 def test_사용자별_지출_격차(t):
     """배경 사용자의 월 지출은 평균이 중앙값보다 크고 위아래로 넓게 퍼진다 (제공 데이터는 24만/107만/352만)."""
     pay = t["payments"]
     month = pay.paid_at.dt.tz_convert("Asia/Seoul").dt.strftime("%Y%m")
-    full = pay[month.isin(["202608", "202609", "202610"])]
-    spend = full.groupby("user_id").amount.sum() / 3
+    full = pay[month.isin(FULL_MONTHS)]
+    spend = full.groupby("user_id").amount.sum() / len(FULL_MONTHS)
     bg = spend[spend.index >= 1000]
     assert bg.quantile(0.9) / bg.quantile(0.1) >= 5
     assert 1.3 <= bg.mean() / bg.median() <= 1.8
@@ -200,14 +219,15 @@ def _build(n_background: int):
 
 def test_충동_대형_결제는_배경_사용자만():
     s, d, users, sim = _build(100)
-    days = [s["start_date"] + timedelta(days=i) for i in range(118)]
+    n_days = (pd.Timestamp(s["as_of"]).date() - s["start_date"]).days
+    days = [s["start_date"] + timedelta(days=i) for i in range(n_days)]
 
     def impulses(u) -> int:
         rng = np.random.default_rng([1, u.user_id])
         return sum(e[1] == "impulse" for day in days for e in sim._day_events(rng, u, day))
 
     assert sum(impulses(u) for u in users if u.user_type == "demo") == 0
-    per_month = sum(impulses(u) for u in users if u.user_type == "background") / 100 / (118 / 30.4)
+    per_month = sum(impulses(u) for u in users if u.user_type == "background") / 100 / (n_days / 30.4)
     assert per_month == pytest.approx(d["impulse"]["per_month"], abs=0.08)
 
 
