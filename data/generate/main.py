@@ -5,7 +5,7 @@
 
 실행: uv run python -m generate.main
 결과: data/out/parquet/*.parquet (전체), data/out/csv/*.csv (마스터 + 데모 사용자 5명)
-지금은 소비 데이터만 만든다. 혜택·실적은 실제 카드 상품을 매칭할 때 계산한다.
+카드 혜택과 실적 조건은 임의로 만든 가정값이다. 혜택은 습관대로 쓴 결제 위에서 계산한다.
 """
 
 import time
@@ -13,6 +13,7 @@ import time
 import numpy as np
 
 from .benefit import load_cards
+from .card_status import build_card_status
 from .common import CACHE_DIR, OUT_DIR, load_config
 from .masters import build_masters
 from .merchants import build_merchants
@@ -44,6 +45,7 @@ def main() -> None:
     pay = simulate(sim, users)
     pay.insert(0, "payment_id", range(1, len(pay) + 1))
     tables["payments"] = pay
+    tables["card_month_status"] = build_card_status(cards, tables["user_cards"], pay)
 
     write(tables)
     print(f"결제 {len(pay):,}건 · 사용자 {len(users)}명 · {time.time() - t0:.1f}초")

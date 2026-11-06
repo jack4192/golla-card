@@ -12,6 +12,18 @@
 
 import math
 from dataclasses import dataclass, field
+from datetime import datetime
+
+DAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+DAYS = {**{name: i for i, name in enumerate(DAY_NAMES)}, "weekday": (0, 1, 2, 3, 4), "weekend": (5, 6)}
+
+
+def _days(value) -> tuple[int, ...] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return DAYS[value]
+    return tuple(DAYS[d] for d in value)
 
 
 @dataclass(frozen=True)
@@ -25,6 +37,18 @@ class Benefit:
     min_amount: int
     monthly_count: int | None
     cap_group: str
+    days: tuple[int, ...] | None = None             # 적용 요일 (월=0 ~ 일=6), None 은 매일
+    hours: tuple[int, int] | None = None            # 적용 시각 [시작, 끝)
+
+    def applies_at(self, when: datetime | None) -> bool:
+        """시간 조건이 있는 혜택은 결제 시각을 알아야 적용한다."""
+        if self.days is None and self.hours is None:
+            return True
+        if when is None:
+            return False
+        if self.days is not None and when.weekday() not in self.days:
+            return False
+        return self.hours is None or self.hours[0] <= when.hour < self.hours[1]
 
 
 @dataclass(frozen=True)
@@ -76,11 +100,12 @@ def rate_of(b: Benefit, prev_perf: int) -> float:
     return b.rate or 0.0
 
 
-def evaluate(card: Card, category: str, amount: int, st: CardMonth) -> tuple[int, Benefit | None]:
+def evaluate(card: Card, category: str, amount: int, st: CardMonth,
+             when: datetime | None = None) -> tuple[int, Benefit | None]:
     """이 카드로 지금 결제하면 받을 혜택(원)과 적용될 혜택. 상태는 바꾸지 않는다."""
     best_amt, best_b = 0, None
     for b in card.benefits_for(category):
-        if amount < b.min_amount:
+        if amount < b.min_amount or not b.applies_at(when):
             continue
         if b.monthly_count is not None and st.count_used.get(b.benefit_id, 0) >= b.monthly_count:
             continue
@@ -131,6 +156,8 @@ def load_cards(cfg: dict) -> list[Card]:
                 min_amount=b.get("min_amount", 0),
                 monthly_count=b.get("monthly_count"),
                 cap_group=b["cap_group"],
+                days=_days(b.get("when", {}).get("days")),
+                hours=tuple(b["when"]["hours"]) if "hours" in b.get("when", {}) else None,
             ))
         cards.append(Card(
             card_id=i, code=c["code"], issuer=c["issuer"], name=c["name"],

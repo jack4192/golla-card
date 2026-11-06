@@ -6,8 +6,8 @@ archetype_share: { OFFICE: 0.40, STUDENT: 0.20, FAMILY: 0.20, NIGHTOWL: 0.10, RE
 # 공과금과 충동·대형 결제를 포함한 월 지출이 제공 데이터(CreDB 하위 10% 24만 / 중앙 107만 / 상위 10% 352만)에 가깝도록 맞춘 값이다.
 # 교통·자동이체에는 적용하지 않는다. correlation은 많이 사는 사람이 비싼 것도 사는 경향의 세기다.
 spend_level:
-  count:  { median: 0.50, sigma: 0.75, range: [0.25, 3.0] }
-  amount: { median: 0.72, sigma: 0.70, range: [0.40, 3.0] }
+  count:  { median: 0.46, sigma: 0.75, range: [0.25, 3.0] }
+  amount: { median: 0.65, sigma: 0.75, range: [0.40, 3.0] }
   correlation: 0.3
 
 # 단골 3곳 중에서 고를 확률. 사용자마다 이 범위에서 고르게 나눠 정한다.

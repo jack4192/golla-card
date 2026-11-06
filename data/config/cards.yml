@@ -1,5 +1,5 @@
-# 카드 풀 50장 (신한 20, KB국민·하나·우리 각 10 / 신용 30, 체크 20)
-# 앞쪽 12장은 데모 사용자가 쓰는 카드로 혜택 구조까지 있고, 뒤쪽 38장은 이름·종류·태그·연회비만 있다.
+# 카드 풀 50장 (신한 25, KB국민·NH농협·BC·하나·롯데 각 5 / 신용 30, 체크 20)
+# 전부 가칭이고 혜택은 임의로 만든 값이다.
 # 전부 가칭이다. 실제 상품이 아니라 혜택 구조만 흉내 낸 임시 카드이고,
 # P1(상품설명서 추출)이 끝나면 이 파일을 실제 혜택으로 바꾼 뒤 다시 생성한다.
 #
@@ -10,7 +10,7 @@
 #   benefits    rate(비율) 또는 amount(정액) 중 하나. rate_by_tier로 구간별 비율도 가능.
 #               min_amount: 건당 최소 결제액, monthly_count: 월 적용 횟수 제한
 #   tags        credit / check / kpass / travel
-#   cap_groups·benefits는 없으면 혜택 없는 카드로 읽는다.
+#   when        시간 조건. days: weekday / weekend / [mon, ...], hours: [시작, 끝) (없으면 항상 적용)
 
 cards:
   # ---------------- 신한 6 ----------------
@@ -141,74 +141,518 @@ cards:
       - { category: CVS,      type: discount, rate: 0.05, cap_group: HN_TRAVEL_CK_ALL }
       - { category: FASTFOOD, type: discount, rate: 0.05, cap_group: HN_TRAVEL_CK_ALL }
 
-  # ---------------- 우리 2 ----------------
-  - code: WR_FLAT_CR
-    issuer: WOORI
-    name: 우리 통합할인 신용(가칭)
+  # ---------------- 통합할인·생활 (데모 사용자 보유) ----------------
+  - code: NH_FLAT_CR
+    issuer: NH
+    name: NH농협 통합할인 신용(가칭)
     card_type: credit
     tags: [credit]
     annual_fee: 10000
     cap_groups:
-      WR_FLAT_CR_ALL: { tiers: [ { min: 300000, cap: 30000 } ] }
+      NH_FLAT_CR_ALL: { tiers: [ { min: 300000, cap: 30000 } ] }
     benefits:
       - category: "*"
         type: discount
         rate_by_tier: [ { min: 300000, rate: 0.007 }, { min: 500000, rate: 0.01 } ]
-        cap_group: WR_FLAT_CR_ALL
+        cap_group: NH_FLAT_CR_ALL
 
-  - code: WR_LIFE_CK
-    issuer: WOORI
-    name: 우리 생활 체크(가칭)
+  - code: BC_FLAT_CR
+    issuer: BC
+    name: BC 통합할인 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 10000
+    cap_groups:
+      BC_FLAT_CR_ALL: { tiers: [ { min: 300000, cap: 30000 } ] }
+    benefits:
+      - category: "*"
+        type: discount
+        rate_by_tier: [ { min: 300000, rate: 0.007 }, { min: 500000, rate: 0.01 } ]
+        cap_group: BC_FLAT_CR_ALL
+
+  - code: LT_LIFE_CK
+    issuer: LOTTE
+    name: 롯데 생활 체크(가칭)
     card_type: check
     tags: [check]
     annual_fee: 0
     cap_groups:
-      WR_LIFE_CK_ALL: { tiers: [ { min: 200000, cap: 7000 } ] }
+      LT_LIFE_CK_ALL: { tiers: [ { min: 200000, cap: 7000 } ] }
     benefits:
-      - { category: CVS,     type: discount, rate: 0.07, cap_group: WR_LIFE_CK_ALL }
-      - { category: SUPER,   type: discount, rate: 0.07, cap_group: WR_LIFE_CK_ALL }
-      - { category: MEDICAL, type: discount, rate: 0.05, cap_group: WR_LIFE_CK_ALL }
+      - { category: CVS,     type: discount, rate: 0.07, cap_group: LT_LIFE_CK_ALL }
+      - { category: SUPER,   type: discount, rate: 0.07, cap_group: LT_LIFE_CK_ALL }
+      - { category: MEDICAL, type: discount, rate: 0.05, cap_group: LT_LIFE_CK_ALL }
 
-  # ---------------- 기본 정보만 있는 카드 38장 (혜택은 실제 카드 매칭 때 넣는다) ----------------
-  # 신한 (14장)
-  - { code: SH_CAFE_CR, issuer: SHINHAN, name: 신한 카페 신용(가칭), card_type: credit, tags: [credit], annual_fee: 12000 }
-  - { code: SH_MART_CR, issuer: SHINHAN, name: 신한 마트·장보기 신용(가칭), card_type: credit, tags: [credit], annual_fee: 15000 }
-  - { code: SH_FUEL_CR, issuer: SHINHAN, name: 신한 주유 신용(가칭), card_type: credit, tags: [credit], annual_fee: 15000 }
-  - { code: SH_ONLINE_CR, issuer: SHINHAN, name: 신한 온라인쇼핑 신용(가칭), card_type: credit, tags: [credit], annual_fee: 15000 }
-  - { code: SH_TRIP_CR, issuer: SHINHAN, name: 신한 여행 신용(가칭), card_type: credit, tags: [credit, travel], annual_fee: 30000 }
-  - { code: SH_CULTURE_CR, issuer: SHINHAN, name: 신한 문화·영화 신용(가칭), card_type: credit, tags: [credit], annual_fee: 12000 }
-  - { code: SH_MEDICAL_CR, issuer: SHINHAN, name: 신한 병원·약국 신용(가칭), card_type: credit, tags: [credit], annual_fee: 12000 }
-  - { code: SH_PREMIUM_CR, issuer: SHINHAN, name: 신한 프리미엄 신용(가칭), card_type: credit, tags: [credit], annual_fee: 30000 }
-  - { code: SH_KPASS_CK, issuer: SHINHAN, name: 신한 K-패스 체크(가칭), card_type: check, tags: [check, kpass], annual_fee: 0 }
-  - { code: SH_CAFE_CK, issuer: SHINHAN, name: 신한 카페 체크(가칭), card_type: check, tags: [check], annual_fee: 0 }
-  - { code: SH_CVS_CK, issuer: SHINHAN, name: 신한 편의점 체크(가칭), card_type: check, tags: [check], annual_fee: 0 }
-  - { code: SH_STUDENT_CK, issuer: SHINHAN, name: 신한 대학생 체크(가칭), card_type: check, tags: [check], annual_fee: 0 }
-  - { code: SH_DELI_CK, issuer: SHINHAN, name: 신한 배달 체크(가칭), card_type: check, tags: [check], annual_fee: 0 }
-  - { code: SH_ONLINE_CK, issuer: SHINHAN, name: 신한 온라인쇼핑 체크(가칭), card_type: check, tags: [check], annual_fee: 0 }
-  # KB국민 (8장)
-  - { code: KB_LIFE_CR, issuer: KB, name: KB국민 생활 신용(가칭), card_type: credit, tags: [credit], annual_fee: 15000 }
-  - { code: KB_DINE_CR, issuer: KB, name: KB국민 외식 신용(가칭), card_type: credit, tags: [credit], annual_fee: 15000 }
-  - { code: KB_SHOP_CR, issuer: KB, name: KB국민 쇼핑 신용(가칭), card_type: credit, tags: [credit], annual_fee: 12000 }
-  - { code: KB_FUEL_CR, issuer: KB, name: KB국민 주유 신용(가칭), card_type: credit, tags: [credit], annual_fee: 15000 }
-  - { code: KB_FLAT_CR, issuer: KB, name: KB국민 통합할인 신용(가칭), card_type: credit, tags: [credit], annual_fee: 10000 }
-  - { code: KB_KPASS_CK, issuer: KB, name: KB국민 K-패스 체크(가칭), card_type: check, tags: [check, kpass], annual_fee: 0 }
-  - { code: KB_TRAVEL_CK, issuer: KB, name: KB국민 트래블 체크(가칭), card_type: check, tags: [check, travel], annual_fee: 0 }
-  - { code: KB_BASIC_CK, issuer: KB, name: KB국민 기본 적립 체크(가칭), card_type: check, tags: [check], annual_fee: 0 }
-  # 하나 (8장)
-  - { code: HN_KPASS_CR, issuer: HANA, name: 하나 K-패스 신용(가칭), card_type: credit, tags: [credit, kpass], annual_fee: 0 }
-  - { code: HN_LIFE_CR, issuer: HANA, name: 하나 생활 신용(가칭), card_type: credit, tags: [credit], annual_fee: 15000 }
-  - { code: HN_MART_CR, issuer: HANA, name: 하나 마트 신용(가칭), card_type: credit, tags: [credit], annual_fee: 12000 }
-  - { code: HN_TRIP_CR, issuer: HANA, name: 하나 여행 신용(가칭), card_type: credit, tags: [credit, travel], annual_fee: 30000 }
-  - { code: HN_FLAT_CR, issuer: HANA, name: 하나 통합할인 신용(가칭), card_type: credit, tags: [credit], annual_fee: 10000 }
-  - { code: HN_KPASS_CK, issuer: HANA, name: 하나 K-패스 체크(가칭), card_type: check, tags: [check, kpass], annual_fee: 0 }
-  - { code: HN_CAFE_CK, issuer: HANA, name: 하나 카페 체크(가칭), card_type: check, tags: [check], annual_fee: 0 }
-  - { code: HN_BASIC_CK, issuer: HANA, name: 하나 기본 적립 체크(가칭), card_type: check, tags: [check], annual_fee: 0 }
-  # 우리 (8장)
-  - { code: WR_KPASS_CR, issuer: WOORI, name: 우리 K-패스 신용(가칭), card_type: credit, tags: [credit, kpass], annual_fee: 0 }
-  - { code: WR_DINE_CR, issuer: WOORI, name: 우리 외식 신용(가칭), card_type: credit, tags: [credit], annual_fee: 15000 }
-  - { code: WR_SHOP_CR, issuer: WOORI, name: 우리 쇼핑 신용(가칭), card_type: credit, tags: [credit], annual_fee: 12000 }
-  - { code: WR_FUEL_CR, issuer: WOORI, name: 우리 주유 신용(가칭), card_type: credit, tags: [credit], annual_fee: 15000 }
-  - { code: WR_CULTURE_CR, issuer: WOORI, name: 우리 문화 신용(가칭), card_type: credit, tags: [credit], annual_fee: 12000 }
-  - { code: WR_KPASS_CK, issuer: WOORI, name: 우리 K-패스 체크(가칭), card_type: check, tags: [check, kpass], annual_fee: 0 }
-  - { code: WR_TRAVEL_CK, issuer: WOORI, name: 우리 트래블 체크(가칭), card_type: check, tags: [check, travel], annual_fee: 0 }
-  - { code: WR_CVS_CK, issuer: WOORI, name: 우리 편의점 체크(가칭), card_type: check, tags: [check], annual_fee: 0 }
+  # ---------------- 혜택을 임의로 작성한 카드 37장 ----------------
+  # 신한
+  - code: SH_CAFE_CR
+    issuer: SHINHAN
+    name: 신한 카페 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 12000
+    cap_groups:
+      SH_CAFE_CR_ALL: { tiers: [ { min: 300000, cap: 10000 }, { min: 500000, cap: 20000 } ] }
+    benefits:
+      - { category: CAFE, type: discount, rate: 0.15, cap_group: SH_CAFE_CR_ALL }
+      - { category: BAKERY, type: discount, rate: 0.10, cap_group: SH_CAFE_CR_ALL }
+      - { category: CVS, type: discount, rate: 0.05, cap_group: SH_CAFE_CR_ALL }
+
+  - code: SH_MART_CR
+    issuer: SHINHAN
+    name: 신한 마트·장보기 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 15000
+    cap_groups:
+      SH_MART_CR_ALL: { tiers: [ { min: 300000, cap: 15000 }, { min: 500000, cap: 25000 } ] }
+    benefits:
+      - { category: MART, type: discount, rate: 0.07, min_amount: 20000, cap_group: SH_MART_CR_ALL }
+      - { category: SUPER, type: discount, rate: 0.07, min_amount: 10000, cap_group: SH_MART_CR_ALL }
+      - { category: DELIVERY, type: discount, rate: 0.05, cap_group: SH_MART_CR_ALL }
+
+  - code: SH_FUEL_CR
+    issuer: SHINHAN
+    name: 신한 주유 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 15000
+    cap_groups:
+      SH_FUEL_CR_ALL: { tiers: [ { min: 300000, cap: 15000 }, { min: 500000, cap: 30000 } ] }
+    benefits:
+      - { category: FUEL, type: discount, rate: 0.05, min_amount: 30000, cap_group: SH_FUEL_CR_ALL }
+      - { category: FUEL, type: discount, rate: 0.08, min_amount: 30000, when: { days: weekend }, cap_group: SH_FUEL_CR_ALL }
+      - { category: TAXI, type: discount, rate: 0.05, min_amount: 10000, cap_group: SH_FUEL_CR_ALL }
+
+  - code: SH_ONLINE_CR
+    issuer: SHINHAN
+    name: 신한 온라인쇼핑 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 15000
+    cap_groups:
+      SH_ONLINE_CR_ALL: { tiers: [ { min: 300000, cap: 15000 }, { min: 500000, cap: 30000 } ] }
+    benefits:
+      - { category: ONLINE, type: discount, rate: 0.07, min_amount: 20000, cap_group: SH_ONLINE_CR_ALL }
+      - { category: DELIVERY, type: discount, rate: 0.05, cap_group: SH_ONLINE_CR_ALL }
+      - { category: SUBSCR, type: discount, rate: 0.10, cap_group: SH_ONLINE_CR_ALL }
+
+  - code: SH_TRIP_CR
+    issuer: SHINHAN
+    name: 신한 여행 신용(가칭)
+    card_type: credit
+    tags: [credit, travel]
+    annual_fee: 30000
+    cap_groups:
+      SH_TRIP_CR_ALL: { tiers: [ { min: 300000, cap: 10000 }, { min: 500000, cap: 15000 } ] }
+    benefits:
+      - { category: TAXI, type: discount, rate: 0.05, min_amount: 10000, cap_group: SH_TRIP_CR_ALL }
+      - { category: CAFE, type: discount, rate: 0.05, cap_group: SH_TRIP_CR_ALL }
+      - { category: REST, type: discount, rate: 0.03, min_amount: 20000, cap_group: SH_TRIP_CR_ALL }
+
+  - code: SH_CULTURE_CR
+    issuer: SHINHAN
+    name: 신한 문화·영화 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 12000
+    cap_groups:
+      SH_CULTURE_CR_ALL: { tiers: [ { min: 300000, cap: 10000 }, { min: 500000, cap: 15000 } ] }
+    benefits:
+      - { category: MOVIE, type: discount, amount: 5000, min_amount: 10000, monthly_count: 2, cap_group: SH_CULTURE_CR_ALL }
+      - { category: BOOK, type: discount, rate: 0.10, min_amount: 10000, cap_group: SH_CULTURE_CR_ALL }
+      - { category: CAFE, type: discount, rate: 0.05, cap_group: SH_CULTURE_CR_ALL }
+
+  - code: SH_MEDICAL_CR
+    issuer: SHINHAN
+    name: 신한 병원·약국 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 12000
+    cap_groups:
+      SH_MEDICAL_CR_ALL: { tiers: [ { min: 300000, cap: 10000 }, { min: 500000, cap: 20000 } ] }
+    benefits:
+      - { category: MEDICAL, type: discount, rate: 0.10, min_amount: 10000, cap_group: SH_MEDICAL_CR_ALL }
+      - { category: BEAUTY, type: discount, rate: 0.05, min_amount: 10000, cap_group: SH_MEDICAL_CR_ALL }
+      - { category: SUPER, type: discount, rate: 0.05, min_amount: 10000, cap_group: SH_MEDICAL_CR_ALL }
+
+  - code: SH_PREMIUM_CR
+    issuer: SHINHAN
+    name: 신한 프리미엄 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 30000
+    cap_groups:
+      SH_PREMIUM_CR_ALL: { tiers: [ { min: 500000, cap: 30000 }, { min: 1000000, cap: 50000 } ] }
+    benefits:
+      - { category: "*", type: discount, rate: 0.01, cap_group: SH_PREMIUM_CR_ALL }
+      - { category: REST, type: discount, rate: 0.05, min_amount: 30000, cap_group: SH_PREMIUM_CR_ALL }
+      - { category: APPAREL, type: discount, rate: 0.07, min_amount: 50000, cap_group: SH_PREMIUM_CR_ALL }
+
+  - code: SH_KPASS_CK
+    issuer: SHINHAN
+    name: 신한 K-패스 체크(가칭)
+    card_type: check
+    tags: [check, kpass]
+    annual_fee: 0
+    cap_groups:
+      SH_KPASS_CK_ALL: { tiers: [ { min: 200000, cap: 5000 } ] }
+    benefits:
+      - { category: TRANSIT, type: discount, rate: 0.10, cap_group: SH_KPASS_CK_ALL }
+      - { category: CVS, type: discount, rate: 0.05, cap_group: SH_KPASS_CK_ALL }
+      - { category: CAFE, type: discount, rate: 0.03, cap_group: SH_KPASS_CK_ALL }
+
+  - code: SH_CAFE_CK
+    issuer: SHINHAN
+    name: 신한 카페 체크(가칭)
+    card_type: check
+    tags: [check]
+    annual_fee: 0
+    cap_groups:
+      SH_CAFE_CK_ALL: { tiers: [ { min: 200000, cap: 6000 } ] }
+    benefits:
+      - { category: CAFE, type: discount, rate: 0.10, cap_group: SH_CAFE_CK_ALL }
+      - { category: BAKERY, type: discount, rate: 0.05, cap_group: SH_CAFE_CK_ALL }
+
+  - code: SH_CVS_CK
+    issuer: SHINHAN
+    name: 신한 편의점 체크(가칭)
+    card_type: check
+    tags: [check]
+    annual_fee: 0
+    cap_groups:
+      SH_CVS_CK_ALL: { tiers: [ { min: 0, cap: 3000 }, { min: 200000, cap: 6000 } ] }
+    benefits:
+      - { category: CVS, type: discount, rate: 0.07, cap_group: SH_CVS_CK_ALL }
+      - { category: FASTFOOD, type: discount, rate: 0.05, cap_group: SH_CVS_CK_ALL }
+
+  - code: SH_STUDENT_CK
+    issuer: SHINHAN
+    name: 신한 대학생 체크(가칭)
+    card_type: check
+    tags: [check]
+    annual_fee: 0
+    cap_groups:
+      SH_STUDENT_CK_ALL: { tiers: [ { min: 0, cap: 3000 }, { min: 200000, cap: 5000 } ] }
+    benefits:
+      - { category: FASTFOOD, type: discount, rate: 0.05, cap_group: SH_STUDENT_CK_ALL }
+      - { category: FASTFOOD, type: discount, rate: 0.10, when: { days: weekday, hours: [16, 20] }, cap_group: SH_STUDENT_CK_ALL }
+      - { category: CVS, type: discount, rate: 0.05, cap_group: SH_STUDENT_CK_ALL }
+      - { category: BOOK, type: discount, rate: 0.10, min_amount: 10000, cap_group: SH_STUDENT_CK_ALL }
+
+  - code: SH_DELI_CK
+    issuer: SHINHAN
+    name: 신한 배달 체크(가칭)
+    card_type: check
+    tags: [check]
+    annual_fee: 0
+    cap_groups:
+      SH_DELI_CK_ALL: { tiers: [ { min: 200000, cap: 8000 } ] }
+    benefits:
+      - { category: DELIVERY, type: discount, rate: 0.05, min_amount: 15000, cap_group: SH_DELI_CK_ALL }
+      - { category: DELIVERY, type: discount, amount: 2000, min_amount: 20000, monthly_count: 4, when: { days: weekend }, cap_group: SH_DELI_CK_ALL }
+
+  - code: SH_ONLINE_CK
+    issuer: SHINHAN
+    name: 신한 온라인쇼핑 체크(가칭)
+    card_type: check
+    tags: [check]
+    annual_fee: 0
+    cap_groups:
+      SH_ONLINE_CK_ALL: { tiers: [ { min: 200000, cap: 7000 } ] }
+    benefits:
+      - { category: ONLINE, type: discount, rate: 0.05, min_amount: 20000, cap_group: SH_ONLINE_CK_ALL }
+      - { category: SUBSCR, type: discount, rate: 0.10, cap_group: SH_ONLINE_CK_ALL }
+
+  - code: SH_TELECOM_CR
+    issuer: SHINHAN
+    name: 신한 통신·구독 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 10000
+    cap_groups:
+      SH_TELECOM_CR_ALL: { tiers: [ { min: 300000, cap: 10000 }, { min: 500000, cap: 15000 } ] }
+    benefits:
+      - { category: TELECOM, type: discount, rate: 0.10, cap_group: SH_TELECOM_CR_ALL }
+      - { category: SUBSCR, type: discount, rate: 0.15, cap_group: SH_TELECOM_CR_ALL }
+      - { category: UTILITY, type: discount, rate: 0.05, cap_group: SH_TELECOM_CR_ALL }
+
+  - code: SH_FLAT_CR
+    issuer: SHINHAN
+    name: 신한 통합할인 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 12000
+    cap_groups:
+      SH_FLAT_CR_ALL: { tiers: [ { min: 300000, cap: 30000 } ] }
+    benefits:
+      - { category: "*", type: discount, rate_by_tier: [ { min: 300000, rate: 0.007 }, { min: 500000, rate: 0.01 }, { min: 1000000, rate: 0.015 } ], cap_group: SH_FLAT_CR_ALL }
+
+  - code: SH_EDU_CR
+    issuer: SHINHAN
+    name: 신한 교육·생활비 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 15000
+    cap_groups:
+      SH_EDU_CR_ALL: { tiers: [ { min: 300000, cap: 15000 }, { min: 500000, cap: 30000 } ] }
+    benefits:
+      - { category: EDU, type: discount, rate: 0.05, min_amount: 100000, cap_group: SH_EDU_CR_ALL }
+      - { category: UTILITY, type: discount, rate: 0.05, cap_group: SH_EDU_CR_ALL }
+      - { category: BOOK, type: discount, rate: 0.05, min_amount: 10000, cap_group: SH_EDU_CR_ALL }
+
+  - code: SH_MART_CK
+    issuer: SHINHAN
+    name: 신한 장보기 체크(가칭)
+    card_type: check
+    tags: [check]
+    annual_fee: 0
+    cap_groups:
+      SH_MART_CK_ALL: { tiers: [ { min: 200000, cap: 8000 } ] }
+    benefits:
+      - { category: MART, type: discount, rate: 0.05, min_amount: 20000, cap_group: SH_MART_CK_ALL }
+      - { category: SUPER, type: discount, rate: 0.05, min_amount: 10000, cap_group: SH_MART_CK_ALL }
+
+  - code: SH_BEAUTY_CK
+    issuer: SHINHAN
+    name: 신한 뷰티 체크(가칭)
+    card_type: check
+    tags: [check]
+    annual_fee: 0
+    cap_groups:
+      SH_BEAUTY_CK_ALL: { tiers: [ { min: 200000, cap: 6000 } ] }
+    benefits:
+      - { category: BEAUTY, type: discount, rate: 0.10, min_amount: 10000, cap_group: SH_BEAUTY_CK_ALL }
+      - { category: APPAREL, type: discount, rate: 0.03, min_amount: 30000, cap_group: SH_BEAUTY_CK_ALL }
+
+  # KB국민
+  - code: KB_LIFE_CR
+    issuer: KB
+    name: KB국민 생활 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 15000
+    cap_groups:
+      KB_LIFE_CR_ALL: { tiers: [ { min: 300000, cap: 15000 }, { min: 500000, cap: 25000 } ] }
+    benefits:
+      - { category: SUPER, type: discount, rate: 0.07, min_amount: 10000, cap_group: KB_LIFE_CR_ALL }
+      - { category: CVS, type: discount, rate: 0.05, cap_group: KB_LIFE_CR_ALL }
+      - { category: MEDICAL, type: discount, rate: 0.05, min_amount: 10000, cap_group: KB_LIFE_CR_ALL }
+
+  - code: KB_DINE_CR
+    issuer: KB
+    name: KB국민 외식 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 15000
+    cap_groups:
+      KB_DINE_CR_ALL: { tiers: [ { min: 300000, cap: 15000 }, { min: 500000, cap: 25000 } ] }
+    benefits:
+      - { category: REST, type: discount, rate: 0.07, min_amount: 10000, cap_group: KB_DINE_CR_ALL }
+      - { category: FASTFOOD, type: discount, rate: 0.07, cap_group: KB_DINE_CR_ALL }
+      - { category: CAFE, type: discount, rate: 0.05, cap_group: KB_DINE_CR_ALL }
+
+  - code: KB_TRAVEL_CK
+    issuer: KB
+    name: KB국민 트래블 체크(가칭)
+    card_type: check
+    tags: [check, travel]
+    annual_fee: 0
+    cap_groups:
+      KB_TRAVEL_CK_ALL: { tiers: [ { min: 0, cap: 3000 } ] }
+    benefits:
+      - { category: CAFE, type: discount, rate: 0.03, cap_group: KB_TRAVEL_CK_ALL }
+      - { category: CVS, type: discount, rate: 0.03, cap_group: KB_TRAVEL_CK_ALL }
+
+  # 하나
+  - code: HN_KPASS_CR
+    issuer: HANA
+    name: 하나 K-패스 신용(가칭)
+    card_type: credit
+    tags: [credit, kpass]
+    annual_fee: 0
+    cap_groups:
+      HN_KPASS_CR_ALL: { tiers: [ { min: 300000, cap: 5000 } ] }
+    benefits:
+      - { category: TRANSIT, type: discount, rate: 0.10, cap_group: HN_KPASS_CR_ALL }
+      - { category: TAXI, type: discount, rate: 0.05, min_amount: 10000, cap_group: HN_KPASS_CR_ALL }
+      - { category: CAFE, type: discount, rate: 0.05, cap_group: HN_KPASS_CR_ALL }
+
+  - code: HN_MART_CR
+    issuer: HANA
+    name: 하나 마트 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 12000
+    cap_groups:
+      HN_MART_CR_ALL: { tiers: [ { min: 300000, cap: 15000 }, { min: 500000, cap: 25000 } ] }
+    benefits:
+      - { category: MART, type: discount, rate: 0.10, min_amount: 30000, cap_group: HN_MART_CR_ALL }
+      - { category: SUPER, type: discount, rate: 0.05, min_amount: 10000, cap_group: HN_MART_CR_ALL }
+      - { category: BAKERY, type: discount, rate: 0.05, cap_group: HN_MART_CR_ALL }
+
+  - code: HN_KPASS_CK
+    issuer: HANA
+    name: 하나 K-패스 체크(가칭)
+    card_type: check
+    tags: [check, kpass]
+    annual_fee: 0
+    cap_groups:
+      HN_KPASS_CK_ALL: { tiers: [ { min: 200000, cap: 4000 } ] }
+    benefits:
+      - { category: TRANSIT, type: discount, rate: 0.07, cap_group: HN_KPASS_CK_ALL }
+      - { category: CVS, type: discount, rate: 0.03, cap_group: HN_KPASS_CK_ALL }
+
+  # NH농협
+  - code: NH_MART_CR
+    issuer: NH
+    name: NH농협 마트·장보기 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 12000
+    cap_groups:
+      NH_MART_CR_ALL: { tiers: [ { min: 300000, cap: 15000 }, { min: 500000, cap: 20000 } ] }
+    benefits:
+      - { category: MART, type: discount, rate: 0.07, min_amount: 20000, cap_group: NH_MART_CR_ALL }
+      - { category: SUPER, type: discount, rate: 0.10, min_amount: 10000, cap_group: NH_MART_CR_ALL }
+
+  - code: NH_FUEL_CR
+    issuer: NH
+    name: NH농협 주유 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 15000
+    cap_groups:
+      NH_FUEL_CR_ALL: { tiers: [ { min: 300000, cap: 15000 }, { min: 500000, cap: 30000 } ] }
+    benefits:
+      - { category: FUEL, type: discount, rate: 0.07, min_amount: 30000, cap_group: NH_FUEL_CR_ALL }
+      - { category: MEDICAL, type: discount, rate: 0.05, min_amount: 10000, cap_group: NH_FUEL_CR_ALL }
+
+  - code: NH_KPASS_CK
+    issuer: NH
+    name: NH농협 K-패스 체크(가칭)
+    card_type: check
+    tags: [check, kpass]
+    annual_fee: 0
+    cap_groups:
+      NH_KPASS_CK_ALL: { tiers: [ { min: 200000, cap: 5000 } ] }
+    benefits:
+      - { category: TRANSIT, type: discount, rate: 0.07, cap_group: NH_KPASS_CK_ALL }
+      - { category: TRANSIT, type: discount, amount: 1000, monthly_count: 4, when: { days: [mon] }, cap_group: NH_KPASS_CK_ALL }
+      - { category: CVS, type: discount, rate: 0.05, cap_group: NH_KPASS_CK_ALL }
+
+  - code: NH_LIFE_CK
+    issuer: NH
+    name: NH농협 생활 체크(가칭)
+    card_type: check
+    tags: [check]
+    annual_fee: 0
+    cap_groups:
+      NH_LIFE_CK_ALL: { tiers: [ { min: 200000, cap: 6000 } ] }
+    benefits:
+      - { category: SUPER, type: discount, rate: 0.05, min_amount: 10000, cap_group: NH_LIFE_CK_ALL }
+      - { category: MEDICAL, type: discount, rate: 0.05, min_amount: 10000, cap_group: NH_LIFE_CK_ALL }
+      - { category: BAKERY, type: discount, rate: 0.05, cap_group: NH_LIFE_CK_ALL }
+
+  # BC
+  - code: BC_ONLINE_CR
+    issuer: BC
+    name: BC 온라인쇼핑 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 12000
+    cap_groups:
+      BC_ONLINE_CR_ALL: { tiers: [ { min: 300000, cap: 15000 }, { min: 500000, cap: 25000 } ] }
+    benefits:
+      - { category: ONLINE, type: discount, rate: 0.07, min_amount: 20000, cap_group: BC_ONLINE_CR_ALL }
+      - { category: SUBSCR, type: discount, rate: 0.10, cap_group: BC_ONLINE_CR_ALL }
+      - { category: DELIVERY, type: discount, rate: 0.05, cap_group: BC_ONLINE_CR_ALL }
+
+  - code: BC_DINE_CR
+    issuer: BC
+    name: BC 외식 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 15000
+    cap_groups:
+      BC_DINE_CR_ALL: { tiers: [ { min: 300000, cap: 15000 }, { min: 500000, cap: 25000 } ] }
+    benefits:
+      - { category: REST, type: discount, rate: 0.05, cap_group: BC_DINE_CR_ALL }
+      - { category: REST, type: discount, rate: 0.10, min_amount: 10000, when: { days: weekday, hours: [11, 14] }, cap_group: BC_DINE_CR_ALL }
+      - { category: BAKERY, type: discount, rate: 0.05, cap_group: BC_DINE_CR_ALL }
+
+  - code: BC_KPASS_CK
+    issuer: BC
+    name: BC K-패스 체크(가칭)
+    card_type: check
+    tags: [check, kpass]
+    annual_fee: 0
+    cap_groups:
+      BC_KPASS_CK_ALL: { tiers: [ { min: 200000, cap: 5000 } ] }
+    benefits:
+      - { category: TRANSIT, type: discount, rate: 0.07, cap_group: BC_KPASS_CK_ALL }
+      - { category: CVS, type: discount, rate: 0.05, cap_group: BC_KPASS_CK_ALL }
+
+  - code: BC_CVS_CK
+    issuer: BC
+    name: BC 편의점 체크(가칭)
+    card_type: check
+    tags: [check]
+    annual_fee: 0
+    cap_groups:
+      BC_CVS_CK_ALL: { tiers: [ { min: 0, cap: 3000 }, { min: 200000, cap: 5000 } ] }
+    benefits:
+      - { category: CVS, type: discount, rate: 0.07, cap_group: BC_CVS_CK_ALL }
+      - { category: BAKERY, type: discount, rate: 0.05, cap_group: BC_CVS_CK_ALL }
+
+  # 롯데
+  - code: LT_SHOP_CR
+    issuer: LOTTE
+    name: 롯데 쇼핑 신용(가칭)
+    card_type: credit
+    tags: [credit]
+    annual_fee: 15000
+    cap_groups:
+      LT_SHOP_CR_ALL: { tiers: [ { min: 300000, cap: 15000 }, { min: 500000, cap: 30000 } ] }
+    benefits:
+      - { category: APPAREL, type: discount, rate: 0.07, min_amount: 50000, cap_group: LT_SHOP_CR_ALL }
+      - { category: BEAUTY, type: discount, rate: 0.07, min_amount: 10000, cap_group: LT_SHOP_CR_ALL }
+      - { category: ONLINE, type: discount, rate: 0.05, min_amount: 20000, cap_group: LT_SHOP_CR_ALL }
+
+  - code: LT_TRIP_CR
+    issuer: LOTTE
+    name: 롯데 여행 신용(가칭)
+    card_type: credit
+    tags: [credit, travel]
+    annual_fee: 30000
+    cap_groups:
+      LT_TRIP_CR_ALL: { tiers: [ { min: 300000, cap: 10000 }, { min: 500000, cap: 15000 } ] }
+    benefits:
+      - { category: TAXI, type: discount, rate: 0.05, min_amount: 10000, cap_group: LT_TRIP_CR_ALL }
+      - { category: FUEL, type: discount, rate: 0.03, min_amount: 30000, cap_group: LT_TRIP_CR_ALL }
+      - { category: REST, type: discount, rate: 0.03, min_amount: 20000, cap_group: LT_TRIP_CR_ALL }
+
+  - code: LT_KPASS_CR
+    issuer: LOTTE
+    name: 롯데 K-패스 신용(가칭)
+    card_type: credit
+    tags: [credit, kpass]
+    annual_fee: 0
+    cap_groups:
+      LT_KPASS_CR_ALL: { tiers: [ { min: 400000, cap: 5000 } ] }
+    benefits:
+      - { category: TRANSIT, type: discount, rate: 0.10, cap_group: LT_KPASS_CR_ALL }
+      - { category: CVS, type: discount, rate: 0.05, cap_group: LT_KPASS_CR_ALL }
+
+  - code: LT_CAFE_CK
+    issuer: LOTTE
+    name: 롯데 카페 체크(가칭)
+    card_type: check
+    tags: [check]
+    annual_fee: 0
+    cap_groups:
+      LT_CAFE_CK_ALL: { tiers: [ { min: 200000, cap: 6000 } ] }
+    benefits:
+      - { category: CAFE, type: discount, rate: 0.10, cap_group: LT_CAFE_CK_ALL }
+      - { category: BAKERY, type: discount, rate: 0.07, cap_group: LT_CAFE_CK_ALL }
+
