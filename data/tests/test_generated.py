@@ -3,13 +3,13 @@
 먼저 생성한 뒤 실행:  uv run python -m generate.main && uv run pytest
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from generate.benefit import load_cards
+from generate.benefit import CardMonth, cap_for, evaluate, load_cards
 from generate.common import OUT_DIR, load_config
 from generate.merchants import build_merchants
 from generate.payments import Simulator, simulate
@@ -99,12 +99,84 @@ def test_공과금(t):
 
 def test_카드_구성(t):
     c = t["card_catalog"]
-    assert c.groupby("issuer_code").size().to_dict() == {"HANA": 10, "KB": 10, "SHINHAN": 20, "WOORI": 10}
+    assert c.groupby("issuer_code").size().to_dict() == {"BC": 5, "HANA": 5, "KB": 5, "LOTTE": 5, "NH": 5, "SHINHAN": 25}
     assert c.card_type.value_counts().to_dict() == {"check": 20, "credit": 30}
     assert c.card_code.is_unique and c.card_name.is_unique
     assert c.card_name.str.endswith("(가칭)").all()
     assert c.tags.str.contains("kpass").sum() == 8
     assert t["payments"].card_id.nunique() == 50                             # 모든 카드가 실제로 쓰인다
+
+
+def _cards() -> dict:
+    return {c.code: c for c in load_cards(load_config("cards"))}
+
+
+def test_모든_카드에_혜택과_실적_조건이_있음():
+    for card in _cards().values():
+        assert card.benefits and card.cap_tiers
+        assert {b.cap_group for b in card.benefits} <= set(card.cap_tiers)
+
+
+def test_시간_조건_혜택():
+    lunch_card, transit_card = _cards()["BC_DINE_CR"], _cards()["NH_KPASS_CK"]
+    st = CardMonth(prev_perf=300_000)
+    assert evaluate(lunch_card, "REST", 20_000, st, datetime(2026, 9, 1, 12))[0] == 2_000   # 화요일 점심
+    assert evaluate(lunch_card, "REST", 20_000, st, datetime(2026, 9, 1, 18))[0] == 1_000   # 화요일 저녁
+    assert evaluate(lunch_card, "REST", 20_000, st, datetime(2026, 9, 5, 12))[0] == 1_000   # 토요일 점심
+    assert evaluate(lunch_card, "REST", 20_000, st)[0] == 1_000                             # 시각을 모를 때
+    assert evaluate(transit_card, "TRANSIT", 1_600, st, datetime(2026, 8, 31, 8))[0] == 1_000  # 월요일
+    assert evaluate(transit_card, "TRANSIT", 1_600, st, datetime(2026, 9, 1, 8))[0] == 110     # 화요일
+
+    delivery_card = _cards()["SH_DELI_CK"]
+    assert evaluate(delivery_card, "DELIVERY", 25_000, st, datetime(2026, 9, 6, 19))[0] == 2_000   # 일요일
+    assert evaluate(delivery_card, "DELIVERY", 25_000, st, datetime(2026, 9, 1, 19))[0] == 1_250   # 화요일
+
+
+def test_마트_건당_금액(t):
+    amount = t["payments"].groupby("category_code").amount.mean()
+    assert amount["MART"] >= 60_000
+    assert amount["SUPER"] >= 25_000
+
+
+def test_혜택_테이블(t):
+    b, tiers = t["card_benefits"], t["card_cap_tiers"]
+    assert b.benefit_id.is_unique
+    assert len(b) == sum(len(c.benefits) for c in _cards().values())
+    assert set(b.card_id) == set(t["card_catalog"].card_id) == set(tiers.card_id)
+    assert set(b.category_code) <= set(t["merchant_categories"].category_code) | {"ALL"}
+    assert b[b.days.notna() | b.hour_start.notna()].card_id.nunique() == 5
+    assert b[["rate", "rate_by_tier", "amount"]].notna().sum(axis=1).eq(1).all()      # 혜택 값은 하나만
+    assert set(zip(b.card_id, b.cap_group)) <= set(zip(tiers.card_id, tiers.cap_group))
+
+
+def test_월별_실적(t):
+    s, pay, uc = t["card_month_status"], t["payments"], t["user_cards"]
+    assert not s.duplicated(["user_card_id", "year_month"]).any()
+    assert len(s) == len(uc) * s.year_month.nunique()
+    assert s.year_month.min() == "2026-07" and s.year_month.max() == "2026-11"
+
+    month = pay.paid_at.dt.tz_convert("Asia/Seoul").dt.strftime("%Y-%m")
+    perf = pay.groupby(["user_card_id", month]).amount.sum()
+    got = s[s.perf > 0].set_index(["user_card_id", "year_month"]).perf
+    assert got.sort_index().equals(perf.sort_index().rename("perf").rename_axis(got.index.names))
+
+    july = s[s.year_month == "2026-07"]
+    assert (july.prev_perf == 0).all() and (july.benefit_amount == 0).all()
+    assert s[s.year_month == "2026-08"].benefit_amount.sum() > 0
+
+    wide = s.pivot(index="user_card_id", columns="year_month", values="perf")
+    assert (s[s.year_month == "2026-09"].set_index("user_card_id").prev_perf.sort_index()
+            == wide["2026-08"].sort_index()).all()
+
+
+def test_혜택은_한도를_넘지_않음(t):
+    s = t["card_month_status"].merge(t["card_catalog"][["card_id", "card_code"]], on="card_id")
+    cards = _cards()
+    for r in s[s.benefit_amount > 0].itertuples():
+        caps = [cap_for(cards[r.card_code], g, r.prev_perf) for g in cards[r.card_code].cap_tiers]
+        assert any(ok for ok, _ in caps)
+        limits = [cap for ok, cap in caps if ok]
+        assert None in limits or r.benefit_amount <= sum(limits)
 
 
 def test_보유_카드_규칙(t):

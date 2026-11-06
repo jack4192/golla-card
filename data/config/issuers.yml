@@ -1,11 +1,13 @@
-# 발급사 4곳
+# 발급사 6곳 (SOL페이 자사 카드 + 추가 등록 가능한 카드사 5곳)
 # openpay_supported: 오픈페이로 SOL페이에 등록 가능한지
 # openpay_assumed:   확인된 사실이 아니라 가정인지
 #   신한·KB국민·하나는 2022-12 오픈페이 출시 참여가 보도로 확인됨.
-#   우리카드는 참여 의사 보도까지만 확인되어 가정으로 둔다.
+#   NH농협·BC·롯데는 팀이 확인한 SOL페이 추가 등록 가능 카드사 목록 기준이다.
 
 issuers:
   - { code: SHINHAN, name: 신한카드,   openpay_supported: true, openpay_assumed: false }
   - { code: KB,      name: KB국민카드, openpay_supported: true, openpay_assumed: false }
   - { code: HANA,    name: 하나카드,   openpay_supported: true, openpay_assumed: false }
-  - { code: WOORI,   name: 우리카드,   openpay_supported: true, openpay_assumed: true }
+  - { code: NH,      name: NH농협카드, openpay_supported: true, openpay_assumed: false }
+  - { code: BC,      name: BC카드,     openpay_supported: true, openpay_assumed: false }
+  - { code: LOTTE,   name: 롯데카드,   openpay_supported: true, openpay_assumed: false }
