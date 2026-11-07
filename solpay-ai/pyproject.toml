@@ -1,0 +1,29 @@
+[project]
+name = "solpay-ai"
+version = "0.1.0"
+description = "SOL페이 카드 배치 엔진과 학습·평가 코드"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "lightgbm>=4.5",
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "psycopg[binary]>=3.2",
+    "pyarrow>=17",
+    "pydantic>=2.8",
+    "uvicorn>=0.30",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.27",
+    "pytest>=8.3",
+    "pyyaml>=6.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

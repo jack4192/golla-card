@@ -1,0 +1,1046 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "SOL페이 카드 배치 엔진",
+  "version": "0.1.0"
+ },
+ "paths": {
+  "/health": {
+   "get": {
+    "summary": "Health",
+    "operationId": "health_health_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Health Health Get"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/rank": {
+   "post": {
+    "summary": "Rank",
+    "operationId": "rank_internal_rank_post",
+    "parameters": [
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RankBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RankResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/users/{user_id}": {
+   "get": {
+    "summary": "User",
+    "operationId": "user_internal_users__user_id__get",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "User Id"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response User Internal Users  User Id  Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/users/{user_id}/consent": {
+   "put": {
+    "summary": "Set Consent",
+    "description": "위치 동의가 바뀌면 Spring 이 알린다. 다음 요청부터 그 버전으로 계산한다.",
+    "operationId": "set_consent_internal_users__user_id__consent_put",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "User Id"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ConsentBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Set Consent Internal Users  User Id  Consent Put"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/users/{user_id}/cards": {
+   "get": {
+    "summary": "Cards",
+    "description": "카드별 실적 현황. 타사 카드는 어제까지 기준이다.",
+    "operationId": "cards_internal_users__user_id__cards_get",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "User Id"
+      }
+     },
+     {
+      "name": "at",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "format": "date-time"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "At"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "additionalProperties": true
+         },
+         "title": "Response Cards Internal Users  User Id  Cards Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/users/{user_id}/rules": {
+   "get": {
+    "summary": "Rules",
+    "operationId": "rules_internal_users__user_id__rules_get",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "User Id"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "additionalProperties": true
+         },
+         "title": "Response Rules Internal Users  User Id  Rules Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "summary": "Save Rules",
+    "description": "챗봇이 사용자 확인을 받은 규칙을 통째로 저장한다.",
+    "operationId": "save_rules_internal_users__user_id__rules_put",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "User Id"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "additionalProperties": true
+        },
+        "title": "Rules"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Save Rules Internal Users  User Id  Rules Put"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/payments/evaluate": {
+   "post": {
+    "summary": "Evaluate Payment",
+    "description": "승인 직전 결제를 카드마다 했을 때의 혜택. 결제 완료 화면과 사후 최적 카드에 쓴다.",
+    "operationId": "evaluate_payment_internal_payments_evaluate_post",
+    "parameters": [
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/EvaluateBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Evaluate Payment Internal Payments Evaluate Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/merchants": {
+   "get": {
+    "summary": "Merchants",
+    "operationId": "merchants_internal_merchants_get",
+    "parameters": [
+     {
+      "name": "zone",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Zone"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "additionalProperties": true
+         },
+         "title": "Response Merchants Internal Merchants Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/dev/reset": {
+   "post": {
+    "summary": "Reset",
+    "description": "로컬 시연용. 시연 중 더한 결제, 규칙, 위치 설정을 지운다.",
+    "operationId": "reset_internal_dev_reset_post",
+    "parameters": [
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Reset Internal Dev Reset Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/payments": {
+   "post": {
+    "summary": "Add Payment",
+    "description": "로컬 시연용. 운영에서는 Spring 이 결제를 DB 에 저장하고 엔진은 DB 를 읽는다.",
+    "operationId": "add_payment_internal_payments_post",
+    "parameters": [
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PaymentBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Add Payment Internal Payments Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "CardBody": {
+    "properties": {
+     "user_card_id": {
+      "type": "integer",
+      "title": "User Card Id"
+     },
+     "rank": {
+      "type": "integer",
+      "title": "Rank"
+     },
+     "score_won": {
+      "type": "integer",
+      "title": "Score Won"
+     },
+     "message": {
+      "type": "string",
+      "title": "Message"
+     }
+    },
+    "type": "object",
+    "required": [
+     "user_card_id",
+     "rank",
+     "score_won",
+     "message"
+    ],
+    "title": "CardBody"
+   },
+   "ChipBody": {
+    "properties": {
+     "merchant_id": {
+      "type": "integer",
+      "title": "Merchant Id"
+     },
+     "probability": {
+      "type": "number",
+      "title": "Probability"
+     }
+    },
+    "type": "object",
+    "required": [
+     "merchant_id",
+     "probability"
+    ],
+    "title": "ChipBody"
+   },
+   "ConsentBody": {
+    "properties": {
+     "loc_consent": {
+      "type": "boolean",
+      "title": "Loc Consent"
+     },
+     "loc_feature_on": {
+      "type": "boolean",
+      "title": "Loc Feature On"
+     }
+    },
+    "type": "object",
+    "required": [
+     "loc_consent",
+     "loc_feature_on"
+    ],
+    "title": "ConsentBody"
+   },
+   "EvaluateBody": {
+    "properties": {
+     "user_id": {
+      "type": "integer",
+      "title": "User Id"
+     },
+     "category_code": {
+      "type": "string",
+      "title": "Category Code"
+     },
+     "amount": {
+      "type": "integer",
+      "exclusiveMinimum": 0.0,
+      "title": "Amount"
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At"
+     },
+     "user_card_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User Card Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "user_id",
+     "category_code",
+     "amount"
+    ],
+    "title": "EvaluateBody"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "type": "array",
+      "title": "Detail"
+     }
+    },
+    "type": "object",
+    "title": "HTTPValidationError"
+   },
+   "PaymentBody": {
+    "properties": {
+     "payment_id": {
+      "type": "integer",
+      "title": "Payment Id"
+     },
+     "user_id": {
+      "type": "integer",
+      "title": "User Id"
+     },
+     "user_card_id": {
+      "type": "integer",
+      "title": "User Card Id"
+     },
+     "merchant_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Merchant Id"
+     },
+     "category_code": {
+      "type": "string",
+      "title": "Category Code"
+     },
+     "channel": {
+      "type": "string",
+      "title": "Channel"
+     },
+     "card_select_mode": {
+      "type": "string",
+      "title": "Card Select Mode"
+     },
+     "amount": {
+      "type": "integer",
+      "exclusiveMinimum": 0.0,
+      "title": "Amount"
+     },
+     "paid_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Paid At"
+     },
+     "synced_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Synced At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "payment_id",
+     "user_id",
+     "user_card_id",
+     "category_code",
+     "channel",
+     "card_select_mode",
+     "amount",
+     "paid_at"
+    ],
+    "title": "PaymentBody"
+   },
+   "RankBody": {
+    "properties": {
+     "user_id": {
+      "type": "integer",
+      "title": "User Id"
+     },
+     "lat": {
+      "anyOf": [
+       {
+        "type": "number",
+        "maximum": 90.0,
+        "minimum": -90.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lat"
+     },
+     "lng": {
+      "anyOf": [
+       {
+        "type": "number",
+        "maximum": 180.0,
+        "minimum": -180.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lng"
+     },
+     "accuracy_m": {
+      "anyOf": [
+       {
+        "type": "number",
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Accuracy M"
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At"
+     },
+     "selected_merchant_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Selected Merchant Id"
+     },
+     "explain": {
+      "type": "boolean",
+      "title": "Explain",
+      "default": false
+     }
+    },
+    "type": "object",
+    "required": [
+     "user_id"
+    ],
+    "title": "RankBody"
+   },
+   "RankResponse": {
+    "properties": {
+     "recommendation_id": {
+      "type": "integer",
+      "title": "Recommendation Id"
+     },
+     "cards": {
+      "items": {
+       "$ref": "#/components/schemas/CardBody"
+      },
+      "type": "array",
+      "title": "Cards"
+     },
+     "display_count": {
+      "type": "integer",
+      "title": "Display Count"
+     },
+     "merchant_chips": {
+      "items": {
+       "$ref": "#/components/schemas/ChipBody"
+      },
+      "type": "array",
+      "title": "Merchant Chips"
+     },
+     "reason_code": {
+      "type": "string",
+      "title": "Reason Code"
+     },
+     "rule_applied": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rule Applied"
+     },
+     "version": {
+      "type": "string",
+      "title": "Version"
+     },
+     "scenario_mode": {
+      "type": "string",
+      "title": "Scenario Mode"
+     },
+     "explanation": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Explanation"
+     }
+    },
+    "type": "object",
+    "required": [
+     "recommendation_id",
+     "cards",
+     "display_count",
+     "merchant_chips",
+     "reason_code",
+     "rule_applied",
+     "version",
+     "scenario_mode"
+    ],
+    "title": "RankResponse"
+   },
+   "ValidationError": {
+    "properties": {
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "type": "array",
+      "title": "Location"
+     },
+     "msg": {
+      "type": "string",
+      "title": "Message"
+     },
+     "type": {
+      "type": "string",
+      "title": "Error Type"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "ctx": {
+      "type": "object",
+      "title": "Context"
+     }
+    },
+    "type": "object",
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError"
+   }
+  }
+ }
+}
