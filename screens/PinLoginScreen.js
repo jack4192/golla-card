@@ -1,117 +1,149 @@
-
-import React, { useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, TextInput, ActivityIndicator } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  AppState,
+  Keyboard,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Alert } from '../utils/demoAlert';
 
-export default function PinLoginScreen({
-  onVerify,
-  onUsePassword,
-}) {
+export default function PinLoginScreen({ onVerify, onUsePassword }) {
   const [pin, setPin] = useState('');
-  const [isChecking, setIsChecking] = useState(false);
-  const inputRef = useRef(null);
-  const checkingRef = useRef(false);
+  const [checking, setChecking] = useState(false);
+  const input = useRef(null);
+  const busy = useRef(false);
+  const mounted = useRef(true);
+  const foreground = useRef(true);
 
-  const handlePinChange = async (text) => {
-    const next = text.replace(/\D/g, '').slice(0, 6);
+  useEffect(() => {
+    mounted.current = true;
+    foreground.current =
+      !AppState.currentState || AppState.currentState === 'active';
+
+    const subscription = AppState.addEventListener('change', state => {
+      foreground.current = state === 'active';
+
+      if (state !== 'active') {
+        setPin('');
+        Keyboard.dismiss();
+      }
+    });
+
+    return () => {
+      mounted.current = false;
+      subscription.remove();
+    };
+  }, []);
+
+  const change = async text => {
+    if (busy.current || !foreground.current) return;
+
+    const next = String(text).replace(/\D/g, '').slice(0, 6);
     setPin(next);
 
-    if (next.length !== 6 || checkingRef.current) {
-      return;
-    }
+    if (next.length !== 6) return;
 
-    checkingRef.current = true;
-    setIsChecking(true);
+    busy.current = true;
+    setChecking(true);
+    setPin('');
+    Keyboard.dismiss();
+
+    let failed = false;
 
     try {
-      // App.js에서 저장한 데모 PIN과 비교
+      if (typeof onVerify !== 'function') {
+        throw Error('인증 연결을 확인해주세요.');
+      }
+
       await onVerify(next);
     } catch (error) {
-      Alert.alert(
-        '간편비밀번호 확인',
-        error?.message || '다시 시도해주세요.'
-      );
+      failed = true;
+
+      if (mounted.current && foreground.current) {
+        Alert.alert(
+          '간편비밀번호 확인',
+          error?.message || '다시 시도해주세요.'
+        );
+      }
     } finally {
-      checkingRef.current = false;
-      setIsChecking(false);
-      setPin('');
-      inputRef.current?.focus();
+      busy.current = false;
+
+      if (mounted.current) {
+        setChecking(false);
+        setPin('');
+
+        if (failed && foreground.current) {
+          input.current?.focus();
+        }
+      }
     }
   };
 
   return (
     <SafeAreaView style={styles.screen}>
-      <View style={styles.header}>
-        <Text style={styles.logo}>SOL-Pay</Text>
-        <Text style={styles.logoCaption}>
-          AI 카드 혜택 도우미
-        </Text>
-      </View>
+      <Text style={styles.logo}>SOL-Pay</Text>
 
       <View style={styles.center}>
-        <Text style={styles.title}>
-          간편비밀번호 입력
-        </Text>
-
-        <Text style={styles.subtitle}>
+        <Text style={styles.title}>간편비밀번호 입력</Text>
+        <Text style={styles.hint}>
           이전에 설정한 6자리 숫자를 입력해주세요.
         </Text>
 
         <TouchableOpacity
-          style={styles.dotsTouchArea}
-          onPress={() => inputRef.current?.focus()}
-          activeOpacity={1}
+          disabled={checking}
+          style={styles.dots}
+          onPress={() => input.current?.focus()}
+          accessibilityLabel="간편비밀번호 입력하기"
         >
-          <View style={styles.dotsRow}>
-            {Array.from({ length: 6 }, (_, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.dot,
-                  index < pin.length && styles.activeDot,
-                ]}
-              />
-            ))}
-          </View>
+          {Array.from({ length: 6 }, (_, index) => (
+            <View
+              key={index}
+              style={[
+                styles.dot,
+                index < pin.length && styles.filled,
+              ]}
+            />
+          ))}
         </TouchableOpacity>
 
         <TextInput
-          ref={inputRef}
-          style={styles.hiddenInput}
+          ref={input}
+          style={styles.hidden}
           value={pin}
-          onChangeText={handlePinChange}
+          onChangeText={change}
           keyboardType="number-pad"
           secureTextEntry
           maxLength={6}
           autoFocus
           caretHidden
-          editable={!isChecking}
+          autoCorrect={false}
+          editable={!checking}
+          accessibilityLabel="6자리 간편비밀번호"
         />
 
-        {isChecking && (
-          <View style={styles.checkingRow}>
-            <ActivityIndicator
-              size="small"
-              color="#0046FF"
-            />
-            <Text style={styles.checkingText}>
-              확인 중...
-            </Text>
-          </View>
-        )}
+        {checking && <ActivityIndicator color="#245DE5" />}
 
-        <Text style={styles.notice}>
-          개발용 간편 로그인입니다. 실제 은행 인증이나
-          JWT 검증은 하지 않습니다.
+        <Text style={styles.hint}>
+          개발용 간편 로그인입니다. 실제 은행 인증이 아닙니다.
         </Text>
       </View>
 
       <TouchableOpacity
-        style={styles.otherLogin}
-        onPress={onUsePassword}
-        disabled={isChecking}
+        disabled={checking}
+        style={styles.other}
+        onPress={() => {
+          if (busy.current) return;
+          setPin('');
+          Keyboard.dismiss();
+          onUsePassword?.();
+        }}
       >
-        <Text style={styles.otherLoginText}>
+        <Text style={styles.link}>
           아이디·비밀번호로 로그인하기
         </Text>
       </TouchableOpacity>
@@ -122,89 +154,60 @@ export default function PinLoginScreen({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFF',
     paddingHorizontal: 24,
   },
-  header: {
-    marginTop: 45,
-    alignItems: 'center',
-  },
   logo: {
-    color: '#1A237E',
-    fontWeight: '900',
+    marginTop: 45,
+    textAlign: 'center',
     fontSize: 28,
-  },
-  logoCaption: {
-    color: '#767676',
-    fontSize: 13,
-    marginTop: 5,
+    fontWeight: '900',
+    color: '#1A237E',
   },
   center: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
   },
   title: {
     fontSize: 26,
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: '#1A1A1A',
-    marginBottom: 12,
   },
-  subtitle: {
-    fontSize: 15,
-    color: '#767676',
-    textAlign: 'center',
+  hint: {
+    fontSize: 13,
     lineHeight: 22,
+    textAlign: 'center',
+    color: '#767676',
   },
-  dotsTouchArea: {
-    paddingHorizontal: 12,
-    paddingVertical: 36,
-    marginTop: 22,
-  },
-  dotsRow: {
+  dots: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 30,
+    paddingHorizontal: 10,
   },
   dot: {
     width: 17,
     height: 17,
-    backgroundColor: '#E5E5EA',
     borderRadius: 9,
+    backgroundColor: '#E5E5EA',
     marginHorizontal: 9,
   },
-  activeDot: {
-    backgroundColor: '#0046FF',
+  filled: {
+    backgroundColor: '#245DE5',
   },
-  hiddenInput: {
+  hidden: {
     width: 1,
     height: 1,
     opacity: 0,
   },
-  checkingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 14,
-  },
-  checkingText: {
-    marginLeft: 9,
-    color: '#0046FF',
-    fontSize: 13,
-  },
-  notice: {
-    color: '#999999',
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginTop: 30,
-  },
-  otherLogin: {
+  other: {
     alignItems: 'center',
     paddingVertical: 18,
     marginBottom: 25,
   },
-  otherLoginText: {
-    color: '#0046FF',
+  link: {
+    color: '#245DE5',
     fontSize: 14,
     fontWeight: '600',
   },

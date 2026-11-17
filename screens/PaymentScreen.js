@@ -1,433 +1,861 @@
+import PaymentCardOrder from '../components/PaymentCardOrder';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Alert } from '../utils/demoAlert';
-import { Ionicons } from '@expo/vector-icons';
-import { selectionFeedback, successFeedback, makePaymentScreenBright } from '../utils/deviceFeatures';
-import DemoConfetti from '../components/DemoConfetti';
-import { DEMO_WALLET_CARDS } from '../data/cards';
+import { ActivityIndicator, AppState, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Svg, { Path, Rect } from 'react-native-svg';
+import makeQR from 'qrcode-generator';
+import JsBarcode from 'jsbarcode';
+import { CARD_CATALOG, DEMO_WALLET_CARDS } from '../data/cards';
+import { CARD_PRODUCTS } from '../data/cardRecommendationProducts';
+import { CSV_CARD_CATALOG } from '../data/cardCatalogCsv';
+import { evaluatePdfCard } from '../data/paymentBenefits';
+import { benefitText, evaluateBenefit } from '../utils/cardRecommendation';
+import { createPinSalt } from '../utils/pinCrypto';
+const SCENARIOS = [{
+  id: 'coffee',
+  merchant: '스타벅스',
+  amount: 15000,
+  category: /카페|커피/,
+  brand: /스타벅스/i
+}, {
+  id: 'cu',
+  merchant: 'CU',
+  amount: 10000,
+  category: /편의점/,
+  brand: /\bCU\b|씨유/i
+}, {
+  id: 'gs',
+  merchant: 'GS25',
+  amount: 12000,
+  category: /편의점/,
+  brand: /GS25/i
+}, {
+  id: 'general',
+  merchant: '일반 가맹점',
+  amount: 30000,
+  category: /기본.*국내|국내.*기본|심플 할인.*국내|국내 가맹점|일상 생활비/,
+  brand: /국내|기본/
+}];
+const won = value => Number(value || 0).toLocaleString('ko-KR') + '원';
+const reward = row => Number.isFinite(row?.value) ? Number(row.value).toLocaleString('ko-KR') + (row.unit === 'KRW' ? '원' : row.unit === 'POINT' ? 'P' : ' ' + row.unit) : '혜택 조건 확인 필요';
+const catalogOf = card => CSV_CARD_CATALOG.find(item => item.code === (card.catalogCode || card.code || card.id) || card.id === 'solmate' && item.code === 'SH_SOLMATE_SOL_PLAN_CHECK' || item.name === card.name);
 
-const PAYMENT_SECONDS = 180;
-// 기존 결제 완료 화면의 예시 금액. 실제 결제 데이터가 아님.
-const DEMO_RECEIPT_AMOUNT = 9500;
-const DEFAULT_CARD_IDS = new Set(DEMO_WALLET_CARDS.map((item) => item.id));
+// 실제 상품 정보와 해당 상품 이미지가 확인된 카드만 사용합니다.
+export function realProductCard(card) {
+  if (!card || card.isOwned === false || card.isRecommendedOnly) {
+    return null;
+  }
+  const catalog = catalogOf(card);
+  const pdf = CARD_CATALOG[card.id];
+  const image = catalog ? CARD_PRODUCTS[catalog.code]?.image : pdf?.image;
+  if (!image || !catalog && !pdf) {
+    return null;
+  }
+  return {
+    ...card,
+    name: catalog?.name || pdf.name,
+    issuer: catalog?.issuer || '신한카드',
+    type: catalog?.type || '체크',
+    catalogCode: catalog?.code,
+    image,
+    realProduct: true
+  };
+}
+export function realWalletCards(card, cards = []) {
+  const matched = [...(card ? [card] : []), ...cards].map(realProductCard).filter(Boolean);
+  return Array.from(new Map(matched.map(item => [item.id, item])).values());
+}
+export function estimatePayment(card, scenario, assume) {
+  const unknown = reason => ({
+    value: null,
+    unit: 'KRW',
+    reason,
+    name: '확인 필요'
+  });
+  if (!assume) {
+    return unknown('실적·한도·대상 거래 조건을 확인하기 전에는 금액을 계산하지 않습니다.');
+  }
+  const spend = Number.isFinite(card.status?.previousSpend) ? card.status.previousSpend : 400000;
+  const catalog = catalogOf(card);
+  if (!catalog) {
+    const row = evaluatePdfCard(card, scenario.id, scenario.amount, spend);
+    return {
+      value: row.status === 'eligible' ? row.value : null,
+      unit: row.unit === '원' ? 'KRW' : row.unit,
+      name: row.label,
+      reason: row.detail,
+      condition: row.rule
+    };
+  }
+  const benefits = catalog.benefits.filter(benefit => scenario.category.test(benefit.name) && (benefit.brandScope !== 'BRAND_ONLY' || scenario.brand.test(benefit.name)) && !/해외|추가 적립|추가 할인|웰컴|리워드|정기결제|자동납부|구독|리터/.test(benefit.name));
+  if (!benefits.length) {
+    return unknown('선택한 거래와 정확히 연결되는 혜택을 확인하지 못했습니다.');
+  }
+  const evaluated = benefits.map(benefit => evaluateBenefit(catalog, benefit, {
+    spend,
+    amount: scenario.amount,
+    remaining: {},
+    assume: true,
+    now: new Date()
+  }));
+  const known = evaluated.filter(row => Number.isFinite(row.value));
+  known.sort((a, b) => a.unit === b.unit ? b.value - a.value : a.unit === 'KRW' ? -1 : 1);
+  const row = known[0] || evaluated[0];
+  return {
+    value: row.value,
+    unit: row.unit,
+    name: row.benefit.name,
+    reason: row.label + ' · ' + benefitText(row.benefit),
+    condition: row.benefit.note || ''
+  };
+}
+export function comparePayment(selected, baseline) {
+  return selected?.unit === 'KRW' && baseline?.unit === 'KRW' && Number.isFinite(selected.value) && Number.isFinite(baseline.value) ? selected.value - baseline.value : null;
+}
+export async function makeDemoCode() {
+  let value = '';
+  while (value.length < 18) {
+    const salt = await createPinSalt();
+    for (const char of salt) {
+      const digit = parseInt(char, 16);
+      if (digit < 10) value += digit;
+      if (value.length === 18) break;
+    }
+  }
+  return value;
+}
+function Codes({
+  value,
+  inactive
+}) {
+  const drawing = useMemo(() => {
+    if (!/^\d{18}$/.test(value || '')) return null;
+    const qr = makeQR(0, 'M');
+    qr.addData(value, 'Numeric');
+    qr.make();
+    const size = qr.getModuleCount();
+    let path = '';
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        if (qr.isDark(y, x)) {
+          path += 'M' + (x + 4) + ',' + (y + 4) + 'h1v1h-1z';
+        }
+      }
+    }
+    const target = {};
+    JsBarcode(target, value, {
+      format: 'CODE128C',
+      displayValue: false
+    });
+    const data = target.encodings.map(item => item.data).join('');
+    let bars = '';
+    for (let x = 0; x < data.length; x++) {
+      if (data[x] === '1') {
+        bars += 'M' + (x + 12) + ',0h1v64h-1z';
+      }
+    }
+    return {
+      path,
+      size: size + 8,
+      bars,
+      width: data.length + 24
+    };
+  }, [value]);
+  if (!drawing) return null;
+  return <View accessibilityLabel={inactive ? '사용할 수 없는 가상 결제 코드' : '가상 결제 QR 및 바코드'} style={[s.codes, inactive && s.dim]}>
+      <Svg width={184} height={184} viewBox={'0 0 ' + drawing.size + ' ' + drawing.size}>
+        <Rect width="100%" height="100%" fill="white" />
+        <Path d={drawing.path} fill="#101820" />
+      </Svg>
 
-// 추천만 받은 카드는 결제 시연 대상에서 제외.
-const canPayInDemo = (item) =>
-  Boolean(item?.id) &&
-  item.isRecommendedOnly !== true &&
-  (DEFAULT_CARD_IDS.has(item.id) || item.isOwned === true);
+      <Svg width="100%" height={64} viewBox={'0 0 ' + drawing.width + ' 64'} preserveAspectRatio="none">
+        <Rect width="100%" height="100%" fill="white" />
+        <Path d={drawing.bars} fill="#101820" />
+      </Svg>
 
-const formatWon = (value) => `${value.toLocaleString('ko-KR')}원`;
-
+      <Text selectable style={s.codeNumber}>
+        {value.replace(/(.{6})/g, '$1 ').trim()}
+      </Text>
+    </View>;
+}
+async function protectScreen() {
+  if (Platform.OS === 'web') return () => {};
+  const Capture = require('expo-screen-capture');
+  const Brightness = require('expo-brightness');
+  const key = 'payment-' + Date.now();
+  let blocked = false;
+  let old = null;
+  let bright = false;
+  let system = false;
+  try {
+    await Capture.preventScreenCaptureAsync(key);
+    blocked = true;
+  } catch {}
+  try {
+    old = await Brightness.getBrightnessAsync();
+    if (Platform.OS === 'android') {
+      system = await Brightness.isUsingSystemBrightnessAsync();
+    }
+    await Brightness.setBrightnessAsync(1);
+    bright = true;
+  } catch {}
+  return async () => {
+    const tasks = [];
+    if (blocked) {
+      tasks.push(Capture.allowScreenCaptureAsync(key));
+    }
+    if (bright && Number.isFinite(old)) {
+      tasks.push(system ? Brightness.restoreSystemBrightnessAsync() : Brightness.setBrightnessAsync(old));
+    }
+    await Promise.allSettled(tasks);
+  };
+}
 export default function PaymentScreen({
-  onClose,
   card,
   cards = DEMO_WALLET_CARDS,
   onSelectCard,
+  onClose,
+  navigation
 }) {
-  const [pickerVisible, setPickerVisible] = useState(false);
-  const [isPaid, setIsPaid] = useState(false);
-  const [paidCardName, setPaidCardName] = useState('');
-  const [secondsLeft, setSecondsLeft] = useState(PAYMENT_SECONDS);
-  const deadlineRef = useRef(Date.now() + PAYMENT_SECONDS * 1000);
-
-  // App.js와 MainScreen.js에서 관리하는 지갑을 그대로 활용.
-  const wallet = useMemo(() => {
-    const source = Array.isArray(cards) && cards.length > 0 ? cards : DEMO_WALLET_CARDS;
-    const unique = new Map();
-
-    [...source, card].forEach((item) => {
-      if (canPayInDemo(item) && !unique.has(item.id)) {
-        unique.set(item.id, item);
+  const options = useMemo(() => realWalletCards(card, cards), [card, cards]);
+  const initialId = options.find(item => item.id === card?.id)?.id || options[0]?.id;
+  const [selectedId, setSelectedId] = useState(initialId);
+  const [baselineId, setBaselineId] = useState(options.find(item => item.id !== initialId)?.id || initialId);
+  const [scenarioId, setScenarioId] = useState('coffee');
+  const [assume, setAssume] = useState(true);
+  const [payment, setPayment] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  const [active, setActive] = useState(!AppState.currentState || AppState.currentState === 'active');
+  const [error, setError] = useState('');
+  const [receipt, setReceipt] = useState(null);
+  const [imageError, setImageError] = useState(false);
+  const [imageRetry, setImageRetry] = useState(0);
+  const mounted = useRef(true);
+  const sequence = useRef(0);
+  const current = useRef(null);
+  const notified = useRef(null);
+  const selected = options.find(item => item.id === selectedId) || options[0];
+  const baseline = options.find(item => item.id === baselineId) || options[0];
+  const scenario = SCENARIOS.find(item => item.id === scenarioId) || SCENARIOS[0];
+  const selectedBenefit = useMemo(() => selected ? estimatePayment(selected, scenario, assume) : null, [selected, scenario, assume]);
+  const baseBenefit = useMemo(() => baseline ? estimatePayment(baseline, scenario, assume) : null, [baseline, scenario, assume]);
+  const difference = comparePayment(selectedBenefit, baseBenefit);
+  const source = selected?.image;
+  const seconds = payment ? Math.max(0, Math.ceil((payment.expiresAt - now) / 1000)) : 0;
+  const expired = !payment || seconds === 0 || payment.status !== 'pending' || payment.cardId !== selected?.id || payment.contextKey !== scenario.id + ':' + assume;
+  useEffect(() => {
+    if (options.some(item => item.id === card?.id)) {
+      setSelectedId(card.id);
+    }
+  }, [card?.id, options]);
+  useEffect(() => {
+    if (selected && selected.id !== card?.id && notified.current !== selected.id) {
+      notified.current = selected.id;
+      try {
+        onSelectCard?.(selected.id);
+      } catch (problem) {
+        setError(problem.message);
       }
+    }
+  }, [selected?.id, card?.id, onSelectCard]);
+  useEffect(() => {
+    setImageError(false);
+    setImageRetry(0);
+  }, [selected?.id]);
+  useEffect(() => {
+    mounted.current = true;
+    const timer = setInterval(() => setNow(Date.now()), 250);
+    const subscription = AppState.addEventListener('change', state => {
+      setNow(Date.now());
+      setActive(state === 'active');
     });
-
-    return [...unique.values()];
-  }, [cards, card]);
-
-  const [selectedCardId, setSelectedCardId] = useState(
-    canPayInDemo(card) ? card.id : null
-  );
-
-  // 홈 지갑/카드 탭에서 카드가 변경되면 결제 카드도 동기화.
-  useEffect(() => {
-    if (canPayInDemo(card)) {
-      setSelectedCardId(card.id);
-    } else {
-      setSelectedCardId((previous) =>
-        wallet.some((item) => item.id === previous)
-          ? previous
-          : wallet[0]?.id ?? null
-      );
-    }
-  }, [card?.id, wallet]);
-
-  const selectedCard =
-    wallet.find((item) => item.id === selectedCardId) ||
-    wallet[0] ||
-    null;
-
-  const isRecommendationOnly =
-    Boolean(card?.id) && !canPayInDemo(card);
-
-  const resetTimer = () => {
-    deadlineRef.current = Date.now() + PAYMENT_SECONDS * 1000;
-    setSecondsLeft(PAYMENT_SECONDS);
-  };
-
-  const chooseCard = (item) => {
-    if (!canPayInDemo(item)) return;
-
-    setSelectedCardId(item.id);
-    setPickerVisible(false);
-    setIsPaid(false);
-    resetTimer();
-    onSelectCard?.(item.id);
-    selectionFeedback();
-  };
-
-  // Native uses brightness/haptics; web runs without requesting unsupported permissions.
-  useEffect(() => {
-    successFeedback();
-    let cancelled = false;
-    let restore = () => {};
-    makePaymentScreenBright().then((cleanup) => {
-      if (cancelled) cleanup();
-      else restore = cleanup;
-    }).catch(() => {});
-    return () => { cancelled = true; restore(); };
+    return () => {
+      mounted.current = false;
+      sequence.current += 1;
+      clearInterval(timer);
+      subscription.remove();
+      if (current.current?.status === 'pending') {
+        current.current.status = 'void';
+      }
+    };
   }, []);
-
-  // 기존 바코드 유효시간 3분 유지.
   useEffect(() => {
-    if (isPaid) return;
-    const timer = setInterval(() => {
-      const remaining = Math.ceil((deadlineRef.current - Date.now()) / 1000);
-      setSecondsLeft(Math.max(0, remaining));
-    }, 500);
-    return () => clearInterval(timer);
-  }, [isPaid]);
-
-  const simulatePayment = () => {
-    if (!selectedCard) {
-      Alert.alert('결제 카드 선택', '먼저 결제 시연에 사용할 카드를 선택해주세요.');
+    if (!active) return undefined;
+    let stopped = false;
+    let cleanup;
+    protectScreen().then(callback => {
+      if (stopped) callback();else cleanup = callback;
+    }).catch(() => {});
+    return () => {
+      stopped = true;
+      if (cleanup) cleanup();
+    };
+  }, [active]);
+  const issue = async () => {
+    if (!selected) return;
+    const ticket = ++sequence.current;
+    if (current.current?.status === 'pending') {
+      current.current.status = 'void';
+    }
+    current.current = null;
+    setPayment(null);
+    setGenerating(true);
+    setError('');
+    if (selected.isOwned === false || selected.isRecommendedOnly) {
+      setGenerating(false);
+      setError('보유한 카드만 결제 시연에 사용할 수 있습니다.');
       return;
     }
-    if (secondsLeft <= 0) {
-      Alert.alert('유효시간 만료', '바코드 유효시간을 다시 시작해주세요.');
-      return;
+    try {
+      const value = await makeDemoCode();
+      if (!mounted.current || ticket !== sequence.current) {
+        return;
+      }
+      const next = {
+        value,
+        cardId: selected.id,
+        contextKey: scenario.id + ':' + assume,
+        status: 'pending',
+        expiresAt: Date.now() + 60000
+      };
+      current.current = next;
+      setPayment(next);
+      setNow(Date.now());
+    } catch (problem) {
+      if (mounted.current && ticket === sequence.current) {
+        setError(problem.message || '코드를 만들지 못했습니다.');
+      }
+    } finally {
+      if (mounted.current && ticket === sequence.current) {
+        setGenerating(false);
+      }
     }
-
-    // 결제 완료 시점의 카드명을 고정해 영수증에 표시.
-    setPaidCardName(selectedCard.name);
-    setIsPaid(true);
-    successFeedback();
   };
+  useEffect(() => {
+    setReceipt(null);
+    issue();
+  }, [selected?.id, scenarioId, assume]);
+  const choose = item => {
+    if (selected?.id === item.id) return;
+    setSelectedId(item.id);
+    try {
+      onSelectCard?.(item.id);
+    } catch (problem) {
+      setError(problem.message);
+    }
+  };
+  const close = () => {
+    if (typeof onClose === 'function') {
+      onClose();
+    } else if (navigation?.navigate) {
+      navigation.navigate('MainScreen');
+    } else {
+      setError('메인 화면 이동은 App.js 연결이 필요합니다.');
+    }
+  };
+  const approve = () => {
+    const token = current.current;
+    if (!active || !token || token.status !== 'pending' || token.expiresAt <= Date.now() || token.cardId !== selected.id || token.contextKey !== scenario.id + ':' + assume) {
+      setError('만료되었거나 변경된 코드입니다. 새로 발급해주세요.');
+      return;
+    }
+    token.status = 'approved';
+    setPayment({
+      ...token
+    });
+    setReceipt({
+      merchant: scenario.merchant,
+      amount: scenario.amount,
+      cardName: selected.name,
+      benefit: selectedBenefit,
+      difference,
+      date: new Date().toLocaleString('ko-KR')
+    });
+  };
+  if (!selected) {
+    return <View style={s.empty}>
+        <Text style={s.title}>
+          등록된 실제 상품 카드가 없습니다.
+        </Text>
 
-  const timerLabel = `${String(Math.floor(secondsLeft / 60)).padStart(2, '0')}:${String(secondsLeft % 60).padStart(2, '0')}`;
+        <Text style={s.hint}>
+          기존 임의 상품은 제외했습니다.
+          카드 관리에서 실제 보유 상품을 등록해주세요.
+        </Text>
 
-  return (
-    <SafeAreaView style={styles.root}>
-      <View style={styles.header}>
-        <View style={styles.headerTitleRow}>
-          <Text style={styles.headerTitle}>SOL 스마트 결제</Text>
-          <Text style={styles.demoTag}>DEMO</Text>
-        </View>
-        <TouchableOpacity
-          accessibilityLabel="결제 화면 닫기"
-          onPress={onClose}
-          style={styles.headerClose}
-        >
-          <Ionicons name="close" size={25} color="#FFFFFF" />
+        <TouchableOpacity onPress={close}>
+          <Text style={s.link}>
+            카드 등록하러 돌아가기
+          </Text>
         </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.body}
-        showsVerticalScrollIndicator={false}
-      >
-        {isRecommendationOnly && (
-          <View style={styles.noticeBanner}>
-            <Ionicons name="information-circle-outline" size={19} color="#946321" />
-            <Text style={styles.noticeText}>
-              '{card.name}'은 AI 추천 후보예요. 결제 시연에는 데모 지갑의 보유 카드만 사용할 수 있어요.
-            </Text>
-          </View>
-        )}
-
-        {/* 결제 카드, 바코드, QR이 첫 화면에 바로 노출됩니다. */}
-        <View style={styles.payPanel}>
-          <View style={styles.panelHeader}>
-            <Text style={styles.panelTitle}>결제 · 바코드 · QR</Text>
-            <TouchableOpacity
-              style={styles.changeButton}
-              onPress={() => setPickerVisible(true)}
-              accessibilityLabel="결제 카드 변경"
-            >
-              <Ionicons name="swap-horizontal" size={17} color="#225DE1" />
-              <Text style={styles.changeButtonText}>카드 변경</Text>
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.cardPreview, { backgroundColor: selectedCard?.color || '#215DE5' }]}
-            onPress={() => setPickerVisible(true)}
-            activeOpacity={0.88}
-            accessibilityLabel="현재 카드, 눌러서 결제 카드 변경"
-          >
-            <View style={styles.cardPreviewTop}>
-              <Text style={[styles.cardCaption, { color: selectedCard?.textColor || '#FFFFFF' }]}>
-                현재 결제 카드
-              </Text>
-              <Ionicons name="chevron-down" color={selectedCard?.textColor || '#FFFFFF'} size={19} />
-            </View>
-            <View style={styles.cardPreviewInfo}>
-              {selectedCard?.image ? (
-                <Image source={selectedCard.image} resizeMode="contain" style={styles.cardImage} />
-              ) : (
-                <Ionicons name="card" size={34} color={selectedCard?.textColor || '#FFFFFF'} />
-              )}
-              <View style={styles.cardNameArea}>
-                <Text
-                  numberOfLines={2}
-                  style={[styles.cardName, { color: selectedCard?.textColor || '#FFFFFF' }]}
-                >
-                  {selectedCard?.name || '선택 가능한 카드 없음'}
-                </Text>
-                <Text style={[styles.cardNumber, { color: selectedCard?.textColor || '#FFFFFF' }]}>
-                  {selectedCard?.number || '—'}
-                </Text>
-              </View>
-            </View>
+      </View>;
+  }
+  return <ScrollView style={s.screen} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+      <View style={s.container}>
+        <View style={s.header}>
+          <TouchableOpacity accessibilityRole="button" onPress={close}>
+            <Text style={s.link}>← 돌아가기</Text>
           </TouchableOpacity>
 
-          <View style={styles.timerRow}>
-            <Ionicons name="time-outline" size={17} color="#C75143" />
-            <Text style={styles.timerLabel}>바코드 남은 시간</Text>
-            <Text style={styles.timerValue}>{timerLabel}</Text>
-          </View>
+          <Text style={s.demo}>
+            DEMO · 실제 출금 없음
+          </Text>
+        </View>
 
-          {secondsLeft === 0 ? (
-            <TouchableOpacity style={styles.expired} onPress={resetTimer}>
-              <Ionicons name="refresh" size={20} color="#225DE1" />
-              <Text style={styles.expiredText}>유효시간 만료 · 새로 시작</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.codePanel}>
-              <Text style={styles.barcode} numberOfLines={1} adjustsFontSizeToFit>
-                |||||| || ||| | ||| |||
+        <Text style={s.title}>
+          {receipt ? '가상 결제 완료' : '현장 결제'}
+        </Text>
+
+        {/* 맨 위: QR 및 바코드 */}
+        {!receipt && <View style={s.box}>
+            <View style={s.header}>
+              <Text style={s.heading}>
+                QR · 바코드 결제
               </Text>
-              <Text style={styles.barcodeDigits}>8813 1790 3132 8742</Text>
-              <View style={styles.qrBox}>
-                <Ionicons name="qr-code-outline" size={63} color="#23334D" />
-              </View>
-              <Text style={styles.codeHint}>시연용 표시 · 실제 스캔 결제 불가</Text>
+
+              <Text style={[s.timer, expired && s.red]}>
+                {generating ? '발급 중' : expired ? '만료됨' : seconds + '초'}
+              </Text>
             </View>
-          )}
 
-          <TouchableOpacity
-            style={[styles.payButton, (!selectedCard || secondsLeft === 0) && styles.disabledButton]}
-            onPress={simulatePayment}
-            disabled={!selectedCard || secondsLeft === 0}
-            accessibilityLabel="시연용 결제 승인"
-          >
-            <Ionicons name="checkmark-circle-outline" size={20} color="#FFFFFF" />
-            <Text style={styles.payButtonText}>시연용 결제 승인</Text>
-          </TouchableOpacity>
-        </View>
+            {generating ? <ActivityIndicator size="large" color="#245DE5" style={{
+          padding: 35
+        }} /> : payment && active ? <Codes value={payment.value} inactive={expired} /> : <Text style={s.hint}>
+                {active ? '코드를 발급해주세요.' : '앱이 비활성 상태라 코드를 숨겼습니다.'}
+              </Text>}
 
-        {/* 결제 외 데이터 입력은 AI 연동 전까지 제공하지 않습니다. */}
-        <View style={styles.aiInfo}>
-          <Ionicons name="sparkles-outline" color="#315FB9" size={21} />
-          <View style={styles.aiInfoBody}>
-            <Text style={styles.aiInfoTitle}>SOL AI 자동 혜택 분석</Text>
-            <Text style={styles.aiInfoText}>
-              결제금액과 전월 실적은 추후 AI·마이데이터 연동 시 자동으로 확인할 예정이에요. 지금은 결제 흐름만 시연합니다.
+            <Text style={s.hint}>
+              60초간 유효한 프론트 데모 코드입니다.
+              실제 매장에서 결제할 수 없습니다.
+              재발급하면 이전 코드는 폐기됩니다.
             </Text>
-          </View>
-        </View>
-      </ScrollView>
 
-      {/* 기존 카드 직접 변경 기능 유지 */}
-      <Modal
-        visible={pickerVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setPickerVisible(false)}
-      >
-        <View style={styles.dim}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>결제 카드 선택</Text>
-              <TouchableOpacity
-                accessibilityLabel="카드 선택 닫기"
-                onPress={() => setPickerVisible(false)}
-              >
-                <Ionicons name="close" size={25} color="#2A3B58" />
+            <TouchableOpacity accessibilityRole="button" disabled={generating || !active} onPress={issue} style={[s.secondary, generating && s.dim]}>
+              <Text style={s.link}>
+                새 결제 코드 발급
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity accessibilityRole="button" disabled={expired || generating || !active} onPress={approve} style={[s.primary, (expired || generating || !active) && s.dim]}>
+              <Text style={s.white}>
+                가상 POS 승인 체험
+              </Text>
+            </TouchableOpacity>
+          </View>}
+
+        {/* QR 아래: 실제 상품 카드 이미지 */}
+        <View style={s.hero}>
+          <Text style={s.eyebrow}>
+            실제 상품 카드 · 카드사 원본 이미지
+          </Text>
+
+          {source && !imageError ? <Image key={selected.id + ':' + imageRetry} source={typeof source === 'string' ? {
+          uri: source
+        } : source} style={s.cardImage} resizeMode="contain" accessibilityLabel={selected.name + ' 실제 카드 이미지'} onError={() => setImageError(true)} /> : <View style={s.imagePlaceholder}>
+              <Text style={s.text}>
+                카드사 이미지를 불러오지 못했어요.
+              </Text>
+
+              <TouchableOpacity onPress={() => {
+            setImageRetry(value => value + 1);
+            setImageError(false);
+          }}>
+                <Text style={s.link}>
+                  이미지 다시 보기
+                </Text>
               </TouchableOpacity>
-            </View>
-            <Text style={styles.sheetDescription}>
-              데모 지갑에 있는 카드 중 결제에 사용할 카드를 골라주세요.
+            </View>}
+
+          <Text style={s.cardName}>
+            {selected.name}
+          </Text>
+
+          <Text style={s.hint}>
+            {selected.issuer}
+            {' · '}{selected.type}
+            {' · '}실제 상품 이미지
+          </Text>
+
+          <View style={s.benefitBox}>
+            <Text style={s.label}>
+              이번 가상 거래의 예상 혜택
             </Text>
-            <ScrollView style={styles.cardsScroll} showsVerticalScrollIndicator={false}>
-              {wallet.map((item) => {
-                const active = selectedCard?.id === item.id;
-                return (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[styles.choiceRow, active && styles.choiceRowActive]}
-                    onPress={() => chooseCard(item)}
-                  >
-                    <View style={[styles.choiceColor, { backgroundColor: item.color || '#245DDD' }]}>
-                      <Ionicons name="card-outline" size={23} color={item.textColor || '#FFFFFF'} />
-                    </View>
-                    <View style={styles.choiceInfo}>
-                      <Text style={styles.choiceName} numberOfLines={2}>{item.name}</Text>
-                      <Text style={styles.choiceNumber}>
-                        {item.number || '데모 카드'} · {item.pdfVerified ? 'PDF 시연 카드' : '데모 보유 카드'}
-                      </Text>
-                    </View>
-                    <Ionicons
-                      name={active ? 'checkmark-circle' : 'ellipse-outline'}
-                      size={23}
-                      color={active ? '#245DDD' : '#B6C1D0'}
-                    />
-                  </TouchableOpacity>
-                );
-              })}
-              {wallet.length === 0 && <Text style={styles.emptyText}>선택 가능한 카드가 없어요.</Text>}
-            </ScrollView>
+
+            <Text style={s.hint}>
+              {scenario.merchant}
+              {' · '}{won(scenario.amount)}
+              {' · '}가상 거래 예시
+            </Text>
+
+            <Text style={s.benefit}>
+              {reward(selectedBenefit)}
+            </Text>
+
+            <Text style={s.comparison}>
+              {difference === null ? '기존 카드와 비교할 수 있는 원화 혜택 정보가 부족해요.' : difference > 0 ? '가정대로라면 기존 카드보다 ' + won(difference) + ' 더 아낄 수 있어요!' : difference === 0 ? '이 조건에서는 기존 카드와 원화 혜택이 같아요.' : '이 조건에서는 기존 카드가 ' + won(-difference) + ' 더 유리해요.'}
+            </Text>
+
+            <Text style={s.hint}>
+              비교 카드: {baseline.name}
+              {' · '}{reward(baseBenefit)}
+            </Text>
+
+            <Text style={s.hint}>
+              실적은 DB 값 또는 40만 원,
+              월 한도 미사용·상세 조건 충족 가정입니다.
+            </Text>
           </View>
         </View>
-      </Modal>
 
-      {/* 결제 완료: 기존 애니메이션 유지, AI 혜택 추정값은 표시하지 않음 */}
-      <Modal visible={isPaid} transparent animationType="slide" onRequestClose={onClose}>
-        <View style={styles.receiptDim}>
-          {isPaid && (
-            <DemoConfetti
-              count={120}
-              origin={{ x: 180, y: 0 }}
-              fadeOut
-              fallSpeed={2500}
-            />
-          )}
-          <View style={styles.receipt}>
-            <Ionicons name="checkmark-circle" color="#245DDD" size={54} />
-            <Text style={styles.receiptTitle}>시연용 결제 완료!</Text>
-            <Text style={styles.receiptAmount}>{formatWon(DEMO_RECEIPT_AMOUNT)}</Text>
-            <Text style={styles.receiptExample}>시연 예시 금액 · 실제 결제 내역 아님</Text>
-            <View style={styles.receiptDivider} />
-            <Text style={styles.receiptKey}>결제 선택 카드</Text>
-            <Text style={styles.receiptCard}>{paidCardName || selectedCard?.name || '미선택'}</Text>
-            <Text style={styles.receiptNotice}>
-              결제금액과 카드 실적은 향후 AI 연동 시 자동 조회할 예정이에요. 실제 승인·청구·적립은 발생하지 않았습니다.
+        {receipt && <View style={s.box}>
+            <Text style={s.heading}>가상 승인 결과</Text>
+
+            <Text style={s.text}>
+              {receipt.merchant}
+              {' · '}{won(receipt.amount)}
             </Text>
-            <TouchableOpacity style={styles.receiptClose} onPress={onClose}>
-              <Text style={styles.receiptCloseText}>홈으로 돌아가기</Text>
+
+            <Text style={s.text}>
+              {receipt.cardName}
+            </Text>
+
+            <Text style={s.hint}>
+              {receipt.date}
+            </Text>
+
+            <Text style={s.comparison}>
+              {receipt.difference > 0 ? '가정한 가상 거래에서 기존 카드보다 ' + won(receipt.difference) + ' 더 아꼈어요.' : '예상 혜택 ' + reward(receipt.benefit)}
+            </Text>
+
+            <Text style={s.hint}>
+              실제 승인·출금·금융사 실적 반영은
+              발생하지 않습니다.
+            </Text>
+
+            <TouchableOpacity style={s.primary} onPress={close}>
+              <Text style={s.white}>메인으로</Text>
             </TouchableOpacity>
+          </View>}
+
+        {!!error && <Text accessibilityRole="alert" style={s.error}>
+            {error}
+          </Text>}
+
+        <Text style={s.scrollHint}>
+          아래에서 카드 선택 이유와 상세 혜택을 확인하세요 ↓
+        </Text>
+
+        <PaymentCardOrder cards={options} selectedId={selected.id} onSelect={choose} />
+
+        <View style={s.box}>
+          <Text style={s.heading}>카드 선정 이유</Text>
+
+          <Text style={s.text}>
+            지갑에서 선택한 {selected.name}를
+            결제 카드로 유지하고 있어요.
+            선택하지 않은 카드로 자동 변경하지 않습니다.
+          </Text>
+
+          <Text style={s.text}>
+            {selectedBenefit?.name}
+          </Text>
+
+          <Text style={s.hint}>
+            {selectedBenefit?.reason}
+          </Text>
+
+          {!!selectedBenefit?.condition && <Text style={s.hint}>
+              {selectedBenefit.condition}
+            </Text>}
+        </View>
+
+        <View style={s.box}>
+          <Text style={s.heading}>
+            혜택 비교에 사용한 가상 조건
+          </Text>
+
+          <Text style={s.text}>
+            {scenario.merchant}
+            {' · '}{won(scenario.amount)}
+          </Text>
+
+          <View style={s.chips}>
+            {SCENARIOS.map(item => <TouchableOpacity key={item.id} onPress={() => setScenarioId(item.id)} style={[s.chip, item.id === scenario.id && s.chipOn]}>
+                <Text style={item.id === scenario.id ? s.whiteSmall : s.chipText}>
+                  {item.merchant}
+                </Text>
+              </TouchableOpacity>)}
+          </View>
+
+          <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{
+          checked: assume
+        }} onPress={() => setAssume(!assume)} style={s.secondary}>
+            <Text style={s.link}>
+              {assume ? '☑' : '☐'} 가상 조건 충족 가정
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={s.hint}>
+            DB 전월 실적이 있으면 그 값을 사용하고,
+            없으면 전월 40만 원을 가정합니다.
+            월 한도 미사용·대상 거래·결제 방식·횟수
+            조건 충족을 가정한 예시입니다.
+            실제 절약액이 아닙니다.
+            포인트는 원화와 비교하지 않습니다.
+          </Text>
+
+          {selected.status && <Text style={s.hint}>
+              선택 카드 실적 자료:
+              {' '}{selected.status.month}
+              {' · '}전월{' '}
+              {won(selected.status.previousSpend)}
+            </Text>}
+
+          <Text style={s.label}>
+            비교할 기존 카드
+          </Text>
+
+          <View style={s.chips}>
+            {options.map(item => <TouchableOpacity key={item.id} onPress={() => setBaselineId(item.id)} style={[s.chip, item.id === baseline.id && s.chipOn]}>
+                <Text style={item.id === baseline.id ? s.whiteSmall : s.chipText}>
+                  {item.name}
+                </Text>
+              </TouchableOpacity>)}
           </View>
         </View>
-      </Modal>
-    </SafeAreaView>
-  );
-}
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F4F7FC' },
+        <View style={s.box}>
+          <Text style={s.heading}>카드 상세 혜택</Text>
+
+          {catalogOf(selected)?.benefits?.slice(0, 6).map((benefit, index) => <View key={index} style={s.detail}>
+                <Text style={s.label}>
+                  {benefit.name}
+                  {' · '}{benefitText(benefit)}
+                </Text>
+
+                <Text style={s.hint}>
+                  전월 실적{' '}
+                  {benefit.minPrevSpend == null ? '확인 필요' : won(benefit.minPrevSpend) + ' 이상'}
+                </Text>
+
+                {!!benefit.note && <Text style={s.hint}>
+                    {benefit.note}
+                  </Text>}
+              </View>)}
+
+          {!catalogOf(selected) && <Text style={s.hint}>
+              {selectedBenefit?.condition || selected.reason || '정확한 혜택 조건은 카드사 상품 안내에서 확인해주세요.'}
+            </Text>}
+        </View>
+
+        <Text style={s.hint}>
+          QR·Code128 바코드는 같은 18자리 가상 코드를
+          담습니다. 웹에서는 화면 밝기 변경과
+          캡처 차단을 지원하지 않습니다.
+        </Text>
+      </View>
+    </ScrollView>;
+}
+const s = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#F5F7FC'
+  },
+  content: {
+    padding: 20,
+    paddingBottom: 100
+  },
+  container: {
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
+    gap: 16
+  },
   header: {
-    height: 58, backgroundColor: '#173E8B', flexDirection: 'row',
-    alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8
   },
-  headerTitleRow: { flexDirection: 'row', gap: 9, alignItems: 'center' },
-  headerTitle: { color: '#FFFFFF', fontSize: 19, fontWeight: '900' },
-  demoTag: {
-    color: '#DDE9FF', fontSize: 10, borderWidth: 1,
-    borderColor: '#90B6F7', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3,
+  demo: {
+    color: '#8090A9',
+    fontSize: 10
   },
-  headerClose: { padding: 5 },
-  scroll: { flex: 1 },
-  body: { padding: 16, paddingBottom: 30 },
-  noticeBanner: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 9,
-    backgroundColor: '#FFF7E9', borderColor: '#F0D9B3',
-    borderWidth: 1, borderRadius: 12, padding: 11, marginBottom: 12,
+  title: {
+    fontSize: 27,
+    fontWeight: '900',
+    color: '#183252',
+    textAlign: 'center'
   },
-  noticeText: { color: '#835C26', flex: 1, fontSize: 11, lineHeight: 17 },
-  payPanel: {
-    backgroundColor: '#FFFFFF', borderRadius: 18, padding: 16,
-    borderWidth: 1, borderColor: '#E3EAF5',
+  hero: {
+    backgroundColor: '#FFF',
+    borderRadius: 24,
+    padding: 22,
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#E7EDF7'
   },
-  panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 13 },
-  panelTitle: { fontSize: 16, fontWeight: '900', color: '#243550' },
-  changeButton: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 4 },
-  changeButtonText: { color: '#225DE1', fontSize: 12, fontWeight: '800' },
-  cardPreview: { borderRadius: 14, padding: 16, minHeight: 106, marginBottom: 15 },
-  cardPreviewTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardCaption: { fontSize: 11, fontWeight: '700', opacity: 0.86 },
-  cardPreviewInfo: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8 },
-  cardImage: { width: 55, height: 55 },
-  cardNameArea: { flex: 1 },
-  cardName: { fontSize: 16, fontWeight: '900' },
-  cardNumber: { fontSize: 12, fontWeight: '600', marginTop: 5 },
-  timerRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
-  timerLabel: { flex: 1, fontSize: 12, color: '#6D7990' },
-  timerValue: { color: '#C75143', fontWeight: '900', fontSize: 13 },
-  codePanel: {
-    borderWidth: 1, borderColor: '#E4EAF4', borderRadius: 13,
-    paddingVertical: 15, paddingHorizontal: 10, alignItems: 'center',
+  eyebrow: {
+    color: '#5B7AB4',
+    fontSize: 12,
+    fontWeight: '700'
   },
-  barcode: { fontSize: 34, letterSpacing: -1, fontWeight: '900', color: '#1A2B43' },
-  barcodeDigits: { color: '#283A55', fontWeight: '800', fontSize: 13, letterSpacing: 1, marginTop: 5 },
-  qrBox: {
-    width: 92, height: 92, borderWidth: 1.5, borderColor: '#D4DCE8',
-    alignItems: 'center', justifyContent: 'center', marginTop: 14, borderRadius: 9,
+  cardImage: {
+    width: '100%',
+    height: 220
   },
-  codeHint: { color: '#97A3B4', fontSize: 10, marginTop: 10, textAlign: 'center' },
-  expired: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, minHeight: 180 },
-  expiredText: { color: '#225DE1', fontWeight: '800', fontSize: 13 },
-  payButton: {
-    marginTop: 15, backgroundColor: '#245DDD', borderRadius: 13,
-    paddingVertical: 15, justifyContent: 'center', alignItems: 'center', flexDirection: 'row', gap: 8,
+  cardName: {
+    color: '#213F69',
+    fontSize: 20,
+    lineHeight: 29,
+    fontWeight: '900',
+    textAlign: 'center'
   },
-  disabledButton: { opacity: 0.4 },
-  payButtonText: { color: '#FFFFFF', fontWeight: '900', fontSize: 15 },
-  aiInfo: {
-    flexDirection: 'row', gap: 11, backgroundColor: '#EAF2FF',
-    marginTop: 14, padding: 15, borderRadius: 14,
+  imagePlaceholder: {
+    minHeight: 145,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12
   },
-  aiInfoBody: { flex: 1 },
-  aiInfoTitle: { color: '#2457AC', fontSize: 13, fontWeight: '900' },
-  aiInfoText: { color: '#5875A4', fontSize: 11, lineHeight: 18, marginTop: 5 },
-  dim: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
-  sheet: {
-    maxHeight: '82%', backgroundColor: '#FFFFFF', borderTopLeftRadius: 24,
-    borderTopRightRadius: 24, padding: 20,
+  benefitBox: {
+    width: '100%',
+    backgroundColor: '#EDF4FF',
+    padding: 16,
+    borderRadius: 15,
+    alignItems: 'center',
+    gap: 8
   },
-  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sheetTitle: { fontSize: 20, fontWeight: '900', color: '#1F3250' },
-  sheetDescription: { fontSize: 12, lineHeight: 18, color: '#7D8A9E', marginTop: 8, marginBottom: 15 },
-  cardsScroll: { maxHeight: 420 },
-  choiceRow: {
-    flexDirection: 'row', gap: 11, alignItems: 'center', padding: 11,
-    borderRadius: 12, borderWidth: 1, borderColor: '#E4EAF4', marginBottom: 9,
+  benefit: {
+    fontSize: 25,
+    fontWeight: '900',
+    color: '#245DE5',
+    textAlign: 'center'
   },
-  choiceRowActive: { backgroundColor: '#F0F5FF', borderColor: '#245DDD' },
-  choiceColor: { width: 58, height: 40, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
-  choiceInfo: { flex: 1 },
-  choiceName: { fontSize: 13, color: '#23364F', fontWeight: '800' },
-  choiceNumber: { fontSize: 10, color: '#8291A6', marginTop: 5 },
-  emptyText: { color: '#8B96A8', textAlign: 'center', padding: 22 },
-  receiptDim: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.62)', padding: 22 },
-  receipt: { width: '100%', padding: 24, borderRadius: 23, backgroundColor: '#FFFFFF', alignItems: 'center' },
-  receiptTitle: { color: '#253B5E', fontWeight: '900', fontSize: 18, marginTop: 9 },
-  receiptAmount: { color: '#172E53', fontWeight: '900', fontSize: 31, marginTop: 8 },
-  receiptExample: { color: '#9BA7B6', fontSize: 10, marginTop: 3 },
-  receiptDivider: { width: '100%', height: 1, backgroundColor: '#E5EBF3', marginVertical: 18 },
-  receiptKey: { color: '#8895A9', fontSize: 11 },
-  receiptCard: { color: '#234F9C', fontSize: 15, fontWeight: '800', marginTop: 7, textAlign: 'center' },
-  receiptNotice: { fontSize: 11, color: '#8C99A9', lineHeight: 18, textAlign: 'center', marginVertical: 19 },
-  receiptClose: { width: '100%', backgroundColor: '#18324E', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  receiptCloseText: { fontSize: 14, color: '#FFFFFF', fontWeight: '900' },
+  comparison: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#285FB1',
+    lineHeight: 23,
+    textAlign: 'center'
+  },
+  box: {
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    padding: 18,
+    gap: 13,
+    borderWidth: 1,
+    borderColor: '#E7EDF7'
+  },
+  heading: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#233E63'
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#345179',
+    lineHeight: 22
+  },
+  text: {
+    color: '#435E80',
+    fontSize: 14,
+    lineHeight: 24
+  },
+  hint: {
+    color: '#8391A7',
+    fontSize: 12,
+    lineHeight: 21
+  },
+  codes: {
+    backgroundColor: '#FFF',
+    alignItems: 'center',
+    paddingVertical: 10,
+    gap: 15
+  },
+  codeNumber: {
+    color: '#20334F',
+    fontSize: 15,
+    letterSpacing: 2
+  },
+  timer: {
+    color: '#245DE5',
+    fontSize: 18,
+    fontWeight: '900'
+  },
+  red: {
+    color: '#C14756'
+  },
+  primary: {
+    padding: 15,
+    minHeight: 50,
+    backgroundColor: '#245DE5',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  secondary: {
+    padding: 13,
+    backgroundColor: '#EDF3FF',
+    borderRadius: 12,
+    alignItems: 'center'
+  },
+  white: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '800'
+  },
+  link: {
+    color: '#245DE5',
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  dim: {
+    opacity: 0.25
+  },
+  chips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8
+  },
+  chip: {
+    padding: 11,
+    borderRadius: 10,
+    backgroundColor: '#EEF2FA'
+  },
+  chipOn: {
+    backgroundColor: '#245DE5'
+  },
+  chipText: {
+    color: '#506B91',
+    fontSize: 12
+  },
+  whiteSmall: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  scrollHint: {
+    color: '#8A9AB1',
+    fontSize: 12,
+    textAlign: 'center'
+  },
+  detail: {
+    borderTopWidth: 1,
+    borderColor: '#EDF1F7',
+    paddingTop: 12,
+    gap: 5
+  },
+  error: {
+    color: '#B83850',
+    fontSize: 13,
+    lineHeight: 22
+  },
+  empty: {
+    flex: 1,
+    padding: 24,
+    justifyContent: 'center',
+    gap: 20
+  }
 });

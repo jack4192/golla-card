@@ -1,23 +1,42 @@
-// Browser-only, TEMPORARY DEMO DATA. Not a credential vault.
-// Session storage is scoped to this tab; closes/clears when tab is closed.
-// Never store raw password, personal identity or real financial information.
-const prefix = 'solpay_public_demo_';
+const PREFIX = 'solpay_public_demo_';
 
-const access = () => {
-  if (typeof window === 'undefined' || !window.sessionStorage) return null;
+function storage() {
+  if (
+    typeof window === 'undefined' ||
+    !window.sessionStorage
+  ) {
+    throw new Error('브라우저 시연 저장소를 사용할 수 없습니다.');
+  }
+
   return window.sessionStorage;
-};
+}
 
 export async function getItemAsync(key) {
-  try { return access()?.getItem(prefix + key) ?? null; }
-  catch { return null; }
+  try {
+    return storage().getItem(PREFIX + key);
+  } catch {
+    throw new Error(
+      '저장된 정보를 읽지 못했습니다. 브라우저 저장소 설정을 확인해주세요.'
+    );
+  }
 }
+
 export async function setItemAsync(key, value) {
-  const storage = access();
-  if (!storage) throw new Error('브라우저 시연 저장소에 접근할 수 없습니다.');
-  storage.setItem(prefix + key, String(value));
+  try {
+    storage().setItem(PREFIX + key, String(value));
+  } catch {
+    throw new Error(
+      '정보를 저장하지 못했습니다. 브라우저 저장소 설정을 확인해주세요.'
+    );
+  }
 }
+
 export async function deleteItemAsync(key) {
-  try { access()?.removeItem(prefix + key); }
-  catch { /* private mode or blocked storage */ }
+  try {
+    storage().removeItem(PREFIX + key);
+  } catch {
+    throw new Error(
+      '정보를 삭제하지 못했습니다. 브라우저 저장소 설정을 확인해주세요.'
+    );
+  }
 }

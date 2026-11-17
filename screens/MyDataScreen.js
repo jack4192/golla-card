@@ -1,110 +1,198 @@
+
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
 
-export default function MyDataScreen({ onNext }) {
-  return (
-    <SafeAreaView style={styles.screen}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-        
-        {/* 상단 타이틀 영역 */}
-        <View style={styles.header}>
-          <Text style={styles.titleIcon}>✨</Text>
-          <Text style={styles.title}>여승범 님의{'\n'}마이데이터 분석 완료</Text>
-          <Text style={styles.subtitle}>최근 3개월 결제 내역을 바탕으로{'\n'}소비 패턴을 완벽히 파악했어요.</Text>
-        </View>
+import {
+  ActivityIndicator,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
-        {/* 핵심 소비 성향 요약 카드 */}
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>가장 많이 소비한 분야</Text>
-          <Text style={styles.summaryHighlight}>식비와 교통비 비중이 매우 높아요!</Text>
-          <Text style={styles.summaryDesc}>
-            주로 컴포즈커피, 맘스터치 등 식음료 지출과 K-패스 대중교통 지출이 전체의 75%를 차지하고 있습니다. 짐박스 등 건강/운동 분야 지출도 꾸준하네요.
-          </Text>
-        </View>
+import MyDataCardStatus, {
+  useMyDataSnapshot,
+  box,
+  title,
+  hint,
+  money,
+} from '../components/MyDataCardStatus';
 
-        {/* 카테고리별 지출 바 차트 (순수 UI 구현) */}
-        <View style={styles.chartContainer}>
-          <Text style={styles.sectionTitle}>분야별 지출 비율</Text>
-          
-          {/* 항목 1 */}
-          <View style={styles.chartRow}>
-            <Text style={styles.chartLabel}>🍔 식비/카페</Text>
-            <View style={styles.barBackground}>
-              <View style={[styles.barFill, { width: '45%', backgroundColor: '#2b65f0' }]} />
-            </View>
-            <Text style={styles.chartValue}>45%</Text>
-          </View>
+function Bars({ rows }) {
+  return rows.map((row, index) => (
+    <View
+      key={index}
+      style={{
+        gap: 5,
+        marginVertical: 7,
+      }}
+    >
+      <Text style={hint}>
+        {row.label}
+        {' · '}{money(row.amount)}
+        {' · '}{(row.share * 100).toFixed(1)}%
+      </Text>
 
-          {/* 항목 2 */}
-          <View style={styles.chartRow}>
-            <Text style={styles.chartLabel}>🚌 교통/이동</Text>
-            <View style={styles.barBackground}>
-              <View style={[styles.barFill, { width: '30%', backgroundColor: '#4b85f0' }]} />
-            </View>
-            <Text style={styles.chartValue}>30%</Text>
-          </View>
-
-          {/* 항목 3 */}
-          <View style={styles.chartRow}>
-            <Text style={styles.chartLabel}>🏋️ 건강/운동</Text>
-            <View style={styles.barBackground}>
-              <View style={[styles.barFill, { width: '15%', backgroundColor: '#7ba5f0' }]} />
-            </View>
-            <Text style={styles.chartValue}>15%</Text>
-          </View>
-          
-          {/* 항목 4 */}
-          <View style={styles.chartRow}>
-            <Text style={styles.chartLabel}>🛍️ 기타/쇼핑</Text>
-            <View style={styles.barBackground}>
-              <View style={[styles.barFill, { width: '10%', backgroundColor: '#d0d8f0' }]} />
-            </View>
-            <Text style={styles.chartValue}>10%</Text>
-          </View>
-        </View>
-
-        {/* AI 최적 카드 추천은 추후 챗봇에서 제공할 예정입니다. */}
-
-      </ScrollView>
-
-      {/* 하단 고정 다음 단계 버튼 */}
-      <View style={styles.bottomFixed}>
-        <TouchableOpacity style={styles.primaryBtn} onPress={onNext}>
-          <Text style={styles.primaryBtnText}>분석 완료 · 홈으로 이동</Text>
-        </TouchableOpacity>
+      <View
+        style={{
+          height: 9,
+          borderRadius: 5,
+          backgroundColor: '#EDF1F7',
+          overflow: 'hidden',
+        }}
+      >
+        <View
+          style={{
+            height: 9,
+            width:
+              Math.min(100, row.share * 100) + '%',
+            backgroundColor: '#245DE5',
+          }}
+        />
       </View>
-    </SafeAreaView>
-  );
+    </View>
+  ));
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f5f7fb' },
-  
-  header: { paddingHorizontal: 25, paddingTop: 40, paddingBottom: 20 },
-  titleIcon: { fontSize: 32, marginBottom: 10 },
-  title: { fontSize: 26, fontWeight: '800', color: '#111', lineHeight: 36, marginBottom: 10 },
-  subtitle: { fontSize: 15, color: '#666', lineHeight: 22 },
+export default function MyDataScreen({ onNext }) {
+  const {
+    snapshot: data,
+    error,
+    loading,
+  } = useMyDataSnapshot();
 
-  summaryCard: { backgroundColor: '#fff', marginHorizontal: 20, borderRadius: 20, padding: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 3, marginBottom: 25 },
-  summaryLabel: { fontSize: 13, color: '#2b65f0', fontWeight: 'bold', marginBottom: 8 },
-  summaryHighlight: { fontSize: 18, fontWeight: 'bold', color: '#111', marginBottom: 12 },
-  summaryDesc: { fontSize: 14, color: '#555', lineHeight: 22 },
+  return (
+    <ScrollView
+      contentContainerStyle={{
+        padding: 24,
+        paddingBottom: 60,
+        gap: 16,
+        backgroundColor: '#F5F7FC',
+        flexGrow: 1,
+      }}
+    >
+      <Text style={{ ...title, fontSize: 25 }}>
+        마이데이터 소비 분석
+      </Text>
 
-  chartContainer: { backgroundColor: '#fff', marginHorizontal: 20, borderRadius: 20, padding: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 3, marginBottom: 25 },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#111', marginBottom: 20 },
-  
-  chartRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  chartLabel: { width: 95, fontSize: 13, color: '#444', fontWeight: '600' },
-  barBackground: { flex: 1, height: 12, backgroundColor: '#f0f0f0', borderRadius: 6, overflow: 'hidden', marginHorizontal: 10 },
-  barFill: { height: '100%', borderRadius: 6 },
-  chartValue: { width: 35, fontSize: 13, color: '#888', textAlign: 'right', fontWeight: 'bold' },
+      {loading && (
+        <ActivityIndicator color="#245DE5" />
+      )}
 
-  benefitContainer: { flexDirection: 'row', marginHorizontal: 20, justifyContent: 'space-between' },
-  benefitBox: { flex: 1, backgroundColor: '#fff', borderRadius: 16, padding: 20, marginHorizontal: 5, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
-  benefitIcon: { fontSize: 28, marginBottom: 10 },
-  benefitText: { fontSize: 13, color: '#333', textAlign: 'center', fontWeight: '600', lineHeight: 18 },
+      {!!error && (
+        <Text style={{ color: '#B4374B' }}>
+          {error}
+        </Text>
+      )}
 
-  bottomFixed: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', paddingHorizontal: 20, paddingTop: 15, paddingBottom: 35, borderTopWidth: 1, borderTopColor: '#eee' },
-  primaryBtn: { backgroundColor: '#2b65f0', borderRadius: 14, paddingVertical: 18, alignItems: 'center' },
-  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
-});
+      {!loading && !data && (
+        <Text style={hint}>
+          불러온 데이터가 없습니다.
+          개발자 메뉴의 마이데이터 불러오기 화면에서
+          먼저 데이터를 준비해주세요.
+        </Text>
+      )}
+
+      {data && (
+        <>
+          <View style={box}>
+            <Text style={title}>
+              {data.label}
+            </Text>
+
+            <Text
+              style={{
+                ...title,
+                fontSize: 28,
+              }}
+            >
+              {money(data.total)}
+            </Text>
+
+            <Text style={hint}>
+              {data.period}
+              {' · '}
+              {data.transactionCount.toLocaleString('ko-KR')}건
+              {' · '}자료가 있는 달{' '}
+              {data.coverageMonths}/6개월
+            </Text>
+
+            <Text style={hint}>
+              업종·시간·요일 비중은 모두 이 기간의
+              결제 금액 기준입니다.
+              한국 시간으로 분석했습니다.
+              실제 지출·절약액이 아닌 가상 데이터입니다.
+            </Text>
+          </View>
+
+          <View style={box}>
+            <Text style={title}>
+              소비 업종 상위 3개
+            </Text>
+            <Bars rows={data.topCategories} />
+          </View>
+
+          <View style={box}>
+            <Text style={title}>
+              주요 소비 시간대
+            </Text>
+            <Bars rows={data.topHours} />
+          </View>
+
+          <View style={box}>
+            <Text style={title}>
+              요일별 소비 비중
+            </Text>
+            <Bars rows={data.weekdays} />
+          </View>
+
+          <View style={box}>
+            <Text style={title}>
+              월별 소비 금액
+            </Text>
+            <Bars rows={data.months} />
+          </View>
+
+          <Text style={title}>
+            자동 등록된 보유 카드 {data.cards.length}장
+          </Text>
+
+          {data.cards.map(card => (
+            <MyDataCardStatus
+              key={card.id}
+              card={card}
+              expanded
+            />
+          ))}
+
+          <Text style={hint}>
+            소비 요약은 완료된 6개월,
+            카드 실적은 {data.asOf}까지의 DB 기록입니다.
+            현재 달은 일부 기간입니다.
+          </Text>
+        </>
+      )}
+
+      <TouchableOpacity
+        accessibilityRole="button"
+        disabled={!data || loading}
+        style={{
+          padding: 16,
+          backgroundColor:
+            data ? '#245DE5' : '#AAB8D0',
+          borderRadius: 12,
+          alignItems: 'center',
+        }}
+        onPress={() => onNext?.()}
+      >
+        <Text
+          style={{
+            color: '#FFF',
+            fontWeight: '800',
+          }}
+        >
+          다음 단계로
+        </Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
+}

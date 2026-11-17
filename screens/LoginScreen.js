@@ -1,43 +1,102 @@
-
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator, AppState, Keyboard, KeyboardAvoidingView,
+  Platform, SafeAreaView, StyleSheet, Text, TextInput,
+  TouchableOpacity, View,
+} from 'react-native';
 import { Alert } from '../utils/demoAlert';
 
-export default function LoginScreen({ onLogin, onSignUp, demoAccountReady = false }) {
+export default function LoginScreen({
+  onLogin,
+  onSignUp,
+  demoAccountReady = false,
+}) {
   const [id, setId] = useState('');
   const [password, setPassword] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  // 로그인 입력 확인 및 처리
-  const handleLogin = async () => {
-    if (isSubmitting) return;
+  const busy = useRef(false);
+  const mounted = useRef(true);
+  const foreground = useRef(true);
 
-    const trimmedId = id.trim();
+  useEffect(() => {
+    mounted.current = true;
+    foreground.current =
+      !AppState.currentState || AppState.currentState === 'active';
 
-    if (!trimmedId || !password) {
-      setErrorMessage('아이디와 비밀번호를 모두 입력해주세요.');
+    const subscription = AppState.addEventListener('change', state => {
+      foreground.current = state === 'active';
+
+      if (state !== 'active') {
+        setPassword('');
+        Keyboard.dismiss();
+      }
+    });
+
+    return () => {
+      mounted.current = false;
+      subscription.remove();
+    };
+  }, []);
+
+  const change = (setter, value) => {
+    if (busy.current || !foreground.current) return;
+    setter(value);
+    setError('');
+  };
+
+  const login = async () => {
+    if (busy.current || !foreground.current) return;
+
+    const userId = id.trim();
+
+    if (!userId || !password) {
+      setError('아이디와 비밀번호를 모두 입력해주세요.');
       return;
     }
 
     if (password.length < 4) {
-      setErrorMessage('비밀번호를 4자리 이상 입력해주세요.');
+      setError('비밀번호를 4자리 이상 입력해주세요.');
       return;
     }
 
-    setErrorMessage('');
-    setIsSubmitting(true);
+    const submittedPassword = password;
+
+    busy.current = true;
+    setSubmitting(true);
+    setError('');
+    setPassword('');
+    Keyboard.dismiss();
 
     try {
-      // 실제 로그인 처리는 App.js가 담당
-      await onLogin(trimmedId, password);
-    } catch (error) {
-      setErrorMessage(
-        error?.message || '로그인 처리 중 문제가 발생했습니다.'
-      );
+      if (typeof onLogin !== 'function') {
+        throw Error('로그인 연결을 확인해주세요.');
+      }
+
+      await onLogin(userId, submittedPassword);
+    } catch (failure) {
+      if (mounted.current && foreground.current) {
+        setError(
+          failure?.message || '로그인 처리 중 문제가 발생했습니다.'
+        );
+      }
     } finally {
-      setIsSubmitting(false);
+      busy.current = false;
+
+      if (mounted.current) {
+        setSubmitting(false);
+        setPassword('');
+      }
     }
+  };
+
+  const signUp = () => {
+    if (busy.current || !foreground.current) return;
+    setPassword('');
+    setError('');
+    Keyboard.dismiss();
+    onSignUp?.();
   };
 
   return (
@@ -46,27 +105,23 @@ export default function LoginScreen({ onLogin, onSignUp, demoAccountReady = fals
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.container}
       >
-        {/* 로고 및 타이틀 */}
-        <View style={styles.titleContainer}>
+        <View style={styles.heading}>
           <Text style={styles.logo}>SOL-Pay</Text>
           <Text style={styles.subtitle}>AI 카드 혜택 도우미</Text>
         </View>
 
-        {/* 아이디와 비밀번호 */}
-        <View style={styles.formContainer}>
+        <View style={styles.form}>
           <TextInput
             style={styles.input}
             placeholder="아이디"
             placeholderTextColor="#A0A0A0"
             value={id}
-            onChangeText={(value) => {
-              setId(value);
-              setErrorMessage('');
-            }}
+            onChangeText={value => change(setId, value)}
             autoCapitalize="none"
             autoCorrect={false}
             textContentType="username"
-            editable={!isSubmitting}
+            editable={!submitting}
+            accessibilityLabel="아이디"
           />
 
           <TextInput
@@ -74,77 +129,65 @@ export default function LoginScreen({ onLogin, onSignUp, demoAccountReady = fals
             placeholder="비밀번호"
             placeholderTextColor="#A0A0A0"
             value={password}
-            onChangeText={(value) => {
-              setPassword(value);
-              setErrorMessage('');
-            }}
+            onChangeText={value => change(setPassword, value)}
             secureTextEntry
             textContentType="password"
-            editable={!isSubmitting}
-            onSubmitEditing={handleLogin}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!submitting}
+            onSubmitEditing={login}
             returnKeyType="go"
+            accessibilityLabel="비밀번호"
           />
 
-          {/* 로그인 오류 메시지 */}
-          {!!errorMessage && (
-            <Text style={styles.errorText}>
-              {errorMessage}
+          {!!error && (
+            <Text style={styles.error} accessibilityLiveRegion="polite">
+              {error}
             </Text>
           )}
 
-          {/* 개발 모드에서만 테스트 계정 안내 */}
           {(__DEV__ || Platform.OS === 'web') && (
-            <Text style={styles.demoText}>
+            <Text style={styles.demo}>
               발표용 테스트 계정: demo / 1234
-              {'\n'}회원가입 체험 시 방금 만든 ID/비밀번호도 사용 가능해요.
+              {'\n'}
+              {demoAccountReady
+                ? '방금 만든 테스트 계정으로도 로그인할 수 있습니다.'
+                : '회원가입 체험으로 테스트 계정을 만들 수 있습니다.'}
               {'\n'}실제 계정 인증은 아닙니다.
             </Text>
           )}
         </View>
 
-        {/* 로그인 버튼 */}
         <TouchableOpacity
-          style={[
-            styles.loginButton,
-            isSubmitting && styles.disabledButton,
-          ]}
-          onPress={handleLogin}
-          disabled={isSubmitting}
+          style={[styles.button, submitting && styles.disabled]}
+          onPress={login}
+          disabled={submitting}
           activeOpacity={0.8}
         >
-          {isSubmitting ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.loginButtonText}>
-              로그인
-            </Text>
-          )}
+          {submitting
+            ? <ActivityIndicator color="#FFF" />
+            : <Text style={styles.white}>로그인</Text>}
         </TouchableOpacity>
 
-        {/* 회원가입 및 계정 찾기 */}
-        <View style={styles.footerContainer}>
-          <TouchableOpacity
-            onPress={onSignUp}
-            disabled={isSubmitting}
-          >
-            <Text style={styles.footerText}>
-              회원가입
-            </Text>
+        <View style={styles.footer}>
+          <TouchableOpacity onPress={signUp} disabled={submitting}>
+            <Text style={styles.footerText}>회원가입</Text>
           </TouchableOpacity>
 
           <Text style={styles.separator}>|</Text>
 
           <TouchableOpacity
-            onPress={() =>
-              Alert.alert(
-                '안내',
-                '아이디/비밀번호 찾기는 백엔드 연동 후 지원할 예정입니다.'
-              )
-            }
+            disabled={submitting}
+            onPress={() => {
+              if (!busy.current && foreground.current) {
+                Alert.alert(
+                  '안내',
+                  '아이디/비밀번호 찾기는 백엔드 연동 후 지원할 예정입니다.'
+                );
+              }
+            }}
           >
-            <Text style={styles.footerText}>
-              아이디/비밀번호 찾기
-            </Text>
+            <Text style={styles.footerText}>아이디/비밀번호 찾기</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -153,38 +196,22 @@ export default function LoginScreen({ onLogin, onSignUp, demoAccountReady = fals
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-
+  safeArea: { flex: 1, backgroundColor: '#FFF' },
   container: {
     flex: 1,
     paddingHorizontal: 24,
     justifyContent: 'center',
     paddingBottom: 50,
   },
-
-  titleContainer: {
-    marginBottom: 40,
-  },
-
+  heading: { marginBottom: 40 },
   logo: {
     fontSize: 32,
     fontWeight: '900',
     color: '#1A237E',
     marginBottom: 8,
   },
-
-  subtitle: {
-    fontSize: 15,
-    color: '#767676',
-  },
-
-  formContainer: {
-    marginBottom: 24,
-  },
-
+  subtitle: { fontSize: 15, color: '#767676' },
+  form: { marginBottom: 24 },
   input: {
     backgroundColor: '#FAFAFA',
     borderRadius: 12,
@@ -194,23 +221,21 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#E5E5EA',
+    color: '#1A1A1A',
   },
-
-  errorText: {
+  error: {
     color: '#D93025',
     fontSize: 13,
     marginTop: 2,
     marginBottom: 10,
   },
-
-  demoText: {
+  demo: {
     fontSize: 12,
     color: '#767676',
     marginTop: 2,
     lineHeight: 19,
   },
-
-  loginButton: {
+  button: {
     backgroundColor: '#1A237E',
     paddingVertical: 16,
     borderRadius: 12,
@@ -219,31 +244,15 @@ const styles = StyleSheet.create({
     minHeight: 52,
     marginBottom: 24,
   },
-
-  disabledButton: {
-    opacity: 0.7,
-  },
-
-  loginButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-
-  footerContainer: {
+  disabled: { opacity: 0.7 },
+  white: { fontSize: 16, fontWeight: 'bold', color: '#FFF' },
+  footer: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 12,
   },
-
-  footerText: {
-    fontSize: 13,
-    color: '#555555',
-  },
-
-  separator: {
-    marginHorizontal: 16,
-    color: '#CCCCCC',
-    fontSize: 13,
-  },
+  footerText: { fontSize: 13, color: '#555' },
+  separator: { color: '#CCC', fontSize: 13 },
 });

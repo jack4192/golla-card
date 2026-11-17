@@ -1,26 +1,57 @@
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  AppState,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
-import { Alert } from '../utils/demoAlert';
+// 현재 앱 실행 중 완료된 체험 가입만 기억합니다.
+// 실제 서버의 전체 회원 정보를 조회하는 기능은 아닙니다.
+const registeredPhones = new Set();
+const registeredEmails = new Set();
 
-// 생년월일 유효성 검사
-const isValidBirthDate = (value) => {
+export const phoneDigits = value =>
+  String(value || '').replace(/\D/g, '').slice(0, 11);
+
+export function formatPhone(value) {
+  const digits = phoneDigits(value);
+
+  if (digits.length <= 3) return digits;
+
+  if (digits.length <= 7) {
+    return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  }
+
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
+
+export const normalizeEmail = value =>
+  String(value || '').trim().toLowerCase();
+
+export const isValidPhone = value =>
+  /^01\d{9}$/.test(phoneDigits(value));
+
+export const isValidEmail = value =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(
+    normalizeEmail(value)
+  );
+
+export function isValidBirthDate(value) {
   if (!/^\d{8}$/.test(value)) return false;
 
   const year = Number(value.slice(0, 4));
   const month = Number(value.slice(4, 6));
-  const day = Number(value.slice(6, 8));
-
-  if (year < 1000 || month < 1 || month > 12) {
-    return false;
-  }
-
-  const lastDay = new Date(year, month, 0).getDate();
-
-  if (day < 1 || day > lastDay) {
-    return false;
-  }
-
+  const day = Number(value.slice(6));
+  const date = new Date(year, month - 1, day, 12);
   const today = new Date();
 
   const todayNumber =
@@ -28,490 +59,614 @@ const isValidBirthDate = (value) => {
     (today.getMonth() + 1) * 100 +
     today.getDate();
 
-  return Number(value) <= todayNumber;
-};
+  return (
+    year >= 1000 &&
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day &&
+    Number(value) <= todayNumber
+  );
+}
 
-// 이메일 형식 확인
-const isValidEmail = (value) => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-  return emailRegex.test(value.trim());
-};
+const emptyForm = () => ({
+  name: '',
+  birthDate: '',
+  id: '',
+  phone: '',
+  email: '',
+  password: '',
+  confirmation: '',
+});
 
 export default function SignUpScreen({
   onBack,
   onComplete,
   isIdTaken = () => false,
 }) {
-  // 회원 정보
-  const [name, setName] = useState('');
-  const [birthDate, setBirthDate] = useState('');
+  const [form, setForm] = useState(emptyForm);
+  const [checkedId, setCheckedId] = useState('');
+  const [checkedPhone, setCheckedPhone] = useState('');
+  const [checkedEmail, setCheckedEmail] = useState('');
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState('');
 
-  // 아이디
-  const [id, setId] = useState('');
-  const [isIdChecked, setIsIdChecked] = useState(false);
+  const busy = useRef(false);
+  const mounted = useRef(true);
+  const foreground = useRef(true);
 
-  // 비밀번호
-  const [password, setPassword] = useState('');
-  const [passwordConfirm, setPasswordConfirm] =
-    useState('');
+  useEffect(() => {
+    mounted.current = true;
+    foreground.current =
+      !AppState.currentState ||
+      AppState.currentState === 'active';
 
-  // 이메일
-  const [email, setEmail] = useState('');
+    const subscription = AppState.addEventListener(
+      'change',
+      state => {
+        foreground.current = state === 'active';
 
-  // ==================================
-  // 아이디 형식 확인 (데모)
-  // ==================================
-  const handleCheckId = () => {
-    const trimmedId = id.trim();
+        if (state !== 'active') {
+          setForm(previous => ({
+            ...previous,
+            password: '',
+            confirmation: '',
+          }));
 
-    if (trimmedId.length < 4) {
-      Alert.alert(
-        '알림',
-        '아이디를 4자 이상 입력해주세요.'
-      );
-      return;
-    }
-
-    if (/\s/.test(trimmedId)) {
-      Alert.alert(
-        '알림',
-        '아이디에는 공백을 사용할 수 없습니다.'
-      );
-      return;
-    }
-
-    if (isIdTaken(trimmedId)) {
-      Alert.alert('이미 사용 중인 시연 ID', '다른 테스트 아이디를 사용해주세요.');
-      return;
-    }
-
-    // Presentation demo only; actual server duplicate check is unavailable.
-    setIsIdChecked(true);
-
-    Alert.alert(
-      '형식 확인 완료',
-      '데모용 아이디를 사용할 수 있어요. 실제 서버 중복 확인은 아닙니다.'
+          Keyboard.dismiss();
+        }
+      }
     );
+
+    return () => {
+      mounted.current = false;
+      subscription.remove();
+    };
+  }, []);
+
+  const change = (key, value) => {
+    if (busy.current || !foreground.current) return;
+
+    const next =
+      key === 'birthDate'
+        ? value.replace(/\D/g, '').slice(0, 8)
+        : key === 'phone'
+          ? formatPhone(value)
+          : value;
+
+    setForm(previous => ({
+      ...previous,
+      [key]: next,
+    }));
+
+    // 입력값이 바뀌면 기존 중복 확인 결과를 무효화합니다.
+    if (key === 'id') setCheckedId('');
+    if (key === 'phone') setCheckedPhone('');
+    if (key === 'email') setCheckedEmail('');
+
+    setMessage('');
   };
 
-  // ==================================
-  // 회원가입 입력값 검사
-  // ==================================
-  const handleSignUp = () => {
+  const idError = value =>
+    value.length < 4
+      ? '아이디를 4자 이상 입력해주세요.'
+      : /\s/.test(value)
+        ? '아이디에는 공백을 사용할 수 없습니다.'
+        : '';
 
-    // 이름
-    if (name.trim().length < 2) {
-      Alert.alert(
-        '알림',
-        '이름을 2자 이상 입력해주세요.'
-      );
-      return;
+  const run = async action => {
+    if (busy.current || !foreground.current) return;
+
+    busy.current = true;
+    setPending(true);
+    setMessage('');
+
+    try {
+      await action();
+    } catch (error) {
+      if (mounted.current && foreground.current) {
+        setMessage(
+          error?.message ||
+          '처리하지 못했습니다. 다시 시도해주세요.'
+        );
+      }
+    } finally {
+      busy.current = false;
+
+      if (mounted.current) {
+        setPending(false);
+      }
     }
-
-    // 생년월일
-    if (!isValidBirthDate(birthDate)) {
-      Alert.alert(
-        '알림',
-        '올바른 생년월일 8자리를 입력해주세요.\n예: 20020115'
-      );
-      return;
-    }
-
-    // 아이디
-    if (!isIdChecked) {
-      Alert.alert(
-        '알림',
-        '아이디 형식 확인을 진행해주세요.'
-      );
-      return;
-    }
-
-    // 비밀번호
-    if (password.length < 4) {
-      Alert.alert(
-        '알림',
-        '비밀번호를 4자 이상 입력해주세요.'
-      );
-      return;
-    }
-
-    if (password !== passwordConfirm) {
-      Alert.alert(
-        '알림',
-        '비밀번호가 일치하지 않습니다.'
-      );
-      return;
-    }
-
-    // 이메일
-    if (!isValidEmail(email)) {
-      Alert.alert(
-        '알림',
-        '올바른 이메일 형식을 입력해주세요.'
-      );
-      return;
-    }
-
-    // Session-only demo account: no real signup, no network, no personal data saved.
-    // Login ID/password live in App React state only and vanish on refresh.
-    Alert.alert(
-      '시연용 가입 완료',
-      `이번 화면에서만 ${id.trim()} 아이디로 로그인할 수 있어요.\n실제 계정이 생성된 것은 아니며, 새로고침하면 사라집니다.`,
-      [{ text: '로그인 화면으로', onPress: () => onComplete?.({ id: id.trim(), password }) }]
-    );
   };
+
+  const checkId = () =>
+    run(async () => {
+      const value = form.id.trim();
+      setCheckedId('');
+
+      if (idError(value)) {
+        throw Error(idError(value));
+      }
+
+      if (await isIdTaken(value)) {
+        throw Error('이미 사용 중인 시연 ID입니다.');
+      }
+
+      if (!mounted.current || !foreground.current) return;
+
+      setCheckedId(value);
+      setMessage(
+        '아이디 확인 완료. 실제 서버 조회는 아닙니다.'
+      );
+    });
+
+  const checkPhone = () =>
+    run(async () => {
+      setCheckedPhone('');
+
+      if (!isValidPhone(form.phone)) {
+        throw Error(
+          '01로 시작하는 전화번호 11자리를 입력해주세요.'
+        );
+      }
+
+      const value = phoneDigits(form.phone);
+
+      if (registeredPhones.has(value)) {
+        throw Error(
+          '현재 데모에서 이미 가입에 사용한 전화번호입니다.'
+        );
+      }
+
+      setCheckedPhone(value);
+      setMessage(
+        '현재 데모에서 사용 가능한 전화번호입니다.'
+      );
+    });
+
+  const checkEmail = () =>
+    run(async () => {
+      setCheckedEmail('');
+
+      if (!isValidEmail(form.email)) {
+        throw Error('올바른 이메일 형식을 입력해주세요.');
+      }
+
+      const value = normalizeEmail(form.email);
+
+      if (registeredEmails.has(value)) {
+        throw Error(
+          '현재 데모에서 이미 가입에 사용한 이메일입니다.'
+        );
+      }
+
+      setCheckedEmail(value);
+      setMessage(
+        '현재 데모에서 사용 가능한 이메일입니다.'
+      );
+    });
+
+  const resetForm = () => {
+    setForm(emptyForm());
+    setCheckedId('');
+    setCheckedPhone('');
+    setCheckedEmail('');
+  };
+
+  const signUp = () =>
+    run(async () => {
+      const id = form.id.trim();
+      const phone = phoneDigits(form.phone);
+      const email = normalizeEmail(form.email);
+
+      if (form.name.trim().length < 2) {
+        throw Error('이름을 2자 이상 입력해주세요.');
+      }
+
+      if (!isValidBirthDate(form.birthDate)) {
+        throw Error(
+          '올바른 생년월일 8자리를 입력해주세요.'
+        );
+      }
+
+      if (idError(id)) {
+        throw Error(idError(id));
+      }
+
+      if (checkedId !== id) {
+        throw Error('아이디 확인을 진행해주세요.');
+      }
+
+      if (!isValidPhone(form.phone)) {
+        throw Error('전화번호 11자리를 입력해주세요.');
+      }
+
+      if (checkedPhone !== phone) {
+        throw Error(
+          '전화번호 중복 확인을 진행해주세요.'
+        );
+      }
+
+      if (!isValidEmail(email)) {
+        throw Error('올바른 이메일 형식을 입력해주세요.');
+      }
+
+      if (checkedEmail !== email) {
+        throw Error(
+          '이메일 중복 확인을 진행해주세요.'
+        );
+      }
+
+      if (form.password.length < 4) {
+        throw Error('비밀번호를 4자 이상 입력해주세요.');
+      }
+
+      if (form.password !== form.confirmation) {
+        throw Error('비밀번호가 일치하지 않습니다.');
+      }
+
+      if (await isIdTaken(id)) {
+        setCheckedId('');
+        throw Error('이미 사용 중인 시연 ID입니다.');
+      }
+
+      if (!mounted.current || !foreground.current) return;
+
+      // 중복 확인 이후 다른 가입이 완료되었을 수 있어
+      // 제출 직전에도 다시 확인합니다.
+      if (registeredPhones.has(phone)) {
+        setCheckedPhone('');
+
+        throw Error(
+          '이미 사용한 전화번호입니다. 다시 확인해주세요.'
+        );
+      }
+
+      if (registeredEmails.has(email)) {
+        setCheckedEmail('');
+
+        throw Error(
+          '이미 사용한 이메일입니다. 다시 확인해주세요.'
+        );
+      }
+
+      if (typeof onComplete !== 'function') {
+        throw Error(
+          '가입 완료 화면 연결을 확인해주세요.'
+        );
+      }
+
+      registeredPhones.add(phone);
+      registeredEmails.add(email);
+
+      const account = {
+        id,
+        password: form.password,
+        name: form.name.trim(),
+        birthDate: form.birthDate,
+        phone,
+        email,
+      };
+
+      setForm(previous => ({
+        ...previous,
+        password: '',
+        confirmation: '',
+      }));
+
+      Keyboard.dismiss();
+
+      try {
+        await onComplete(account);
+      } catch (error) {
+        // 가입에 실패하면 해당 번호와 이메일을 다시
+        // 사용할 수 있도록 예약을 취소합니다.
+        registeredPhones.delete(phone);
+        registeredEmails.delete(email);
+
+        throw error;
+      }
+
+      if (mounted.current) {
+        resetForm();
+
+        if (foreground.current) {
+          setMessage('체험 가입이 완료되었습니다.');
+        }
+      }
+    });
+
+  const back = () => {
+    if (busy.current) return;
+
+    resetForm();
+    setMessage('');
+    Keyboard.dismiss();
+    onBack?.();
+  };
+
+  const field = (key, label, props = {}) => (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+
+      <TextInput
+        style={styles.input}
+        value={form[key]}
+        onChangeText={value => change(key, value)}
+        editable={!pending}
+        autoCapitalize="none"
+        autoCorrect={false}
+        accessibilityLabel={label}
+        {...props}
+      />
+    </View>
+  );
+
+  const checkButton = (
+    title,
+    checked,
+    action,
+    disabled = false
+  ) => (
+    <TouchableOpacity
+      accessibilityRole="button"
+      disabled={pending || disabled}
+      onPress={action}
+      style={[
+        styles.secondary,
+        (pending || disabled) && styles.disabled,
+      ]}
+    >
+      <Text style={styles.link}>
+        {checked ? `${title} 완료 ✓` : title}
+      </Text>
+    </TouchableOpacity>
+  );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.screen}>
       <KeyboardAvoidingView
+        style={styles.flex}
         behavior={
           Platform.OS === 'ios' ? 'padding' : 'height'
         }
-        style={{ flex: 1 }}
       >
-
-        {/* 뒤로 가기 */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onBack}>
-            <Text style={styles.backText}>
-              ← 뒤로
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          accessibilityRole="button"
+          disabled={pending}
+          style={styles.back}
+          onPress={back}
+        >
+          <Text style={styles.link}>← 뒤로</Text>
+        </TouchableOpacity>
 
         <ScrollView
-          style={styles.content}
-          showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.content}
         >
+          <Text style={styles.title}>회원가입</Text>
 
-          <Text style={styles.title}>
-            회원가입
+          <Text style={styles.hint}>
+            발표용 가입 체험입니다. 실제 개인정보 대신
+            가상의 정보를 입력해주세요.
           </Text>
 
-          <Text style={styles.subtitle}>
-            발표용 가입 체험입니다. 가상의 정보만 입력하세요.{'\n'}실제 계정은 생성되지 않습니다.
-          </Text>
+          {field('name', '이름', {
+            placeholder: '가상의 이름',
+            maxLength: 50,
+          })}
 
-          {/* 이름 */}
-          <Text style={styles.label}>
-            이름
-          </Text>
+          {field('birthDate', '생년월일', {
+            placeholder: 'YYYYMMDD',
+            keyboardType: 'number-pad',
+            maxLength: 8,
+          })}
 
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="이름을 입력해주세요"
-            placeholderTextColor="#A0A0A0"
-            autoCapitalize="none"
-            maxLength={50}
-          />
-
-          {/* 생년월일 */}
-          <Text style={styles.label}>
-            생년월일
-          </Text>
-
-          <TextInput
-            style={styles.input}
-            value={birthDate}
-            onChangeText={(text) => {
-              setBirthDate(
-                text.replace(/[^0-9]/g, '')
-              );
-            }}
-            placeholder="YYYYMMDD (예: 20020115)"
-            placeholderTextColor="#A0A0A0"
-            keyboardType="number-pad"
-            maxLength={8}
-          />
-
-          <Text style={styles.helperText}>
-            생년월일 8자리를 입력해주세요.
-          </Text>
-
-          {birthDate.length === 8 &&
-            !isValidBirthDate(birthDate) && (
-              <Text style={styles.errorText}>
+          {form.birthDate.length === 8 &&
+            !isValidBirthDate(form.birthDate) && (
+              <Text style={styles.error}>
                 올바른 생년월일을 입력해주세요.
               </Text>
             )}
 
-          {/* 아이디 */}
-          <Text style={styles.label}>
-            아이디
-          </Text>
+          {field('id', '아이디', {
+            placeholder: '4자 이상 · 공백 제외',
+            maxLength: 50,
+          })}
 
-          <View style={styles.inputRow}>
-            <TextInput
-              style={[
-                styles.input,
-                styles.flexInput,
-              ]}
-              value={id}
-              onChangeText={(text) => {
-                setId(text);
-                setIsIdChecked(false);
-              }}
-              placeholder="아이디 입력"
-              placeholderTextColor="#A0A0A0"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
+          {checkButton(
+            '아이디 확인',
+            !!checkedId &&
+              checkedId === form.id.trim(),
+            checkId,
+            !form.id.trim()
+          )}
 
-            <TouchableOpacity
-              style={[
-                styles.actionBtn,
-                isIdChecked && styles.actionBtnSuccess,
-              ]}
-              onPress={handleCheckId}
-            >
-              <Text style={styles.actionBtnText}>
-                {isIdChecked
-                  ? '확인 완료'
-                  : '형식 확인'}
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {field('phone', '전화번호', {
+            placeholder: '010-1234-5678',
+            keyboardType: 'phone-pad',
+            maxLength: 13,
+          })}
 
-          {isIdChecked && (
-            <Text style={styles.successText}>
-              ✓ 아이디 형식 확인 완료 (데모)
+          {checkButton(
+            '전화번호 중복 확인',
+            !!checkedPhone &&
+              checkedPhone === phoneDigits(form.phone),
+            checkPhone,
+            !form.phone
+          )}
+
+          {!!checkedPhone && (
+            <Text style={styles.success}>
+              ✓ 현재 데모에서 사용 가능한 전화번호입니다.
             </Text>
           )}
 
-          {/* 비밀번호 */}
-          <Text style={styles.label}>
-            비밀번호
-          </Text>
+          {field('email', '이메일', {
+            placeholder: 'demo@example.com',
+            keyboardType: 'email-address',
+            maxLength: 254,
+          })}
 
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            placeholder="비밀번호 입력"
-            placeholderTextColor="#A0A0A0"
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+          {checkButton(
+            '이메일 중복 확인',
+            !!checkedEmail &&
+              checkedEmail === normalizeEmail(form.email),
+            checkEmail,
+            !form.email.trim()
+          )}
 
-          {/* 비밀번호 재확인 */}
-          <Text style={styles.label}>
-            비밀번호 확인
-          </Text>
+          {!!checkedEmail && (
+            <Text style={styles.success}>
+              ✓ 현재 데모에서 사용 가능한 이메일입니다.
+            </Text>
+          )}
 
-          <TextInput
-            style={styles.input}
-            value={passwordConfirm}
-            onChangeText={setPasswordConfirm}
-            placeholder="비밀번호 다시 입력"
-            placeholderTextColor="#A0A0A0"
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+          {field('password', '비밀번호', {
+            placeholder: '시연용 비밀번호 · 4자 이상',
+            secureTextEntry: true,
+            maxLength: 128,
+          })}
 
-          {passwordConfirm.length > 0 && (
+          {field('confirmation', '비밀번호 확인', {
+            placeholder: '비밀번호 다시 입력',
+            secureTextEntry: true,
+            maxLength: 128,
+          })}
+
+          {!!form.confirmation && (
             <Text
               style={
-                password === passwordConfirm
-                  ? styles.successText
-                  : styles.errorText
+                form.password === form.confirmation
+                  ? styles.success
+                  : styles.error
               }
             >
-              {password === passwordConfirm
+              {form.password === form.confirmation
                 ? '✓ 비밀번호가 일치합니다.'
                 : '비밀번호가 일치하지 않습니다.'}
             </Text>
           )}
 
-          {/* 이메일 */}
-          <Text style={styles.label}>
-            이메일
+          <Text style={styles.hint}>
+            중복 확인은 현재 앱 실행 중 완료된 체험 가입만
+            비교합니다. 앱을 다시 실행하거나 웹을
+            새로고침하면 확인 기록은 초기화됩니다.
+            실제 서비스 전체의 중복 확인 및 휴대폰
+            본인 인증은 서버 연결 후 가능합니다.
           </Text>
 
-          <TextInput
-            style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="example@email.com"
-            placeholderTextColor="#A0A0A0"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-
-          {email.length > 0 &&
-            !isValidEmail(email) && (
-              <Text style={styles.errorText}>
-                이메일 형식을 확인해주세요.
-              </Text>
-            )}
-
-          {/* 시연 안내 */}
-          <View style={styles.demoNoticeBox}>
-            <Text style={styles.demoNotice}>
-              본 서비스는 개발 중인 시연용 앱입니다.
-              {'\n'}
-              휴대폰 본인인증 없이 회원가입 화면을
-              체험할 수 있습니다.
-              {'\n'}
-              실제 회원가입 및 계정 생성은
-              백엔드 연동 후 지원됩니다.
+          {!!message && (
+            <Text
+              style={styles.message}
+              accessibilityLiveRegion="polite"
+            >
+              {message}
             </Text>
-          </View>
-
-          <View style={{ height: 40 }} />
-
+          )}
         </ScrollView>
 
-        {/* 회원가입 버튼 */}
         <TouchableOpacity
-          style={styles.bottomButton}
-          onPress={handleSignUp}
-          activeOpacity={0.8}
+          accessibilityRole="button"
+          disabled={pending}
+          style={[
+            styles.button,
+            pending && styles.disabled,
+          ]}
+          onPress={signUp}
         >
-          <Text style={styles.bottomButtonText}>
-            회원가입
-          </Text>
+          {pending ? (
+            <ActivityIndicator color="#FFF" />
+          ) : (
+            <Text style={styles.white}>회원가입</Text>
+          )}
         </TouchableOpacity>
-
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  screen: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFF',
   },
-
-  header: {
+  flex: {
+    flex: 1,
+  },
+  back: {
     padding: 20,
   },
-
-  backText: {
-    fontSize: 16,
-    color: '#767676',
-  },
-
   content: {
-    flex: 1,
     paddingHorizontal: 24,
+    paddingBottom: 28,
+    gap: 14,
   },
-
   title: {
     fontSize: 26,
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: '#1A1A1A',
-    marginBottom: 8,
   },
-
-  subtitle: {
-    fontSize: 15,
+  hint: {
+    fontSize: 12,
+    lineHeight: 21,
     color: '#767676',
-    marginBottom: 32,
   },
-
+  field: {
+    gap: 8,
+  },
   label: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#1A1A1A',
-    marginTop: 20,
-    marginBottom: 8,
+    fontWeight: '700',
+    color: '#243D61',
   },
-
   input: {
     backgroundColor: '#F8F9FA',
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    padding: 14,
     fontSize: 16,
     color: '#1A1A1A',
     borderWidth: 1,
     borderColor: '#E5E5EA',
   },
-
-  inputRow: {
-    flexDirection: 'row',
+  secondary: {
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#EAF1FF',
     alignItems: 'center',
   },
-
-  flexInput: {
-    flex: 1,
-    marginRight: 10,
-  },
-
-  helperText: {
-    color: '#999999',
-    fontSize: 12,
-    marginTop: 6,
-    marginLeft: 4,
-  },
-
-  errorText: {
-    color: '#FF3B30',
-    fontSize: 13,
-    marginTop: 6,
-    marginLeft: 4,
-  },
-
-  successText: {
-    color: '#00A86B',
-    fontSize: 13,
-    marginTop: 6,
-    marginLeft: 4,
-    fontWeight: '600',
-  },
-
-  actionBtn: {
-    backgroundColor: '#1A1A1A',
-    paddingHorizontal: 16,
-    height: 50,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    minWidth: 100,
-  },
-
-  actionBtnSuccess: {
-    backgroundColor: '#0046FF',
-  },
-
-  actionBtnText: {
-    color: '#FFFFFF',
+  link: {
+    color: '#2457AB',
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
-
-  demoNoticeBox: {
-    marginTop: 30,
-    backgroundColor: '#F8F9FA',
-    padding: 16,
-    borderRadius: 12,
-  },
-
-  demoNotice: {
+  error: {
+    color: '#C54141',
     fontSize: 12,
-    color: '#777777',
     lineHeight: 20,
-    textAlign: 'center',
   },
-
-  bottomButton: {
-    backgroundColor: '#0046FF',
+  success: {
+    color: '#087D54',
+    fontSize: 12,
+    lineHeight: 20,
+  },
+  message: {
+    color: '#9C4D20',
+    fontSize: 13,
+    lineHeight: 21,
+  },
+  button: {
     margin: 24,
     paddingVertical: 16,
     borderRadius: 12,
+    backgroundColor: '#245DE5',
     alignItems: 'center',
   },
-
-  bottomButtonText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+  white: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  disabled: {
+    opacity: 0.6,
   },
 });
