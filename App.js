@@ -38,7 +38,6 @@ import MyDataScreen from './screens/MyDataScreen';
 import MainScreen from './screens/MainScreen';
 import PaymentScreen from './screens/PaymentScreen';
 
-import TodaySchedulePanel from './components/TodaySchedulePanel';
 import PrivacyDataModal from './components/PrivacyDataModal';
 
 import {
@@ -831,19 +830,15 @@ export default function App() {
         case 'Main':
           return (
             <View style={styles.screen}>
-              <TodaySchedulePanel
-                disabled={false}
-                onEditRoutine={() => previewGo('DailyRoutine')}
-                onViewBenefits={() =>
-                  previewGo('RoutineRecommendation')
-                }
-              />
-
               <MainScreen
                 walletCards={walletCards}
                 activeCardId={activeCardId}
                 onSelectCard={previewSelect}
                 onLogout={() => previewGo('Login')}
+                onEditRoutine={() => previewGo('DailyRoutine')}
+                onViewBenefits={() =>
+                  previewGo('RoutineRecommendation')
+                }
                 onOpenChat={() =>
                   Alert.alert(
                     '안내',
@@ -986,20 +981,17 @@ export default function App() {
       case 'Main':
         return (
           <View style={styles.screen}>
-            <TodaySchedulePanel
-              disabled={Boolean(previewScreen) || privacyOpen}
-              onEditRoutine={openRoutine}
-              onViewBenefits={() => {
-                setRoutineMode('edit');
-                navigate('RoutineRecommendation');
-              }}
-            />
-
             <MainScreen
               walletCards={walletCards}
               activeCardId={activeCardId}
               onSelectCard={handleSelectCard}
               onLogout={handleLogout}
+              scheduleDisabled={Boolean(previewScreen) || privacyOpen}
+              onEditRoutine={openRoutine}
+              onViewBenefits={() => {
+                setRoutineMode('edit');
+                navigate('RoutineRecommendation');
+              }}
             />
           </View>
         );
