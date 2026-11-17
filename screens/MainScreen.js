@@ -1,6 +1,7 @@
 import RecommendationLaunchPopup from '../components/RecommendationLaunchPopup';
 import MyDataCardStatus, { useMyDataSnapshot, mergeImportedWallet } from '../components/MyDataCardStatus';
 import AccountWithdrawal from '../components/AccountWithdrawal';
+import TodaySchedulePanel from '../components/TodaySchedulePanel';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform, useWindowDimensions, Vibration } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,10 +27,10 @@ const NAV = [{
   icon: 'qr-code-outline',
   active: 'qr-code'
 }, {
-  id: 'finance',
-  label: '금융',
-  icon: 'pie-chart-outline',
-  active: 'pie-chart'
+  id: 'schedule',
+  label: '오늘의 일정',
+  icon: 'calendar-outline',
+  active: 'calendar'
 }, {
   id: 'cards',
   label: '카드',
@@ -261,6 +262,9 @@ const SettingsToggle = ({
 export default function MainScreen({
   onLogout,
   onOpenChat,
+  onEditRoutine,
+  onViewBenefits,
+  scheduleDisabled = false,
   walletCards = DEMO_WALLET_CARDS,
   activeCardId = DEMO_WALLET_CARDS[0].id,
   onSelectCard = () => {}
@@ -1086,6 +1090,11 @@ export default function MainScreen({
                 {renderHome()}
               </>}
             {tab === 'benefits' && renderBenefits()}
+            {tab === 'schedule' && <TodaySchedulePanel
+              disabled={scheduleDisabled}
+              onEditRoutine={onEditRoutine}
+              onViewBenefits={onViewBenefits}
+            />}
             {tab === 'finance' && renderFinance()}
             {tab === 'cards' && renderCards()}
           </ScrollView>}
