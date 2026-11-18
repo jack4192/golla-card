@@ -1,9 +1,9 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ScrollView } from 'react-native';
-
-export default function MyDataResultScreen({ onNext }) {
-  return (
-    <SafeAreaView style={styles.safeArea}>
+export default function MyDataResultScreen({
+  onNext
+}) {
+  return <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         
         <View style={styles.headerSection}>
@@ -28,7 +28,9 @@ export default function MyDataResultScreen({ onNext }) {
           <View style={styles.graphRow}>
             <Text style={styles.graphLabel}>🍔 식비/카페</Text>
             <View style={styles.barBackground}>
-              <View style={[styles.barFill, { width: '45%' }]} />
+              <View style={[styles.barFill, {
+              width: '45%'
+            }]} />
             </View>
             <Text style={styles.graphPercent}>45%</Text>
           </View>
@@ -36,7 +38,9 @@ export default function MyDataResultScreen({ onNext }) {
           <View style={styles.graphRow}>
             <Text style={styles.graphLabel}>🚌 교통/이동</Text>
             <View style={styles.barBackground}>
-              <View style={[styles.barFill, { width: '30%' }]} />
+              <View style={[styles.barFill, {
+              width: '30%'
+            }]} />
             </View>
             <Text style={styles.graphPercent}>30%</Text>
           </View>
@@ -44,7 +48,9 @@ export default function MyDataResultScreen({ onNext }) {
           <View style={styles.graphRow}>
             <Text style={styles.graphLabel}>🏋️ 건강/운동</Text>
             <View style={styles.barBackground}>
-              <View style={[styles.barFill, { width: '15%' }]} />
+              <View style={[styles.barFill, {
+              width: '15%'
+            }]} />
             </View>
             <Text style={styles.graphPercent}>15%</Text>
           </View>
@@ -52,7 +58,10 @@ export default function MyDataResultScreen({ onNext }) {
           <View style={styles.graphRow}>
             <Text style={styles.graphLabel}>🛍️ 기타/쇼핑</Text>
             <View style={styles.barBackground}>
-              <View style={[styles.barFill, { width: '10%', backgroundColor: '#C7C7CC' }]} />
+              <View style={[styles.barFill, {
+              width: '10%',
+              backgroundColor: '#C7C7CC'
+            }]} />
             </View>
             <Text style={styles.graphPercent}>10%</Text>
           </View>
@@ -75,36 +84,154 @@ export default function MyDataResultScreen({ onNext }) {
       <TouchableOpacity style={styles.bottomButton} onPress={onNext}>
         <Text style={styles.bottomButtonText}>분석 완료 · 홈으로 이동</Text>
       </TouchableOpacity>
-    </SafeAreaView>
-  );
+    </SafeAreaView>;
 }
-
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F0F5FF' },
-  content: { flex: 1, paddingHorizontal: 24 },
-  
-  headerSection: { marginTop: 40, marginBottom: 30 },
-  sparkle: { fontSize: 24, marginBottom: 8 },
-  title: { fontSize: 28, fontWeight: 'bold', color: '#1A1A1A', lineHeight: 36, marginBottom: 12 },
-  subtitle: { fontSize: 15, color: '#767676', lineHeight: 22 },
-
-  card: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 24, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 3 },
-  cardLabel: { fontSize: 13, fontWeight: 'bold', color: '#0046FF', marginBottom: 12 },
-  cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#1A1A1A', marginBottom: 16 },
-  cardTitleBlack: { fontSize: 18, fontWeight: 'bold', color: '#1A1A1A', marginBottom: 24 },
-  cardDesc: { fontSize: 14, color: '#767676', lineHeight: 22 },
-
-  graphRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  graphLabel: { width: 90, fontSize: 14, color: '#1A1A1A', fontWeight: '500' },
-  barBackground: { flex: 1, height: 10, backgroundColor: '#F0F0F0', borderRadius: 5, marginHorizontal: 12, overflow: 'hidden' },
-  barFill: { height: '100%', backgroundColor: '#0046FF', borderRadius: 5 },
-  graphPercent: { width: 35, fontSize: 14, color: '#767676', textAlign: 'right' },
-
-  tipsContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 30 },
-  tipCard: { width: '48%', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 3 },
-  tipIcon: { fontSize: 24, marginBottom: 12 },
-  tipText: { fontSize: 12, color: '#1A1A1A', textAlign: 'center', lineHeight: 18, fontWeight: '500' },
-
-  bottomButton: { backgroundColor: '#0046FF', margin: 24, paddingVertical: 16, borderRadius: 12, alignItems: 'center' },
-  bottomButtonText: { fontSize: 18, fontWeight: 'bold', color: '#FFFFFF' }
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#F4F7FB"
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 24,
+    width: "100%",
+    maxWidth: 720,
+    alignSelf: "center",
+    padding: 22,
+    paddingTop: 28,
+    paddingBottom: 40,
+    gap: 18
+  },
+  headerSection: {
+    marginTop: 40,
+    marginBottom: 30
+  },
+  sparkle: {
+    fontSize: 24,
+    marginBottom: 8
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#142D4E",
+    lineHeight: 39,
+    marginBottom: 12
+  },
+  subtitle: {
+    fontSize: 14,
+    color: "#5A6E89",
+    lineHeight: 24
+  },
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    padding: 24,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#E3EAF4"
+  },
+  cardLabel: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: "#245DE5",
+    marginBottom: 12
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: "#142D4E",
+    marginBottom: 16
+  },
+  cardTitleBlack: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: "#142D4E",
+    marginBottom: 24
+  },
+  cardDesc: {
+    fontSize: 14,
+    color: "#5A6E89",
+    lineHeight: 22
+  },
+  graphRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16
+  },
+  graphLabel: {
+    width: 90,
+    fontSize: 14,
+    color: "#142D4E",
+    fontWeight: '500'
+  },
+  barBackground: {
+    flex: 1,
+    height: 10,
+    backgroundColor: '#F0F0F0',
+    borderRadius: 5,
+    marginHorizontal: 12,
+    overflow: 'hidden'
+  },
+  barFill: {
+    height: '100%',
+    backgroundColor: "#245DE5",
+    borderRadius: 5
+  },
+  graphPercent: {
+    width: 35,
+    fontSize: 14,
+    color: "#5A6E89",
+    textAlign: 'right'
+  },
+  tipsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 30
+  },
+  tipCard: {
+    width: '48%',
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3
+  },
+  tipIcon: {
+    fontSize: 24,
+    marginBottom: 12
+  },
+  tipText: {
+    fontSize: 12,
+    color: "#142D4E",
+    textAlign: 'center',
+    lineHeight: 18,
+    fontWeight: '500'
+  },
+  bottomButton: {
+    backgroundColor: "#245DE5",
+    margin: 0,
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: "center",
+    minHeight: 54,
+    padding: 16,
+    justifyContent: "center",
+    width: "90%",
+    maxWidth: 552,
+    alignSelf: "center",
+    marginTop: 12,
+    marginBottom: 20
+  },
+  bottomButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: "#FFFFFF"
+  }
 });

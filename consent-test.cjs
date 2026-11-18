@@ -1,0 +1,26 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict'),babel=require('@babel/core');
+let states=[],refs=[],cursor=0,rc=0;
+const React={createElement:(type,props,...children)=>({type,props:{...props,children:children.flat()}}),useState:init=>{const i=cursor++;if(!(i in states))states[i]=typeof init==='function'?init():init;return[states[i],v=>states[i]=typeof v==='function'?v(states[i]):v]},useRef:init=>{const i=rc++;return refs[i]||(refs[i]={current:init})},useEffect(){}};
+const events=[];let permission={status:'undetermined',granted:false,canAskAgain:true};
+const native={Platform:{OS:'web'},StyleSheet:{create:x=>x}};for(const n of ['ActivityIndicator','ScrollView','Text','TouchableOpacity','View'])native[n]=n;
+const notifications={IosAuthorizationStatus:{PROVISIONAL:3},AndroidImportance:{DEFAULT:3},getPermissionsAsync:async()=>permission,setNotificationChannelAsync:async()=>events.push('channel'),requestPermissionsAsync:async()=>{events.push('request');return{status:'granted',granted:true,canAskAgain:true}}};
+const context={exports:{},require:n=>n==='react'?{...React,default:React,__esModule:true}:n==='react-native'?native:notifications,window:{isSecureContext:true,Notification:{permission:'default',requestPermission:async()=>{events.push('browser-request');return'denied'}}},console};
+vm.runInNewContext(babel.transformSync(fs.readFileSync('screens/AgreementScreen.js','utf8'),{configFile:false,babelrc:false,plugins:['@babel/plugin-transform-modules-commonjs',['@babel/plugin-transform-react-jsx',{runtime:'classic'}]]}).code,context);
+const api=context.exports;
+(async()=>{
+ assert.equal((await api.getDeviceNotificationPermission()).status,'undetermined');assert.equal(events.length,0);
+ assert.equal((await api.requestDeviceNotificationPermission()).status,'denied');assert.deepEqual(events,['browser-request']);
+ context.window.Notification.permission='denied';assert.equal((await api.requestDeviceNotificationPermission()).status,'denied');assert.equal(events.length,1);
+ context.window.isSecureContext=false;assert.equal((await api.requestDeviceNotificationPermission()).status,'unsupported');assert.equal(events.length,1);
+ native.Platform.OS='android';events.length=0;await api.requestDeviceNotificationPermission();assert.deepEqual(events,['channel','request']);
+ permission={status:'denied',granted:false,canAskAgain:false};events.length=0;await api.requestDeviceNotificationPermission();assert.equal(events.length,0);
+ native.Platform.OS='ios';permission={status:'undetermined',granted:false,canAskAgain:true,ios:{status:3}};assert.equal((await api.getDeviceNotificationPermission()).status,'granted');
+ let payload;const props={initialConsent:{myDataAgreed:true},onNext:async value=>{payload=value},onDraftChange:()=>{}};
+ const render=()=>{cursor=0;rc=0;return api.default(props)};
+ const nodes=n=>n&&typeof n==='object'?[n,...(n.props?.children||[]).flatMap(nodes)]:[];
+ render();assert(!states[0].cardInfo,'legacy blanket consent cannot precheck granular items');
+ let tree=render();nodes(tree).find(n=>typeof n.type==='function'&&n.props.title==='필수 항목 모두 동의').props.onPress();
+ const next=nodes(render()).find(n=>n.type==='TouchableOpacity'&&nodes(n).some(t=>t.type==='Text'&&t.props.children.includes('동의하고 계속하기')));assert(!next.props.disabled);await next.props.onPress();
+ assert(payload.items.cardInfo&&payload.items.spendingInfo&&payload.items.recommendation);assert.equal(payload.morningNotificationAgreed,false);assert.equal(payload.myDataAgreed,true);assert(payload.itemAgreedAt.cardInfo);assert.equal(events.length,0,'continue does not request permission or force optional opt-in');
+ console.log('PASS individual/all consent, no legacy precheck, optional-denied continuation, item timestamps, read-only permission lookup, browser denial/unsupported, Android channel-before-request, blocked re-prompt, iOS provisional');
+})().catch(e=>{console.error(e);process.exitCode=1});
