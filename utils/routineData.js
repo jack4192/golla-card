@@ -436,14 +436,7 @@ export function makeSignals(profile, events, day = dateKey()) {
 export async function saveDetailedRoutine(rows) {
   const detailedRoutine = validateDetails(rows);
   const profile = await readProfile();
-
-  const next = {
-    ...profile,
-    detailedRoutine,
-    version: 2,
-    updatedAt: new Date().toISOString(),
-  };
-
+  const next = {...profile, detailedRoutine, version:2, updatedAt:new Date().toISOString()};
   await writeJson(ROUTINE_KEY, next);
   return next;
 }

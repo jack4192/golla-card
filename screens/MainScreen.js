@@ -1,7 +1,8 @@
+import WalletProductCard from '../components/WalletProductCard';
+import WalletWheelControls from '../components/WalletWheelControls';
 import RecommendationLaunchPopup from '../components/RecommendationLaunchPopup';
 import MyDataCardStatus, { useMyDataSnapshot, mergeImportedWallet } from '../components/MyDataCardStatus';
 import AccountWithdrawal from '../components/AccountWithdrawal';
-import TodaySchedulePanel from '../components/TodaySchedulePanel';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform, useWindowDimensions, Vibration } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,10 +28,7 @@ const NAV = [{
   icon: 'qr-code-outline',
   active: 'qr-code'
 }, {
-  id: 'schedule',
-  label: '오늘의 일정',
-  icon: 'calendar-outline',
-  active: 'calendar'
+  id: 'schedule', label: '오늘의 일정', icon: 'calendar-outline', active: 'calendar'
 }, {
   id: 'cards',
   label: '카드',
@@ -260,15 +258,14 @@ const SettingsToggle = ({
   }} thumbColor={value ? '#2860E6' : '#FFFFFF'} />
   </View>;
 export default function MainScreen({
+  schedulePanel,
   onLogout,
   onOpenChat,
-  onEditRoutine,
-  onViewBenefits,
-  scheduleDisabled = false,
   walletCards = DEMO_WALLET_CARDS,
   activeCardId = DEMO_WALLET_CARDS[0].id,
   onSelectCard = () => {}
 }) {
+  const [walletViewportWidth, setWalletViewportWidth] = useState(0);
   // MYDATA_UI_LINK_V1
   const {
     snapshot: importedMyData
@@ -281,18 +278,16 @@ export default function MainScreen({
     setImportedSelection(null);
   }, [suppliedActive, importedMyData?.userId]);
   walletCards = mergeImportedWallet(walletCards, importedMyData);
-  activeCardId = walletCards.some(card => card.id === importedSelection) ? importedSelection : walletCards.some(card => card.id === suppliedActive) ? suppliedActive : walletCards[0]?.id;
+  activeCardId = walletCards.some(c => c.id === importedSelection) ? importedSelection : walletCards.some(c => c.id === suppliedActive) ? suppliedActive : walletCards[0]?.id;
   onSelectCard = id => {
-    if (!walletCards.some(card => card.id === id)) return;
+    if (!walletCards.some(c => c.id === id)) return;
     setImportedSelection(id);
-    if (suppliedCards.some(card => card.id === id)) {
-      suppliedSelect(id);
-    }
+    if (suppliedCards.some(c => c.id === id)) suppliedSelect(id);
   };
   const {
     width
   } = useWindowDimensions();
-  const cardWidth = Math.max(250, width - 40);
+  const cardWidth = Math.max(1, walletViewportWidth || width - 40);
   const [tab, setTab] = useState('home');
   const [catalogQuery, setCatalogQuery] = useState('');
   const [selectedCatalog, setSelectedCatalog] = useState(null);
@@ -553,65 +548,37 @@ export default function MainScreen({
         <Ionicons name="chevron-forward" size={15} color="#3168DF" />
       </View>
     </TouchableOpacity>;
-  const wallet = () => <>
+  const wallet = () => <WalletWheelControls cards={walletCards} selectedId={currentCard.id} onSelect={onSelectCard} onLayout={event => {
+    const measured = Math.round(event.nativeEvent.layout.width);
+    if (Number.isFinite(measured) && measured > 0) setWalletViewportWidth(previous => previous === measured ? previous : measured);
+  }}><>
       <FlatList ref={walletRef} data={walletCards} extraData={activeCardId} horizontal pagingEnabled showsHorizontalScrollIndicator={false} keyExtractor={item => item.id} initialScrollIndex={activeCardIndex} getItemLayout={(_, index) => ({
-      length: cardWidth,
-      offset: cardWidth * index,
-      index
-    })} onMomentumScrollEnd={event => {
-      const index = Math.round(event.nativeEvent.contentOffset.x / cardWidth);
-      const nextIndex = Math.max(0, Math.min(index, walletCards.length - 1));
-      if (walletCards[nextIndex]) {
-        onSelectCard(walletCards[nextIndex].id);
-      }
-    }} renderItem={({
-      item
-    }) => <View style={{
-      width: cardWidth
-    }}>
-            <TouchableOpacity activeOpacity={0.88} accessibilityRole="button" accessibilityLabel={`${item.name} 카드로 결제 화면 열기`} onPress={() => {
-        onSelectCard(item.id);
-        setTab('payment');
-      }} style={[styles.walletCard, {
-        backgroundColor: item.color
-      }]}>
-              <View style={styles.walletCardTop}>
-                <Text style={[styles.walletIssuer, {
-            color: item.textColor
-          }]}>
-                  {item.issuer}
-                </Text>
-                <Ionicons name="wifi" size={20} color={item.textColor} />
-              </View>
-
-              <Text style={[styles.walletCardName, {
-          color: item.textColor
-        }]}>
-                {item.name}
-              </Text>
-
-              <View style={styles.walletCardBottom}>
-                <View style={styles.chipMark} />
-                <Text style={[styles.cardDigits, {
-            color: item.textColor
-          }]}>
-                  {item.number}
-                </Text>
-              </View>
-            </TouchableOpacity>
+        length: cardWidth,
+        offset: cardWidth * index,
+        index
+      })} onMomentumScrollEnd={event => {
+        const index = Math.round(event.nativeEvent.contentOffset.x / cardWidth);
+        const nextIndex = Math.max(0, Math.min(index, walletCards.length - 1));
+        if (walletCards[nextIndex]) {
+          onSelectCard(walletCards[nextIndex].id);
+        }
+      }} renderItem={({
+        item
+      }) => <View style={{
+        width: cardWidth
+      }}>
+            <WalletProductCard card={item} onPress={() => {
+          onSelectCard(item.id);
+          setTab('payment');
+        }} />
           </View>} />
 
       <View style={styles.dotsRow}>
         {walletCards.map((item, index) => <View key={item.id} style={[styles.dot, activeCardIndex === index && styles.dotActive]} />)}
       </View>
 
-      <View style={styles.walletHintRow}>
-        <Ionicons name="qr-code-outline" size={14} color="#6281B6" />
-        <Text style={styles.walletHintText}>
-          카드를 누르면 해당 카드의 QR·바코드 결제 화면으로 바로 이동해요.
-        </Text>
-      </View>
-    </>;
+      
+    </></WalletWheelControls>;
 
   // 내 지갑에서 선택된 카드에 맞는 혜택 표시
   const walletBenefitSummary = () => {
@@ -691,26 +658,31 @@ export default function MainScreen({
       </View>;
   };
   const renderHome = () => <>
-      <View style={styles.hero}>
-        <Text style={styles.heroEyebrow}>
-          SOL PAY · WEB DEMO v2
-        </Text>
-        <Text style={styles.heroTitle}>
-          내 카드부터,{'\n'}결제까지 간편하게
-        </Text>
-        <Text style={styles.heroSub}>
-          내 지갑의 카드를 확인하고 바코드·QR로 빠르게 결제해 보세요.
-        </Text>
-
-        <TouchableOpacity style={styles.heroAction} onPress={() => selectTab('cards')}>
-          <Text style={styles.heroActionText}>
-            내 카드 관리하기
-          </Text>
-          <Ionicons name="arrow-forward" size={17} color="#173E89" />
+      <View style={styles.sectionHeader}>
+        <View style={{flex:1}}><Text style={styles.kicker}>내 지갑 · {walletCards.length}장</Text><Text style={styles.lead}>지금 사용할 <Text style={{color:"#1756D8"}}>카드</Text></Text></View>
+        <TouchableOpacity onPress={() => selectTab('cards')} style={styles.moreRow}>
+          <Text style={styles.moreText}>전체 카드</Text>
+          <Ionicons name="chevron-forward" size={15} color="#6A7590" />
         </TouchableOpacity>
       </View>
 
-      {appNotice && <View style={styles.noticeStrip}>
+      <View style={{backgroundColor:"#EAF1FF",borderRadius:24,paddingVertical:12}}>{wallet()}</View>
+<TouchableOpacity style={styles.payShortcut} onPress={() => selectTab('payment')}>
+        <Ionicons name="qr-code-outline" size={23} color="#FFFFFF" />
+        <Text style={styles.payShortcutText}>
+          선택한 카드로 결제
+        </Text>
+        <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+      </TouchableOpacity>
+
+<TouchableOpacity style={styles.scheduleLink} onPress={() => selectTab('schedule')}>
+        <Ionicons name="calendar-outline" size={22} color="#1954C8"/>
+        <Text style={{flex:1,fontWeight:'700',fontSize:16}}>오늘의 일정</Text>
+        <Ionicons name="chevron-forward" size={19} color="#426185"/>
+      </TouchableOpacity>
+      {walletBenefitSummary()}
+<MyDataCardStatus card={currentCard} />
+{appNotice && <View style={styles.noticeStrip}>
           <Ionicons name="notifications-outline" size={16} color="#2C60C2" />
           <Text style={styles.noticeStripText}>
             이번 달 혜택{' '}
@@ -719,18 +691,9 @@ export default function MainScreen({
           </Text>
         </View>}
 
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>내 지갑</Text>
-        <TouchableOpacity onPress={() => selectTab('cards')} style={styles.moreRow}>
-          <Text style={styles.moreText}>전체 카드</Text>
-          <Ionicons name="chevron-forward" size={15} color="#6A7590" />
-        </TouchableOpacity>
-      </View>
-
-      {wallet()}
-      {walletBenefitSummary()}
+      
       <TouchableOpacity onPress={() => selectTab('cards')} style={{
-      backgroundColor: '#EAF1FF',
+      backgroundColor: "#EDF3FF",
       padding: 14,
       borderRadius: 14,
       marginTop: 12,
@@ -759,7 +722,7 @@ export default function MainScreen({
       {getCatalogCardForWallet(currentCard) && <TouchableOpacity onPress={() => setSelectedCatalog(getCatalogCardForWallet(currentCard))} style={{
       padding: 12,
       marginTop: 9,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: "#FFFFFF",
       borderRadius: 12
     }}>
           <Text style={{
@@ -785,21 +748,21 @@ export default function MainScreen({
         {homeBenefits.map(item => benefitTile(item, true))}
       </ScrollView>
 
-      <TouchableOpacity style={styles.payShortcut} onPress={() => selectTab('payment')}>
-        <Ionicons name="qr-code-outline" size={23} color="#FFFFFF" />
-        <Text style={styles.payShortcutText}>
-          바코드 / QR 현장 결제
-        </Text>
-        <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
-      </TouchableOpacity>
-    </>;
+          </>;
   const renderBenefits = () => <>
-      <Text style={styles.pageEyebrow}>BENEFIT CENTER</Text>
-      <Text style={styles.pageTitle}>혜택을 한곳에서</Text>
-      <Text style={styles.pageSubtitle}>
-        이벤트 6개와 마이샵 25개를 비교해보세요.
-      </Text>
-
+      <Text style={styles.lead}>혜택 둘러보기</Text>
+      <View style={styles.report}>
+        <Text style={styles.kicker}>등록된 혜택</Text>
+        <Text style={styles.total}>{ALL_BENEFITS.length}건</Text>
+        {['이벤트', '마이샵'].map(group => {
+          const count = ALL_BENEFITS.filter(item => item.type === group).length;
+          return <View key={group} style={{gap: 5}}>
+            <Text style={styles.reportLabel}>{group} · {count}건</Text>
+            <View style={styles.track}><View style={{height: 7, backgroundColor: '#2464ED',
+              width: (100 * count / Math.max(1, ALL_BENEFITS.length)) + '%'}} /></View>
+          </View>;
+        })}
+      </View>
       <View style={styles.searchBox}>
         <Ionicons name="search-outline" size={18} color="#8C98AE" />
         <TextInput style={styles.searchInput} placeholder="가맹점 또는 혜택 검색" value={search} onChangeText={setSearch} placeholderTextColor="#99A4B3" />
@@ -887,78 +850,12 @@ export default function MainScreen({
     </>;
   const renderCards = () => <>
 
-      <Text style={{
-      fontSize: 18,
-      fontWeight: '900',
-      color: '#203251',
-      marginBottom: 8
-    }}>
-        신한·국민 카드 상품 22종
-      </Text>
-
-      <Text style={{
-      color: '#6C7C94',
-      fontSize: 12,
-      marginBottom: 12
-    }}>
-        상품 정보 조회용이며 실제 보유 카드와는 별개입니다.
-      </Text>
-
-      <TextInput placeholder="카드 이름이나 혜택 검색" value={catalogQuery} onChangeText={setCatalogQuery} style={{
-      backgroundColor: '#FFFFFF',
-      borderWidth: 1,
-      borderColor: '#E2E8F2',
-      padding: 12,
-      borderRadius: 12,
-      marginBottom: 12
-    }} />
-
-      {CSV_CARD_CATALOG.filter(c => (c.name + ' ' + c.description + ' ' + c.tags.join(' ')).toLowerCase().includes(catalogQuery.trim().toLowerCase())).map(c => <TouchableOpacity key={c.code} onPress={() => setSelectedCatalog(c)} style={{
-      backgroundColor: '#FFFFFF',
-      padding: 14,
-      borderRadius: 14,
-      marginBottom: 8,
-      borderWidth: 1,
-      borderColor: '#E6EBF4'
-    }}>
-          <Text style={{
-        fontSize: 14,
-        fontWeight: '800',
-        color: '#1D304D'
-      }}>
-            {c.name}
-          </Text>
-          <Text style={{
-        fontSize: 11,
-        color: '#687A96',
-        marginTop: 5
-      }}>
-            {c.issuer} · {c.type} · 혜택 {c.benefits.length}건
-          </Text>
-          <Text numberOfLines={2} style={{
-        fontSize: 11,
-        color: '#687A96',
-        marginTop: 6
-      }}>
-            {c.description}
-          </Text>
-        </TouchableOpacity>)}
-
-      <Text style={{
-      fontSize: 18,
-      fontWeight: '900',
-      marginTop: 20,
-      marginBottom: 15,
-      color: '#203251'
-    }}>
-        내 지갑 카드
-      </Text>
-      <Text style={styles.pageEyebrow}>MY CARDS</Text>
-      <Text style={styles.pageTitle}>카드 관리</Text>
-      <Text style={styles.pageSubtitle}>
-        지갑에 표시되는 시연용 카드 {walletCards.length}종이에요.
-      </Text>
-
+      <View style={styles.walletStage}>
+        <Text style={styles.walletCount}>보유 카드 {walletCards.length}장</Text>
+        <Text style={styles.walletHeading}>내 지갑</Text>
+        <WalletProductCard card={currentCard} onPress={() => selectTab('payment')} />
+      </View>
+      <Text style={styles.sectionTitle}>내 카드 목록</Text>
       {walletCards.map(card => <TouchableOpacity key={card.id} style={styles.cardListItem} onPress={() => {
       onSelectCard(card.id);
       selectTab('home');
@@ -989,6 +886,63 @@ export default function MainScreen({
           실제 금융기관에 카드를 등록하는 것은 아니에요.
         </Text>
       </View>
+      <Text style={{
+      fontSize: 18,
+      fontWeight: "800",
+      color: '#203251',
+      marginBottom: 8
+    }}>
+        신한·국민 카드 상품 22종
+      </Text>
+
+      <Text style={{
+      color: '#6C7C94',
+      fontSize: 12,
+      marginBottom: 12
+    }}>
+        상품 정보 조회용이며 실제 보유 카드와는 별개입니다.
+      </Text>
+
+      <TextInput placeholder="카드 이름이나 혜택 검색" value={catalogQuery} onChangeText={setCatalogQuery} style={{
+      backgroundColor: "#FFFFFF",
+      borderWidth: 1,
+      borderColor: '#E2E8F2',
+      padding: 12,
+      borderRadius: 12,
+      marginBottom: 12
+    }} />
+
+      {CSV_CARD_CATALOG.filter(c => (c.name + ' ' + c.description + ' ' + c.tags.join(' ')).toLowerCase().includes(catalogQuery.trim().toLowerCase())).map(c => <TouchableOpacity key={c.code} onPress={() => setSelectedCatalog(c)} style={{
+      backgroundColor: "#FFFFFF",
+      padding: 14,
+      borderRadius: 14,
+      marginBottom: 8,
+      borderWidth: 1,
+      borderColor: '#E6EBF4'
+    }}>
+          <Text style={{
+        fontSize: 14,
+        fontWeight: '800',
+        color: '#1D304D'
+      }}>
+            {c.name}
+          </Text>
+          <Text style={{
+        fontSize: 12,
+        color: '#687A96',
+        marginTop: 5
+      }}>
+            {c.issuer} · {c.type} · 혜택 {c.benefits.length}건
+          </Text>
+          <Text numberOfLines={2} style={{
+        fontSize: 12,
+        color: '#687A96',
+        marginTop: 6
+      }}>
+            {c.description}
+          </Text>
+        </TouchableOpacity>)}
+
     </>;
   const renderSettings = () => <>
       <View style={styles.settingsHeader}>
@@ -1063,9 +1017,7 @@ export default function MainScreen({
       {!settingsOpen && tab !== 'payment' && <View style={styles.topBar}>
           <View>
             <Text style={styles.brand}>SOL·Pay</Text>
-            <Text style={styles.brandCaption}>
-              SMART SAVING AGENT
-            </Text>
+            
           </View>
 
           <View style={styles.headerActions}>
@@ -1084,17 +1036,10 @@ export default function MainScreen({
         </View>}
 
       <View style={styles.mainArea}>
-        {settingsOpen ? renderSettings() : tab === 'payment' ? <PaymentScreen card={currentCard} cards={walletCards} onSelectCard={onSelectCard} onClose={() => selectTab('home')} /> : <ScrollView key={tab} style={styles.mainScroll} contentContainerStyle={styles.pageContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            {tab === 'home' && <>
-                <MyDataCardStatus card={currentCard} />
-                {renderHome()}
-              </>}
+        {schedulePanel && React.cloneElement(schedulePanel, {showPage: tab === 'schedule' && !settingsOpen})}
+        {settingsOpen ? renderSettings() : tab === 'payment' ? <PaymentScreen card={currentCard} cards={walletCards} onSelectCard={onSelectCard} onClose={() => selectTab('home')} /> : tab === 'schedule' ? null : <ScrollView key={tab} style={styles.mainScroll} contentContainerStyle={styles.pageContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            {tab === 'home' && renderHome()}
             {tab === 'benefits' && renderBenefits()}
-            {tab === 'schedule' && <TodaySchedulePanel
-              disabled={scheduleDisabled}
-              onEditRoutine={onEditRoutine}
-              onViewBenefits={onViewBenefits}
-            />}
             {tab === 'finance' && renderFinance()}
             {tab === 'cards' && renderCards()}
           </ScrollView>}
@@ -1103,7 +1048,7 @@ export default function MainScreen({
       {!settingsOpen && <View style={styles.bottomNav}>
           {NAV.map(item => {
         const active = item.id === tab;
-        return <TouchableOpacity key={item.id} style={styles.navItem} onPress={() => selectTab(item.id)}>
+        return <TouchableOpacity key={item.id} accessibilityRole="tab" accessibilityState={{selected: active}} style={[styles.navItem, active && styles.activeTab]} onPress={() => selectTab(item.id)}>
                 <Ionicons name={active ? item.active : item.icon} size={23} color={active ? '#245CEA' : '#98A2B4'} />
                 <Text style={[styles.navLabel, active && styles.navLabelActive]}>
                   {item.label}
@@ -1330,7 +1275,7 @@ export default function MainScreen({
         padding: 18
       }}>
           <View style={{
-          backgroundColor: '#FFFFFF',
+          backgroundColor: "#FFFFFF",
           borderRadius: 20,
           maxHeight: '85%'
         }}>
@@ -1340,7 +1285,7 @@ export default function MainScreen({
               {selectedCatalog && <>
                   <Text style={{
                 fontSize: 19,
-                fontWeight: '900',
+                fontWeight: "800",
                 color: '#1E3150'
               }}>
                     {selectedCatalog.name}
@@ -1359,7 +1304,7 @@ export default function MainScreen({
                   {selectedCatalog.benefits.map((b, i) => <View key={i} style={{
                 paddingVertical: 11,
                 borderBottomWidth: 1,
-                borderBottomColor: '#EDF1F7'
+                borderBottomColor: "#E3EAF4"
               }}>
                       <Text style={{
                   fontWeight: '700',
@@ -1369,7 +1314,7 @@ export default function MainScreen({
                       </Text>
 
                       <Text style={{
-                  color: '#245DEA',
+                  color: "#245DE5",
                   fontWeight: '800',
                   marginTop: 4
                 }}>
@@ -1378,7 +1323,7 @@ export default function MainScreen({
 
                       <Text style={{
                   color: '#6B7990',
-                  fontSize: 11,
+                  fontSize: 12,
                   marginTop: 5
                 }}>
                         {b.minPrevSpend == null ? '실적 조건 미기재' : b.minPrevSpend === 0 ? '전월 실적 없음' : '전월 ' + b.minPrevSpend.toLocaleString('ko-KR') + '원 이상'}
@@ -1387,7 +1332,7 @@ export default function MainScreen({
 
                       {!!b.note && <Text style={{
                   color: '#8894A6',
-                  fontSize: 11,
+                  fontSize: 12,
                   marginTop: 4
                 }}>
                           {b.note}
@@ -1396,7 +1341,7 @@ export default function MainScreen({
 
                   {!!selectedCatalog.tiers.length && <Text style={{
                 fontSize: 16,
-                fontWeight: '900',
+                fontWeight: "800",
                 marginTop: 16
               }}>
                       실적별 한도
@@ -1417,7 +1362,7 @@ export default function MainScreen({
 
                   <Text style={{
                 color: '#96A1B1',
-                fontSize: 11,
+                fontSize: 12,
                 marginTop: 15
               }}>
                     실제 실적·잔여 한도와 혜택 적용은
@@ -1427,14 +1372,14 @@ export default function MainScreen({
             </ScrollView>
 
             <TouchableOpacity onPress={() => setSelectedCatalog(null)} style={{
-            backgroundColor: '#245DEA',
+            backgroundColor: "#245DE5",
             padding: 14,
             alignItems: 'center',
             margin: 15,
             borderRadius: 12
           }}>
               <Text style={{
-              color: '#FFFFFF',
+              color: "#FFFFFF",
               fontWeight: '800'
             }}>
                 닫기
@@ -1447,31 +1392,47 @@ export default function MainScreen({
     </SafeAreaView>;
 }
 const styles = StyleSheet.create({
+  scheduleLink:{flexDirection:'row',alignItems:'center',gap:12,minHeight:54,borderBottomWidth:1,borderBottomColor:'#DFE7F0'},
+  kicker: {fontSize: 14, color: '#506788', fontWeight: '600', marginBottom: 4},
+  lead: {fontSize: 30, lineHeight: 39, fontWeight: '800', color: '#101F39'},
+  walletStage: {backgroundColor: '#101F4B', borderRadius: 26, padding: 20, gap: 6},
+  walletCount: {fontSize: 14, color: '#B9CDF1'},
+  walletHeading: {fontSize: 30, color: 'white', fontWeight: '800', marginBottom: 14},
+  report: {backgroundColor: '#EDF4FF', borderRadius: 22, padding: 20, gap: 10},
+  total: {fontSize: 38, fontWeight: '800', color: '#164ED3'},
+  reportLabel: {fontSize: 14, fontWeight: '600', color: '#283C58'},
+  track: {height: 7, borderRadius: 5, backgroundColor: '#D4E1F6', overflow: 'hidden'},
+  activeTab: {borderTopWidth: 3, borderTopColor: '#205DE5'},
+
   root: {
     flex: 1,
-    backgroundColor: '#F6F8FD'
+    backgroundColor: "#FAFBFE"
   },
   topBar: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 22,
     paddingTop: 14,
     paddingBottom: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderBottomColor: '#ECF0F7',
-    borderBottomWidth: 1
+    borderBottomColor: "#E3EAF4",
+    borderBottomWidth: 0,
+    width: "100%",
+    maxWidth: 640,
+    alignSelf: "center",
+    paddingVertical: 16
   },
   brand: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#193F88'
+    fontSize: 25,
+    fontWeight: "800",
+    color: "#142D4E"
   },
   brandCaption: {
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 1.2,
-    color: '#8EA2C1',
+    letterSpacing: 1,
+    color: "#5A6E89",
     marginTop: 2
   },
   headerActions: {
@@ -1479,10 +1440,10 @@ const styles = StyleSheet.create({
     gap: 8
   },
   iconCircle: {
-    width: 39,
-    height: 39,
-    borderRadius: 20,
-    backgroundColor: '#F0F5FF',
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "#EDF3FF",
     justifyContent: 'center',
     alignItems: 'center'
   },
@@ -1494,44 +1455,51 @@ const styles = StyleSheet.create({
   },
   pageContent: {
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 30
+    paddingTop: 28,
+    paddingBottom: 40,
+    width: "100%",
+    maxWidth: 640,
+    alignSelf: "center",
+    padding: 22,
+    gap: 18
   },
   hero: {
     borderRadius: 24,
-    backgroundColor: '#153C8D',
-    padding: 23,
-    marginBottom: 10
+    backgroundColor: "#245DE5",
+    padding: 24,
+    marginBottom: 0
   },
   heroEyebrow: {
     color: '#A9CAF9',
     fontWeight: '800',
-    letterSpacing: 1.2,
-    fontSize: 10,
-    marginBottom: 14
+    letterSpacing: 0.8,
+    fontSize: 12,
+    marginBottom: 14,
+    lineHeight: 19
   },
   heroTitle: {
-    color: '#FFFFFF',
-    fontSize: 25,
-    fontWeight: '900',
-    lineHeight: 34
+    color: "#FFFFFF",
+    fontSize: 28,
+    fontWeight: "800",
+    lineHeight: 39
   },
   heroSub: {
     color: '#D0E0FF',
-    fontSize: 13,
-    lineHeight: 20,
+    fontSize: 14,
+    lineHeight: 23,
     marginTop: 10
   },
   heroAction: {
     alignSelf: 'flex-start',
     marginTop: 20,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 16,
     paddingVertical: 11,
     borderRadius: 13,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8
+    gap: 8,
+    minHeight: 46
   },
   heroActionText: {
     color: '#173E89',
@@ -1542,13 +1510,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 26,
-    marginBottom: 14
+    marginTop: 12,
+    marginBottom: 0
   },
   sectionTitle: {
-    color: '#1D2B44',
-    fontSize: 20,
-    fontWeight: '900'
+    color: "#142D4E",
+    fontSize: 19,
+    fontWeight: "800",
+    lineHeight: 28
   },
   moreRow: {
     flexDirection: 'row',
@@ -1568,18 +1537,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4
   },
   walletHintText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#6980A3',
     flexShrink: 1,
-    lineHeight: 16
+    lineHeight: 17
   },
   walletBenefitBox: {
-    marginTop: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    marginTop: 0,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#E3EAF5',
-    padding: 18
+    borderColor: "#E3EAF4",
+    padding: 20
   },
   walletBenefitHeading: {
     flexDirection: 'row',
@@ -1595,8 +1564,9 @@ const styles = StyleSheet.create({
   },
   walletBenefitHeadingText: {
     color: '#1E2D48',
-    fontSize: 15,
-    fontWeight: '900'
+    fontSize: 16,
+    fontWeight: "800",
+    lineHeight: 24
   },
   walletBenefitDemoTag: {
     color: '#647FA9',
@@ -1605,7 +1575,7 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     paddingHorizontal: 8,
     paddingVertical: 5,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700'
   },
   walletBenefitCardName: {
@@ -1639,13 +1609,13 @@ const styles = StyleSheet.create({
   },
   walletBenefitChipLabel: {
     color: '#7485A2',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600'
   },
   walletBenefitChipValue: {
     color: '#2057D0',
     fontSize: 13,
-    fontWeight: '900'
+    fontWeight: "800"
   },
   walletBenefitMetaRow: {
     flexDirection: 'row',
@@ -1693,10 +1663,10 @@ const styles = StyleSheet.create({
     lineHeight: 19
   },
   walletBenefitFootnote: {
-    color: '#97A1B0',
-    fontSize: 10,
+    color: "#5A6E89",
+    fontSize: 12,
     marginTop: 14,
-    lineHeight: 16
+    lineHeight: 21
   },
   walletBenefitDetailIntro: {
     color: '#63728B',
@@ -1761,7 +1731,7 @@ const styles = StyleSheet.create({
   },
   dotActive: {
     width: 19,
-    backgroundColor: '#2360E7'
+    backgroundColor: "#245DE5"
   },
   previewScroll: {
     marginHorizontal: -1
@@ -1769,11 +1739,11 @@ const styles = StyleSheet.create({
   benefitTile: {
     width: '48%',
     minHeight: 176,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: '#E4EAF4',
-    borderRadius: 17,
-    padding: 14,
+    borderColor: "#E3EAF4",
+    borderRadius: 20,
+    padding: 18,
     marginBottom: 10,
     justifyContent: 'space-between'
   },
@@ -1796,8 +1766,8 @@ const styles = StyleSheet.create({
   },
   smallCategory: {
     color: '#5A7BC2',
-    backgroundColor: '#EDF3FF',
-    fontSize: 10,
+    backgroundColor: "#EDF3FF",
+    fontSize: 12,
     overflow: 'hidden',
     borderRadius: 6,
     paddingHorizontal: 6,
@@ -1807,13 +1777,13 @@ const styles = StyleSheet.create({
     color: '#2462E5',
     fontSize: 17,
     lineHeight: 23,
-    fontWeight: '900',
+    fontWeight: "800",
     marginTop: 11
   },
   tileCondition: {
     color: '#7C8799',
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 6
   },
   tileFooter: {
@@ -1826,14 +1796,14 @@ const styles = StyleSheet.create({
     marginTop: 10
   },
   tileStatus: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: '#74829A'
   },
   demoLabel: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#2860CE',
-    backgroundColor: '#EAF1FF',
+    backgroundColor: "#EDF3FF",
     borderRadius: 6,
     overflow: 'hidden',
     paddingHorizontal: 8,
@@ -1856,13 +1826,13 @@ const styles = StyleSheet.create({
   },
   botName: {
     color: '#2462DD',
-    fontWeight: '900',
+    fontWeight: "800",
     fontSize: 12,
     marginTop: 3
   },
   speechBubble: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: '#DFE6F1',
     borderRadius: 17,
@@ -1870,11 +1840,11 @@ const styles = StyleSheet.create({
   },
   speechCategory: {
     color: '#2462DD',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800'
   },
   speechName: {
-    color: '#1D2B44',
+    color: "#142D4E",
     fontSize: 15,
     fontWeight: '800',
     marginTop: 7
@@ -1903,9 +1873,9 @@ const styles = StyleSheet.create({
   ruleCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 17,
-    padding: 17,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 20,
     marginTop: 24,
     borderWidth: 1,
     borderColor: '#E4EAF4'
@@ -1921,13 +1891,13 @@ const styles = StyleSheet.create({
   },
   ruleDesc: {
     color: '#727D90',
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 6,
     lineHeight: 17
   },
   ruleHint: {
     color: '#9CA5B5',
-    fontSize: 10,
+    fontSize: 12,
     marginTop: 6
   },
   payShortcut: {
@@ -1942,20 +1912,20 @@ const styles = StyleSheet.create({
   },
   payShortcutText: {
     flex: 1,
-    color: '#FFFFFF',
-    fontWeight: '900',
+    color: "#FFFFFF",
+    fontWeight: "800",
     fontSize: 15
   },
   pageEyebrow: {
     color: '#376ED2',
     letterSpacing: 1.1,
-    fontSize: 11,
-    fontWeight: '900'
+    fontSize: 12,
+    fontWeight: "800"
   },
   pageTitle: {
-    color: '#1D2B44',
+    color: "#142D4E",
     fontSize: 26,
-    fontWeight: '900',
+    fontWeight: "800",
     marginTop: 8
   },
   pageSubtitle: {
@@ -1968,7 +1938,7 @@ const styles = StyleSheet.create({
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: '#E4EAF4',
     borderRadius: 13,
@@ -1992,7 +1962,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 18,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: '#E4EAF4'
   },
@@ -2006,7 +1976,7 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   filterTextActive: {
-    color: '#FFFFFF'
+    color: "#FFFFFF"
   },
   filteredCount: {
     marginLeft: 'auto',
@@ -2025,14 +1995,14 @@ const styles = StyleSheet.create({
     padding: 25
   },
   disclaimer: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#8B95A5',
     lineHeight: 17,
     marginTop: 10
   },
   financeHero: {
     borderRadius: 18,
-    backgroundColor: '#EDF4FF',
+    backgroundColor: "#EDF3FF",
     padding: 22,
     marginTop: 2,
     marginBottom: 15
@@ -2040,7 +2010,7 @@ const styles = StyleSheet.create({
   financeTitle: {
     fontSize: 19,
     color: '#1B3E7D',
-    fontWeight: '900',
+    fontWeight: "800",
     marginTop: 15
   },
   financeDesc: {
@@ -2055,8 +2025,8 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: '#E4EAF4',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 15,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
     marginBottom: 10
   },
   financeIconCircle: {
@@ -2078,12 +2048,12 @@ const styles = StyleSheet.create({
   },
   financeRowDesc: {
     color: '#8590A3',
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 5
   },
   notConnected: {
     color: '#99A3B4',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700'
   },
   financeCTA: {
@@ -2095,17 +2065,17 @@ const styles = StyleSheet.create({
     marginTop: 12
   },
   financeCTAText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontWeight: '800',
     fontSize: 14
   },
   cardListItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 13,
-    borderRadius: 17,
+    padding: 16,
+    borderRadius: 18,
     marginBottom: 11,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: '#E4EAF4'
   },
@@ -2127,14 +2097,14 @@ const styles = StyleSheet.create({
   },
   cardListSub: {
     color: '#8B96A7',
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 6
   },
   cardHintBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 9,
-    backgroundColor: '#EDF4FF',
+    backgroundColor: "#EDF3FF",
     padding: 14,
     borderRadius: 13,
     marginTop: 8
@@ -2147,42 +2117,48 @@ const styles = StyleSheet.create({
   },
   outlineButton: {
     borderWidth: 1,
-    borderColor: '#255DE5',
+    borderColor: "#245DE5",
     borderRadius: 14,
     padding: 15,
     alignItems: 'center',
-    marginTop: 17
+    marginTop: 17,
+    minHeight: 44
   },
   outlineButtonText: {
     fontSize: 14,
-    color: '#255DE5',
+    color: "#245DE5",
     fontWeight: '800'
   },
   bottomNav: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
-    borderTopColor: '#E7ECF3',
+    borderTopColor: "#E3EAF4",
     flexDirection: 'row',
-    paddingTop: 11,
-    paddingBottom: 8
+    paddingTop: 10,
+    paddingBottom: 12,
+    width: "100%",
+    maxWidth: 640,
+    alignSelf: "center"
   },
   navItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5
+    gap: 5,
+    minHeight: 48
   },
   navLabel: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#9BA4B3'
+    color: "#5A6E89",
+    lineHeight: 18
   },
   navLabelActive: {
-    color: '#245CEA'
+    color: "#245DE5"
   },
   devClearance: {
     height: 65,
-    backgroundColor: '#FFFFFF'
+    backgroundColor: "#FFFFFF"
   },
   modalOverlay: {
     flex: 1,
@@ -2191,27 +2167,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20
   },
   modalPanel: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
     maxHeight: '83%',
-    overflow: 'hidden'
+    overflow: 'hidden',
+    width: "100%",
+    maxWidth: 620,
+    alignSelf: "center"
   },
   modalBody: {
-    padding: 21
+    padding: 24
   },
   modalEyebrow: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: '#2962D8'
   },
   modalTitle: {
-    color: '#1D2B44',
-    fontWeight: '900',
+    color: "#142D4E",
+    fontWeight: "800",
     fontSize: 23,
     marginTop: 8
   },
   modalHighlight: {
-    backgroundColor: '#EDF4FF',
+    backgroundColor: "#EDF3FF",
     borderRadius: 13,
     padding: 17,
     marginVertical: 18
@@ -2221,9 +2200,9 @@ const styles = StyleSheet.create({
     fontSize: 12
   },
   modalHighlightValue: {
-    color: '#245CEA',
+    color: "#245DE5",
     fontSize: 21,
-    fontWeight: '900',
+    fontWeight: "800",
     marginTop: 8
   },
   detailRow: {
@@ -2248,8 +2227,8 @@ const styles = StyleSheet.create({
   },
   noticeTitle: {
     fontSize: 14,
-    color: '#1D2B44',
-    fontWeight: '900',
+    color: "#142D4E",
+    fontWeight: "800",
     marginTop: 18
   },
   noticeText: {
@@ -2260,12 +2239,12 @@ const styles = StyleSheet.create({
   },
   modalFineprint: {
     marginTop: 15,
-    fontSize: 10,
+    fontSize: 12,
     lineHeight: 17,
     color: '#9AA4B4'
   },
   modalDone: {
-    backgroundColor: '#245CEA',
+    backgroundColor: "#245DE5",
     marginHorizontal: 20,
     marginBottom: 18,
     padding: 14,
@@ -2273,29 +2252,29 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   modalDoneText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontWeight: '800',
     fontSize: 15
   },
   chatRoot: {
     flex: 1,
-    backgroundColor: '#F6F8FD'
+    backgroundColor: "#F4F7FB"
   },
   chatHeader: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     padding: 17,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center'
   },
   chatTitle: {
-    color: '#1D2B44',
+    color: "#142D4E",
     fontSize: 18,
     fontWeight: '800'
   },
   chatInfo: {
     color: '#406BB1',
-    backgroundColor: '#EDF4FF',
+    backgroundColor: "#EDF3FF",
     fontSize: 12,
     padding: 12
   },
@@ -2306,13 +2285,13 @@ const styles = StyleSheet.create({
     maxWidth: '88%',
     alignSelf: 'flex-start',
     padding: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 15,
     marginBottom: 12
   },
   chatUserBubble: {
     alignSelf: 'flex-end',
-    backgroundColor: '#245CEA'
+    backgroundColor: "#245DE5"
   },
   chatBubbleText: {
     color: '#374459',
@@ -2320,7 +2299,7 @@ const styles = StyleSheet.create({
     lineHeight: 20
   },
   chatUserText: {
-    color: '#FFFFFF'
+    color: "#FFFFFF"
   },
   quickArea: {
     flexGrow: 0,
@@ -2340,7 +2319,7 @@ const styles = StyleSheet.create({
   chatInputRow: {
     flexDirection: 'row',
     gap: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     padding: 13,
     alignItems: 'center'
   },
@@ -2348,11 +2327,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F3F6FA',
     padding: 12,
-    borderRadius: 15,
-    fontSize: 14
+    borderRadius: 14,
+    fontSize: 14,
+    minHeight: 48
   },
   chatSend: {
-    backgroundColor: '#245CEA',
+    backgroundColor: "#245DE5",
     width: 42,
     height: 42,
     borderRadius: 13,
@@ -2361,13 +2341,16 @@ const styles = StyleSheet.create({
   },
   settingsHeader: {
     height: 66,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 17,
     borderBottomWidth: 1,
-    borderBottomColor: '#E9EDF4'
+    borderBottomColor: '#E9EDF4',
+    width: "100%",
+    maxWidth: 800,
+    alignSelf: "center"
   },
   settingsHeaderButton: {
     width: 40,
@@ -2377,20 +2360,27 @@ const styles = StyleSheet.create({
   },
   settingsHeaderTitle: {
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: "800",
     color: '#192844'
   },
   settingsScroll: {
     flex: 1,
-    backgroundColor: '#F4F6FB'
+    backgroundColor: "#F4F7FB"
   },
   settingsContent: {
-    paddingBottom: 30
+    paddingBottom: 28,
+    width: "100%",
+    maxWidth: 800,
+    alignSelf: "center",
+    paddingHorizontal: 16,
+    gap: 12
   },
   settingGroup: {
-    marginTop: 13,
-    backgroundColor: '#FFFFFF',
-    paddingTop: 18
+    marginTop: 0,
+    backgroundColor: "#FFFFFF",
+    paddingTop: 18,
+    borderRadius: 20,
+    overflow: "hidden"
   },
   settingGroupTitle: {
     fontSize: 14,
@@ -2400,17 +2390,17 @@ const styles = StyleSheet.create({
     marginBottom: 7
   },
   settingPanel: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     paddingBottom: 7
   },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingVertical: 17,
     minHeight: 69,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#EDF0F4'
+    borderBottomColor: "#E3EAF4"
   },
   settingIcon: {
     width: 33,
@@ -2431,27 +2421,27 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   settingSubtitle: {
-    fontSize: 11,
-    color: '#8996A8',
-    lineHeight: 17,
+    fontSize: 12,
+    color: "#5A6E89",
+    lineHeight: 21,
     marginTop: 4
   },
   settingValue: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#6F819D',
     marginRight: 7,
     maxWidth: 140
   },
   dangerText: {
-    color: '#C54444'
+    color: "#C53D56"
   },
   settingsFooter: {
     marginTop: 20,
     marginHorizontal: 22,
     textAlign: 'center',
-    color: '#98A4B5',
-    fontSize: 11,
-    lineHeight: 18
+    color: "#5A6E89",
+    fontSize: 12,
+    lineHeight: 21
   },
   noticeStrip: {
     flexDirection: 'row',
@@ -2459,7 +2449,7 @@ const styles = StyleSheet.create({
     gap: 9,
     paddingHorizontal: 13,
     paddingVertical: 11,
-    backgroundColor: '#EAF2FF',
+    backgroundColor: "#EDF3FF",
     borderRadius: 12,
     marginTop: 13
   },
@@ -2476,14 +2466,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22
   },
   pinModalCard: {
-    borderRadius: 22,
-    padding: 22,
-    backgroundColor: '#FFFFFF'
+    borderRadius: 24,
+    padding: 24,
+    backgroundColor: "#FFFFFF",
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center"
   },
   pinModalTitle: {
     fontSize: 20,
-    fontWeight: '900',
-    color: '#1D2B44'
+    fontWeight: "800",
+    color: "#142D4E"
   },
   pinModalDesc: {
     fontSize: 12,
@@ -2529,7 +2522,7 @@ const styles = StyleSheet.create({
   },
   pinSave: {
     flex: 1,
-    backgroundColor: '#245CEA',
+    backgroundColor: "#245DE5",
     borderRadius: 12,
     alignItems: 'center',
     paddingVertical: 14
@@ -2537,6 +2530,6 @@ const styles = StyleSheet.create({
   pinSaveText: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#FFFFFF'
+    color: "#FFFFFF"
   }
 });

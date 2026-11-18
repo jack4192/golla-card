@@ -37,19 +37,14 @@ const SCENARIOS = [{
 }];
 const won = value => Number(value || 0).toLocaleString('ko-KR') + '원';
 const reward = row => Number.isFinite(row?.value) ? Number(row.value).toLocaleString('ko-KR') + (row.unit === 'KRW' ? '원' : row.unit === 'POINT' ? 'P' : ' ' + row.unit) : '혜택 조건 확인 필요';
-const catalogOf = card => CSV_CARD_CATALOG.find(item => item.code === (card.catalogCode || card.code || card.id) || card.id === 'solmate' && item.code === 'SH_SOLMATE_SOL_PLAN_CHECK' || item.name === card.name);
-
-// 실제 상품 정보와 해당 상품 이미지가 확인된 카드만 사용합니다.
+const catalogOf = card => CSV_CARD_CATALOG.find(c => c.code === (card.catalogCode || card.code || card.id) || card.id === 'solmate' && c.code === 'SH_SOLMATE_SOL_PLAN_CHECK' || c.name === card.name);
+const imageOf = card => card.image;
 export function realProductCard(card) {
-  if (!card || card.isOwned === false || card.isRecommendedOnly) {
-    return null;
-  }
+  if (!card || card.isOwned === false || card.isRecommendedOnly) return null;
   const catalog = catalogOf(card);
   const pdf = CARD_CATALOG[card.id];
   const image = catalog ? CARD_PRODUCTS[catalog.code]?.image : pdf?.image;
-  if (!image || !catalog && !pdf) {
-    return null;
-  }
+  if (!image || !catalog && !pdf) return null;
   return {
     ...card,
     name: catalog?.name || pdf.name,
@@ -61,8 +56,7 @@ export function realProductCard(card) {
   };
 }
 export function realWalletCards(card, cards = []) {
-  const matched = [...(card ? [card] : []), ...cards].map(realProductCard).filter(Boolean);
-  return Array.from(new Map(matched.map(item => [item.id, item])).values());
+  return Array.from(new Map([...(card ? [card] : []), ...cards].map(realProductCard).filter(Boolean).map(item => [item.id, item])).values());
 }
 export function estimatePayment(card, scenario, assume) {
   const unknown = reason => ({
@@ -71,9 +65,7 @@ export function estimatePayment(card, scenario, assume) {
     reason,
     name: '확인 필요'
   });
-  if (!assume) {
-    return unknown('실적·한도·대상 거래 조건을 확인하기 전에는 금액을 계산하지 않습니다.');
-  }
+  if (!assume) return unknown('실적·한도·대상 거래 조건을 확인하기 전에는 금액을 계산하지 않습니다.');
   const spend = Number.isFinite(card.status?.previousSpend) ? card.status.previousSpend : 400000;
   const catalog = catalogOf(card);
   if (!catalog) {
@@ -86,10 +78,8 @@ export function estimatePayment(card, scenario, assume) {
       condition: row.rule
     };
   }
-  const benefits = catalog.benefits.filter(benefit => scenario.category.test(benefit.name) && (benefit.brandScope !== 'BRAND_ONLY' || scenario.brand.test(benefit.name)) && !/해외|추가 적립|추가 할인|웰컴|리워드|정기결제|자동납부|구독|리터/.test(benefit.name));
-  if (!benefits.length) {
-    return unknown('선택한 거래와 정확히 연결되는 혜택을 확인하지 못했습니다.');
-  }
+  const benefits = catalog.benefits.filter(b => scenario.category.test(b.name) && (b.brandScope !== 'BRAND_ONLY' || scenario.brand.test(b.name)) && !/해외|추가 적립|추가 할인|웰컴|리워드|정기결제|자동납부|구독|리터/.test(b.name));
+  if (!benefits.length) return unknown('선택한 거래와 정확히 연결되는 혜택을 확인하지 못했습니다.');
   const evaluated = benefits.map(benefit => evaluateBenefit(catalog, benefit, {
     spend,
     amount: scenario.amount,
@@ -97,7 +87,7 @@ export function estimatePayment(card, scenario, assume) {
     assume: true,
     now: new Date()
   }));
-  const known = evaluated.filter(row => Number.isFinite(row.value));
+  const known = evaluated.filter(r => Number.isFinite(r.value));
   known.sort((a, b) => a.unit === b.unit ? b.value - a.value : a.unit === 'KRW' ? -1 : 1);
   const row = known[0] || evaluated[0];
   return {
@@ -134,13 +124,7 @@ function Codes({
     qr.make();
     const size = qr.getModuleCount();
     let path = '';
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        if (qr.isDark(y, x)) {
-          path += 'M' + (x + 4) + ',' + (y + 4) + 'h1v1h-1z';
-        }
-      }
-    }
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) if (qr.isDark(y, x)) path += 'M' + (x + 4) + ',' + (y + 4) + 'h1v1h-1z';
     const target = {};
     JsBarcode(target, value, {
       format: 'CODE128C',
@@ -148,11 +132,7 @@ function Codes({
     });
     const data = target.encodings.map(item => item.data).join('');
     let bars = '';
-    for (let x = 0; x < data.length; x++) {
-      if (data[x] === '1') {
-        bars += 'M' + (x + 12) + ',0h1v64h-1z';
-      }
-    }
+    for (let x = 0; x < data.length; x++) if (data[x] === '1') bars += 'M' + (x + 12) + ',0h1v64h-1z';
     return {
       path,
       size: size + 8,
@@ -162,50 +142,34 @@ function Codes({
   }, [value]);
   if (!drawing) return null;
   return <View accessibilityLabel={inactive ? '사용할 수 없는 가상 결제 코드' : '가상 결제 QR 및 바코드'} style={[s.codes, inactive && s.dim]}>
-      <Svg width={184} height={184} viewBox={'0 0 ' + drawing.size + ' ' + drawing.size}>
-        <Rect width="100%" height="100%" fill="white" />
-        <Path d={drawing.path} fill="#101820" />
-      </Svg>
-
-      <Svg width="100%" height={64} viewBox={'0 0 ' + drawing.width + ' 64'} preserveAspectRatio="none">
-        <Rect width="100%" height="100%" fill="white" />
-        <Path d={drawing.bars} fill="#101820" />
-      </Svg>
-
-      <Text selectable style={s.codeNumber}>
-        {value.replace(/(.{6})/g, '$1 ').trim()}
-      </Text>
-    </View>;
+    <Svg width={184} height={184} viewBox={'0 0 ' + drawing.size + ' ' + drawing.size}><Rect width="100%" height="100%" fill="white" /><Path d={drawing.path} fill="#101820" /></Svg>
+    <Svg width="100%" height={64} viewBox={'0 0 ' + drawing.width + ' 64'} preserveAspectRatio="none"><Rect width="100%" height="100%" fill="white" /><Path d={drawing.bars} fill="#101820" /></Svg>
+    <Text selectable style={s.codeNumber}>{value.replace(/(.{6})/g, '$1 ').trim()}</Text>
+  </View>;
 }
 async function protectScreen() {
   if (Platform.OS === 'web') return () => {};
   const Capture = require('expo-screen-capture');
   const Brightness = require('expo-brightness');
   const key = 'payment-' + Date.now();
-  let blocked = false;
-  let old = null;
-  let bright = false;
-  let system = false;
+  let blocked = false,
+    old = null,
+    bright = false,
+    system = false;
   try {
     await Capture.preventScreenCaptureAsync(key);
     blocked = true;
   } catch {}
   try {
     old = await Brightness.getBrightnessAsync();
-    if (Platform.OS === 'android') {
-      system = await Brightness.isUsingSystemBrightnessAsync();
-    }
+    if (Platform.OS === 'android') system = await Brightness.isUsingSystemBrightnessAsync();
     await Brightness.setBrightnessAsync(1);
     bright = true;
   } catch {}
   return async () => {
     const tasks = [];
-    if (blocked) {
-      tasks.push(Capture.allowScreenCaptureAsync(key));
-    }
-    if (bright && Number.isFinite(old)) {
-      tasks.push(system ? Brightness.restoreSystemBrightnessAsync() : Brightness.setBrightnessAsync(old));
-    }
+    if (blocked) tasks.push(Capture.allowScreenCaptureAsync(key));
+    if (bright && Number.isFinite(old)) tasks.push(system ? Brightness.restoreSystemBrightnessAsync() : Brightness.setBrightnessAsync(old));
     await Promise.allSettled(tasks);
   };
 }
@@ -217,37 +181,35 @@ export default function PaymentScreen({
   navigation
 }) {
   const options = useMemo(() => realWalletCards(card, cards), [card, cards]);
-  const initialId = options.find(item => item.id === card?.id)?.id || options[0]?.id;
+  const initialId = options.find(c => c.id === card?.id)?.id || options[0]?.id;
   const [selectedId, setSelectedId] = useState(initialId);
-  const [baselineId, setBaselineId] = useState(options.find(item => item.id !== initialId)?.id || initialId);
+  const [baselineId, setBaselineId] = useState(options.find(c => c.id !== initialId)?.id || initialId);
   const [scenarioId, setScenarioId] = useState('coffee');
   const [assume, setAssume] = useState(true);
-  const [payment, setPayment] = useState(null);
-  const [generating, setGenerating] = useState(false);
-  const [now, setNow] = useState(Date.now());
-  const [active, setActive] = useState(!AppState.currentState || AppState.currentState === 'active');
-  const [error, setError] = useState('');
-  const [receipt, setReceipt] = useState(null);
-  const [imageError, setImageError] = useState(false);
-  const [imageRetry, setImageRetry] = useState(0);
-  const mounted = useRef(true);
-  const sequence = useRef(0);
-  const current = useRef(null);
-  const notified = useRef(null);
-  const selected = options.find(item => item.id === selectedId) || options[0];
-  const baseline = options.find(item => item.id === baselineId) || options[0];
+  const [payment, setPayment] = useState(null),
+    [generating, setGenerating] = useState(false);
+  const [now, setNow] = useState(Date.now()),
+    [active, setActive] = useState(!AppState.currentState || AppState.currentState === 'active');
+  const [error, setError] = useState(''),
+    [receipt, setReceipt] = useState(null);
+  const [imageError, setImageError] = useState(false),
+    [imageRetry, setImageRetry] = useState(0);
+  const mounted = useRef(true),
+    sequence = useRef(0),
+    current = useRef(null);
+  const selected = options.find(c => c.id === selectedId) || options[0];
+  const baseline = options.find(c => c.id === baselineId) || options[0];
   const scenario = SCENARIOS.find(item => item.id === scenarioId) || SCENARIOS[0];
   const selectedBenefit = useMemo(() => selected ? estimatePayment(selected, scenario, assume) : null, [selected, scenario, assume]);
   const baseBenefit = useMemo(() => baseline ? estimatePayment(baseline, scenario, assume) : null, [baseline, scenario, assume]);
   const difference = comparePayment(selectedBenefit, baseBenefit);
-  const source = selected?.image;
+  const source = selected ? imageOf(selected) : null;
   const seconds = payment ? Math.max(0, Math.ceil((payment.expiresAt - now) / 1000)) : 0;
   const expired = !payment || seconds === 0 || payment.status !== 'pending' || payment.cardId !== selected?.id || payment.contextKey !== scenario.id + ':' + assume;
   useEffect(() => {
-    if (options.some(item => item.id === card?.id)) {
-      setSelectedId(card.id);
-    }
+    if (options.some(c => c.id === card?.id)) setSelectedId(card.id);
   }, [card?.id, options]);
+  const notified = useRef(null);
   useEffect(() => {
     if (selected && selected.id !== card?.id && notified.current !== selected.id) {
       notified.current = selected.id;
@@ -271,20 +233,18 @@ export default function PaymentScreen({
     });
     return () => {
       mounted.current = false;
-      sequence.current += 1;
+      sequence.current++;
       clearInterval(timer);
       subscription.remove();
-      if (current.current?.status === 'pending') {
-        current.current.status = 'void';
-      }
+      if (current.current?.status === 'pending') current.current.status = 'void';
     };
   }, []);
   useEffect(() => {
     if (!active) return undefined;
-    let stopped = false;
-    let cleanup;
-    protectScreen().then(callback => {
-      if (stopped) callback();else cleanup = callback;
+    let stopped = false,
+      cleanup;
+    protectScreen().then(fn => {
+      if (stopped) fn();else cleanup = fn;
     }).catch(() => {});
     return () => {
       stopped = true;
@@ -294,9 +254,7 @@ export default function PaymentScreen({
   const issue = async () => {
     if (!selected) return;
     const ticket = ++sequence.current;
-    if (current.current?.status === 'pending') {
-      current.current.status = 'void';
-    }
+    if (current.current?.status === 'pending') current.current.status = 'void';
     current.current = null;
     setPayment(null);
     setGenerating(true);
@@ -308,9 +266,7 @@ export default function PaymentScreen({
     }
     try {
       const value = await makeDemoCode();
-      if (!mounted.current || ticket !== sequence.current) {
-        return;
-      }
+      if (!mounted.current || ticket !== sequence.current) return;
       const next = {
         value,
         cardId: selected.id,
@@ -322,36 +278,26 @@ export default function PaymentScreen({
       setPayment(next);
       setNow(Date.now());
     } catch (problem) {
-      if (mounted.current && ticket === sequence.current) {
-        setError(problem.message || '코드를 만들지 못했습니다.');
-      }
+      if (mounted.current && ticket === sequence.current) setError(problem.message || '코드를 만들지 못했습니다.');
     } finally {
-      if (mounted.current && ticket === sequence.current) {
-        setGenerating(false);
-      }
+      if (mounted.current && ticket === sequence.current) setGenerating(false);
     }
   };
   useEffect(() => {
     setReceipt(null);
     issue();
   }, [selected?.id, scenarioId, assume]);
-  const choose = item => {
-    if (selected?.id === item.id) return;
-    setSelectedId(item.id);
+  const choose = c => {
+    if (selected?.id === c.id) return;
+    setSelectedId(c.id);
     try {
-      onSelectCard?.(item.id);
+      onSelectCard?.(c.id);
     } catch (problem) {
       setError(problem.message);
     }
   };
   const close = () => {
-    if (typeof onClose === 'function') {
-      onClose();
-    } else if (navigation?.navigate) {
-      navigation.navigate('MainScreen');
-    } else {
-      setError('메인 화면 이동은 App.js 연결이 필요합니다.');
-    }
+    if (typeof onClose === 'function') onClose();else if (navigation?.navigate) navigation.navigate('MainScreen');else setError('메인 화면 이동은 App.js 연결이 필요합니다.');
   };
   const approve = () => {
     const token = current.current;
@@ -372,304 +318,75 @@ export default function PaymentScreen({
       date: new Date().toLocaleString('ko-KR')
     });
   };
-  if (!selected) {
-    return <View style={s.empty}>
-        <Text style={s.title}>
-          등록된 실제 상품 카드가 없습니다.
-        </Text>
-
-        <Text style={s.hint}>
-          기존 임의 상품은 제외했습니다.
-          카드 관리에서 실제 보유 상품을 등록해주세요.
-        </Text>
-
-        <TouchableOpacity onPress={close}>
-          <Text style={s.link}>
-            카드 등록하러 돌아가기
-          </Text>
-        </TouchableOpacity>
-      </View>;
-  }
+  if (!selected) return <View style={s.empty}><Text style={s.title}>등록된 실제 상품 카드가 없습니다.</Text><Text style={s.hint}>기존 임의 상품은 제외했습니다. 카드 관리에서 실제 보유 상품을 등록해주세요.</Text><TouchableOpacity onPress={close}><Text style={s.link}>카드 등록하러 돌아가기</Text></TouchableOpacity></View>;
   return <ScrollView style={s.screen} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
-      <View style={s.container}>
-        <View style={s.header}>
-          <TouchableOpacity accessibilityRole="button" onPress={close}>
-            <Text style={s.link}>← 돌아가기</Text>
-          </TouchableOpacity>
-
-          <Text style={s.demo}>
-            DEMO · 실제 출금 없음
-          </Text>
-        </View>
-
-        <Text style={s.title}>
-          {receipt ? '가상 결제 완료' : '현장 결제'}
-        </Text>
-
-        {/* 맨 위: QR 및 바코드 */}
-        {!receipt && <View style={s.box}>
-            <View style={s.header}>
-              <Text style={s.heading}>
-                QR · 바코드 결제
-              </Text>
-
-              <Text style={[s.timer, expired && s.red]}>
-                {generating ? '발급 중' : expired ? '만료됨' : seconds + '초'}
-              </Text>
-            </View>
-
-            {generating ? <ActivityIndicator size="large" color="#245DE5" style={{
+    <View style={s.container}>
+      <View style={s.header}><TouchableOpacity accessibilityRole="button" onPress={close}><Text style={s.link}>← 돌아가기</Text></TouchableOpacity><Text style={s.demo}>DEMO · 실제 출금 없음</Text></View>
+      <Text style={s.title}>{receipt ? '가상 결제 완료' : '현장 결제'}</Text>
+      {!receipt && <View style={s.box}>
+        <View style={s.header}><Text style={s.heading}>QR · 바코드 결제</Text><Text style={[s.timer, expired && s.red]}>{generating ? '발급 중' : expired ? '만료됨' : seconds + '초'}</Text></View>
+        {generating ? <ActivityIndicator size="large" color="#245DE5" style={{
           padding: 35
-        }} /> : payment && active ? <Codes value={payment.value} inactive={expired} /> : <Text style={s.hint}>
-                {active ? '코드를 발급해주세요.' : '앱이 비활성 상태라 코드를 숨겼습니다.'}
-              </Text>}
-
-            <Text style={s.hint}>
-              60초간 유효한 프론트 데모 코드입니다.
-              실제 매장에서 결제할 수 없습니다.
-              재발급하면 이전 코드는 폐기됩니다.
-            </Text>
-
-            <TouchableOpacity accessibilityRole="button" disabled={generating || !active} onPress={issue} style={[s.secondary, generating && s.dim]}>
-              <Text style={s.link}>
-                새 결제 코드 발급
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity accessibilityRole="button" disabled={expired || generating || !active} onPress={approve} style={[s.primary, (expired || generating || !active) && s.dim]}>
-              <Text style={s.white}>
-                가상 POS 승인 체험
-              </Text>
-            </TouchableOpacity>
-          </View>}
-
-        {/* QR 아래: 실제 상품 카드 이미지 */}
-        <View style={s.hero}>
-          <Text style={s.eyebrow}>
-            실제 상품 카드 · 카드사 원본 이미지
-          </Text>
-
-          {source && !imageError ? <Image key={selected.id + ':' + imageRetry} source={typeof source === 'string' ? {
+        }} /> : payment && active ? <Codes value={payment.value} inactive={expired} /> : <Text style={s.hint}>{active ? '코드를 발급해주세요.' : '앱이 비활성 상태라 코드를 숨겼습니다.'}</Text>}
+        <Text style={s.hint}>60초간 유효한 프론트 데모 코드입니다. 실제 매장에서 결제할 수 없습니다. 재발급하면 이전 코드는 폐기됩니다.</Text>
+        <TouchableOpacity accessibilityRole="button" disabled={generating || !active} onPress={issue} style={[s.secondary, generating && s.dim]}><Text style={s.link}>새 결제 코드 발급</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" disabled={expired || generating || !active} onPress={approve} style={[s.primary, (expired || generating || !active) && s.dim]}><Text style={s.white}>가상 POS 승인 체험</Text></TouchableOpacity>
+      </View>}
+      <View style={s.hero}>
+        <Text style={s.eyebrow}>실제 상품 카드 · 카드사 원본 이미지</Text>
+        {source && !imageError ? <Image key={selected.id + ':' + imageRetry} source={typeof source === 'string' ? {
           uri: source
-        } : source} style={s.cardImage} resizeMode="contain" accessibilityLabel={selected.name + ' 실제 카드 이미지'} onError={() => setImageError(true)} /> : <View style={s.imagePlaceholder}>
-              <Text style={s.text}>
-                카드사 이미지를 불러오지 못했어요.
-              </Text>
-
-              <TouchableOpacity onPress={() => {
-            setImageRetry(value => value + 1);
+        } : source} style={s.cardImage} resizeMode="contain" accessibilityLabel={selected.name + ' 실제 카드 이미지'} onError={() => setImageError(true)} /> : <View style={s.imagePlaceholder}><Text style={s.text}>{'카드사 이미지를 불러오지 못했어요.'}</Text>
+            {source ? <TouchableOpacity onPress={() => {
+            setImageRetry(n => n + 1);
             setImageError(false);
-          }}>
-                <Text style={s.link}>
-                  이미지 다시 보기
-                </Text>
-              </TouchableOpacity>
-            </View>}
-
-          <Text style={s.cardName}>
-            {selected.name}
-          </Text>
-
-          <Text style={s.hint}>
-            {selected.issuer}
-            {' · '}{selected.type}
-            {' · '}실제 상품 이미지
-          </Text>
-
-          <View style={s.benefitBox}>
-            <Text style={s.label}>
-              이번 가상 거래의 예상 혜택
-            </Text>
-
-            <Text style={s.hint}>
-              {scenario.merchant}
-              {' · '}{won(scenario.amount)}
-              {' · '}가상 거래 예시
-            </Text>
-
-            <Text style={s.benefit}>
-              {reward(selectedBenefit)}
-            </Text>
-
-            <Text style={s.comparison}>
-              {difference === null ? '기존 카드와 비교할 수 있는 원화 혜택 정보가 부족해요.' : difference > 0 ? '가정대로라면 기존 카드보다 ' + won(difference) + ' 더 아낄 수 있어요!' : difference === 0 ? '이 조건에서는 기존 카드와 원화 혜택이 같아요.' : '이 조건에서는 기존 카드가 ' + won(-difference) + ' 더 유리해요.'}
-            </Text>
-
-            <Text style={s.hint}>
-              비교 카드: {baseline.name}
-              {' · '}{reward(baseBenefit)}
-            </Text>
-
-            <Text style={s.hint}>
-              실적은 DB 값 또는 40만 원,
-              월 한도 미사용·상세 조건 충족 가정입니다.
-            </Text>
-          </View>
-        </View>
-
-        {receipt && <View style={s.box}>
-            <Text style={s.heading}>가상 승인 결과</Text>
-
-            <Text style={s.text}>
-              {receipt.merchant}
-              {' · '}{won(receipt.amount)}
-            </Text>
-
-            <Text style={s.text}>
-              {receipt.cardName}
-            </Text>
-
-            <Text style={s.hint}>
-              {receipt.date}
-            </Text>
-
-            <Text style={s.comparison}>
-              {receipt.difference > 0 ? '가정한 가상 거래에서 기존 카드보다 ' + won(receipt.difference) + ' 더 아꼈어요.' : '예상 혜택 ' + reward(receipt.benefit)}
-            </Text>
-
-            <Text style={s.hint}>
-              실제 승인·출금·금융사 실적 반영은
-              발생하지 않습니다.
-            </Text>
-
-            <TouchableOpacity style={s.primary} onPress={close}>
-              <Text style={s.white}>메인으로</Text>
-            </TouchableOpacity>
-          </View>}
-
-        {!!error && <Text accessibilityRole="alert" style={s.error}>
-            {error}
-          </Text>}
-
-        <Text style={s.scrollHint}>
-          아래에서 카드 선택 이유와 상세 혜택을 확인하세요 ↓
-        </Text>
-
-        <PaymentCardOrder cards={options} selectedId={selected.id} onSelect={choose} />
-
-        <View style={s.box}>
-          <Text style={s.heading}>카드 선정 이유</Text>
-
-          <Text style={s.text}>
-            지갑에서 선택한 {selected.name}를
-            결제 카드로 유지하고 있어요.
-            선택하지 않은 카드로 자동 변경하지 않습니다.
-          </Text>
-
-          <Text style={s.text}>
-            {selectedBenefit?.name}
-          </Text>
-
-          <Text style={s.hint}>
-            {selectedBenefit?.reason}
-          </Text>
-
-          {!!selectedBenefit?.condition && <Text style={s.hint}>
-              {selectedBenefit.condition}
-            </Text>}
-        </View>
-
-        <View style={s.box}>
-          <Text style={s.heading}>
-            혜택 비교에 사용한 가상 조건
-          </Text>
-
-          <Text style={s.text}>
-            {scenario.merchant}
-            {' · '}{won(scenario.amount)}
-          </Text>
-
-          <View style={s.chips}>
-            {SCENARIOS.map(item => <TouchableOpacity key={item.id} onPress={() => setScenarioId(item.id)} style={[s.chip, item.id === scenario.id && s.chipOn]}>
-                <Text style={item.id === scenario.id ? s.whiteSmall : s.chipText}>
-                  {item.merchant}
-                </Text>
-              </TouchableOpacity>)}
-          </View>
-
-          <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{
-          checked: assume
-        }} onPress={() => setAssume(!assume)} style={s.secondary}>
-            <Text style={s.link}>
-              {assume ? '☑' : '☐'} 가상 조건 충족 가정
-            </Text>
-          </TouchableOpacity>
-
-          <Text style={s.hint}>
-            DB 전월 실적이 있으면 그 값을 사용하고,
-            없으면 전월 40만 원을 가정합니다.
-            월 한도 미사용·대상 거래·결제 방식·횟수
-            조건 충족을 가정한 예시입니다.
-            실제 절약액이 아닙니다.
-            포인트는 원화와 비교하지 않습니다.
-          </Text>
-
-          {selected.status && <Text style={s.hint}>
-              선택 카드 실적 자료:
-              {' '}{selected.status.month}
-              {' · '}전월{' '}
-              {won(selected.status.previousSpend)}
-            </Text>}
-
-          <Text style={s.label}>
-            비교할 기존 카드
-          </Text>
-
-          <View style={s.chips}>
-            {options.map(item => <TouchableOpacity key={item.id} onPress={() => setBaselineId(item.id)} style={[s.chip, item.id === baseline.id && s.chipOn]}>
-                <Text style={item.id === baseline.id ? s.whiteSmall : s.chipText}>
-                  {item.name}
-                </Text>
-              </TouchableOpacity>)}
-          </View>
-        </View>
-
-        <View style={s.box}>
-          <Text style={s.heading}>카드 상세 혜택</Text>
-
-          {catalogOf(selected)?.benefits?.slice(0, 6).map((benefit, index) => <View key={index} style={s.detail}>
-                <Text style={s.label}>
-                  {benefit.name}
-                  {' · '}{benefitText(benefit)}
-                </Text>
-
-                <Text style={s.hint}>
-                  전월 실적{' '}
-                  {benefit.minPrevSpend == null ? '확인 필요' : won(benefit.minPrevSpend) + ' 이상'}
-                </Text>
-
-                {!!benefit.note && <Text style={s.hint}>
-                    {benefit.note}
-                  </Text>}
-              </View>)}
-
-          {!catalogOf(selected) && <Text style={s.hint}>
-              {selectedBenefit?.condition || selected.reason || '정확한 혜택 조건은 카드사 상품 안내에서 확인해주세요.'}
-            </Text>}
-        </View>
-
-        <Text style={s.hint}>
-          QR·Code128 바코드는 같은 18자리 가상 코드를
-          담습니다. 웹에서는 화면 밝기 변경과
-          캡처 차단을 지원하지 않습니다.
-        </Text>
+          }}><Text style={s.link}>이미지 다시 보기</Text></TouchableOpacity> : <Text style={s.hint}>아래 카드 선택에서 실제 상품 카드를 선택해주세요.</Text>}</View>}
+        <Text style={s.cardName}>{selected.name}</Text><Text style={s.hint}>{selected.issuer} · {selected.type} · 실제 상품 이미지</Text>
+        <View style={s.benefitBox}><Text style={s.label}>이번 가상 거래의 예상 혜택</Text><Text style={s.hint}>{scenario.merchant} · {won(scenario.amount)} · 가상 거래 예시</Text><Text style={s.benefit}>{reward(selectedBenefit)}</Text>
+          <Text style={s.comparison}>{difference === null ? '기존 카드와 비교할 수 있는 원화 혜택 정보가 부족해요.' : difference > 0 ? '가정대로라면 기존 카드보다 ' + won(difference) + ' 더 아낄 수 있어요!' : difference === 0 ? '이 조건에서는 기존 카드와 원화 혜택이 같아요.' : '이 조건에서는 기존 카드가 ' + won(-difference) + ' 더 유리해요.'}</Text>
+          <Text style={s.hint}>비교 카드: {baseline.name} · {reward(baseBenefit)}</Text><Text style={s.hint}>실적은 DB 값 또는 40만 원, 월 한도 미사용·상세 조건 충족 가정입니다.</Text></View>
       </View>
-    </ScrollView>;
+      {receipt && <View style={s.box}><Text style={s.heading}>가상 승인 결과</Text><Text style={s.text}>{receipt.merchant} · {won(receipt.amount)}</Text><Text style={s.text}>{receipt.cardName}</Text><Text style={s.hint}>{receipt.date}</Text>
+        <Text style={s.comparison}>{receipt.difference > 0 ? '가정한 가상 거래에서 기존 카드보다 ' + won(receipt.difference) + ' 더 아꼈어요.' : '예상 혜택 ' + reward(receipt.benefit)}</Text>
+        <Text style={s.hint}>실제 승인·출금·금융사 실적 반영은 발생하지 않습니다.</Text><TouchableOpacity style={s.primary} onPress={close}><Text style={s.white}>메인으로</Text></TouchableOpacity>
+      </View>}
+      {!!error && <Text accessibilityRole="alert" style={s.error}>{error}</Text>}
+      <Text style={s.scrollHint}>아래에서 카드 선택 이유와 상세 혜택을 확인하세요 ↓</Text>
+      <PaymentCardOrder cards={options} selectedId={selected.id} onSelect={choose} />
+      <View style={s.box}><Text style={s.heading}>카드 선정 이유</Text><Text style={s.text}>지갑에서 선택한 {selected.name}를 결제 카드로 유지하고 있어요. 선택하지 않은 카드로 자동 변경하지 않습니다.</Text>
+        <Text style={s.text}>{selectedBenefit?.name}</Text><Text style={s.hint}>{selectedBenefit?.reason}</Text>
+        {!!selectedBenefit?.condition && <Text style={s.hint}>{selectedBenefit.condition}</Text>}
+      </View>
+      <View style={s.box}><Text style={s.heading}>혜택 비교에 사용한 가상 조건</Text><Text style={s.text}>{scenario.merchant} · {won(scenario.amount)}</Text>
+        <View style={s.chips}>{SCENARIOS.map(item => <TouchableOpacity key={item.id} onPress={() => setScenarioId(item.id)} style={[s.chip, item.id === scenario.id && s.chipOn]}><Text style={item.id === scenario.id ? s.whiteSmall : s.chipText}>{item.merchant}</Text></TouchableOpacity>)}</View>
+        <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{
+          checked: assume
+        }} onPress={() => setAssume(!assume)} style={s.secondary}><Text style={s.link}>{assume ? '☑' : '☐'} 가상 조건 충족 가정</Text></TouchableOpacity>
+        <Text style={s.hint}>DB 전월 실적이 있으면 그 값을 사용하고, 없으면 전월 40만 원을 가정합니다. 월 한도 미사용·대상 거래·결제 방식·횟수 조건 충족을 가정한 예시입니다. 실제 절약액이 아닙니다. 포인트는 원화와 비교하지 않습니다.</Text>
+        {selected.status && <Text style={s.hint}>선택 카드 실적 자료: {selected.status.month} · 전월 {won(selected.status.previousSpend)}</Text>}
+        <Text style={s.label}>비교할 기존 카드</Text><View style={s.chips}>{options.map(c => <TouchableOpacity key={c.id} onPress={() => setBaselineId(c.id)} style={[s.chip, c.id === baseline.id && s.chipOn]}><Text style={c.id === baseline.id ? s.whiteSmall : s.chipText}>{c.name}</Text></TouchableOpacity>)}</View>
+      </View>
+      <View style={s.box}><Text style={s.heading}>카드 상세 혜택</Text>{catalogOf(selected)?.benefits?.slice(0, 6).map((b, i) => <View key={i} style={s.detail}><Text style={s.label}>{b.name} · {benefitText(b)}</Text><Text style={s.hint}>전월 실적 {b.minPrevSpend == null ? '확인 필요' : won(b.minPrevSpend) + ' 이상'}</Text>{!!b.note && <Text style={s.hint}>{b.note}</Text>}</View>)}
+        {!catalogOf(selected) && <Text style={s.hint}>{selectedBenefit?.condition || selected.reason || '정확한 혜택 조건은 카드사 상품 안내에서 확인해주세요.'}</Text>}
+      </View>
+      <Text style={s.hint}>QR·Code128 바코드는 같은 18자리 가상 코드를 담습니다. 웹에서는 화면 밝기 변경과 캡처 차단을 지원하지 않습니다.</Text>
+    </View>
+  </ScrollView>;
 }
 const s = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F5F7FC'
+    backgroundColor: "#F4F7FB"
   },
   content: {
     padding: 20,
-    paddingBottom: 100
+    paddingBottom: 64
   },
   container: {
-    width: '100%',
-    maxWidth: 520,
-    alignSelf: 'center',
-    gap: 16
+    width: "100%",
+    maxWidth: 560,
+    alignSelf: "center",
+    gap: 18
   },
   header: {
     flexDirection: 'row',
@@ -678,23 +395,25 @@ const s = StyleSheet.create({
     gap: 8
   },
   demo: {
-    color: '#8090A9',
-    fontSize: 10
+    color: "#5A6E89",
+    fontSize: 12,
+    lineHeight: 20
   },
   title: {
-    fontSize: 27,
-    fontWeight: '900',
-    color: '#183252',
-    textAlign: 'center'
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#142D4E",
+    textAlign: 'center',
+    lineHeight: 39
   },
   hero: {
-    backgroundColor: '#FFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 24,
     padding: 22,
     alignItems: 'center',
     gap: 10,
     borderWidth: 1,
-    borderColor: '#E7EDF7'
+    borderColor: "#E3EAF4"
   },
   eyebrow: {
     color: '#5B7AB4',
@@ -709,7 +428,7 @@ const s = StyleSheet.create({
     color: '#213F69',
     fontSize: 20,
     lineHeight: 29,
-    fontWeight: '900',
+    fontWeight: "800",
     textAlign: 'center'
   },
   imagePlaceholder: {
@@ -720,7 +439,7 @@ const s = StyleSheet.create({
   },
   benefitBox: {
     width: '100%',
-    backgroundColor: '#EDF4FF',
+    backgroundColor: "#EDF3FF",
     padding: 16,
     borderRadius: 15,
     alignItems: 'center',
@@ -728,8 +447,8 @@ const s = StyleSheet.create({
   },
   benefit: {
     fontSize: 25,
-    fontWeight: '900',
-    color: '#245DE5',
+    fontWeight: "800",
+    color: "#245DE5",
     textAlign: 'center'
   },
   comparison: {
@@ -740,17 +459,18 @@ const s = StyleSheet.create({
     textAlign: 'center'
   },
   box: {
-    backgroundColor: '#FFF',
-    borderRadius: 20,
-    padding: 18,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    padding: 20,
     gap: 13,
     borderWidth: 1,
-    borderColor: '#E7EDF7'
+    borderColor: "#E3EAF4"
   },
   heading: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '800',
-    color: '#233E63'
+    color: "#142D4E",
+    lineHeight: 27
   },
   label: {
     fontSize: 13,
@@ -764,12 +484,12 @@ const s = StyleSheet.create({
     lineHeight: 24
   },
   hint: {
-    color: '#8391A7',
-    fontSize: 12,
-    lineHeight: 21
+    color: "#5A6E89",
+    fontSize: 13,
+    lineHeight: 22
   },
   codes: {
-    backgroundColor: '#FFF',
+    backgroundColor: "#FFFFFF",
     alignItems: 'center',
     paddingVertical: 10,
     gap: 15
@@ -777,39 +497,41 @@ const s = StyleSheet.create({
   codeNumber: {
     color: '#20334F',
     fontSize: 15,
-    letterSpacing: 2
+    letterSpacing: 1.5
   },
   timer: {
-    color: '#245DE5',
+    color: "#245DE5",
     fontSize: 18,
-    fontWeight: '900'
+    fontWeight: "800"
   },
   red: {
     color: '#C14756'
   },
   primary: {
-    padding: 15,
-    minHeight: 50,
-    backgroundColor: '#245DE5',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center'
+    padding: 16,
+    minHeight: 54,
+    backgroundColor: "#245DE5",
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center"
   },
   secondary: {
-    padding: 13,
-    backgroundColor: '#EDF3FF',
-    borderRadius: 12,
-    alignItems: 'center'
+    padding: 14,
+    backgroundColor: "#EDF3FF",
+    borderRadius: 14,
+    alignItems: "center",
+    minHeight: 46,
+    justifyContent: "center"
   },
   white: {
-    color: '#FFF',
+    color: "#FFFFFF",
     fontSize: 15,
-    fontWeight: '800'
+    fontWeight: "700"
   },
   link: {
-    color: '#245DE5',
+    color: "#245DE5",
     fontSize: 13,
-    fontWeight: '700'
+    fontWeight: "700"
   },
   dim: {
     opacity: 0.25
@@ -822,17 +544,18 @@ const s = StyleSheet.create({
   chip: {
     padding: 11,
     borderRadius: 10,
-    backgroundColor: '#EEF2FA'
+    backgroundColor: '#EEF2FA',
+    minHeight: 44
   },
   chipOn: {
-    backgroundColor: '#245DE5'
+    backgroundColor: "#245DE5"
   },
   chipText: {
     color: '#506B91',
     fontSize: 12
   },
   whiteSmall: {
-    color: '#FFF',
+    color: "#FFFFFF",
     fontSize: 12,
     fontWeight: '700'
   },
@@ -843,12 +566,12 @@ const s = StyleSheet.create({
   },
   detail: {
     borderTopWidth: 1,
-    borderColor: '#EDF1F7',
+    borderColor: "#E3EAF4",
     paddingTop: 12,
     gap: 5
   },
   error: {
-    color: '#B83850',
+    color: "#C53D56",
     fontSize: 13,
     lineHeight: 22
   },
