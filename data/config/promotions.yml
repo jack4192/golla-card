@@ -1,0 +1,41 @@
+# 신한 SOL페이 이벤트·마이샵 혜택 (2026-11 기준, 원본: "SOL 페이 혜택 정보.xlsx", 중복 6건 제거한 31건)
+#
+# kind        event = 이벤트 (SOL페이 결제), myshop = 마이샵 (혜택 ON 설정 후 신한카드 결제)
+# issuer      혜택을 주는 카드사. 둘 다 SHINHAN 카드로 결제할 때만 더한다 (결정 2026-11-11)
+# match       가상 가맹점의 브랜드명과 맞출 때 쓰는 이름. 없으면 brand 를 쓴다
+# amount      정액 혜택(원). rate 는 비율. 포인트·캐시백·즉시할인은 모두 1P = 1원으로 본다
+# max_amount  '최대 혜택한도'. 결제 한 건의 상한으로 본다 (기간 누적 한도는 약관 확인 뒤 반영)
+# needs_check 엔진이 확인할 수 없는 조건이 붙은 건. 표에는 두고 점수 계산에서는 뺀다
+# 적용 횟수 제한은 원본에 없어 두지 않았다. 마이샵은 모든 사용자가 혜택 ON 을 켠 것으로 본다.
+promotions:
+  - { id: 1,  kind: event,  brand: 메가MGC커피,          title: "메가MGC커피 마실 땐 신한 슈퍼SOL/SOL페이!",  benefit: point,    amount: 500,                 starts: 2026-11-01, ends: 2026-11-30, payout: "2026-12-13",      note: "키오스크 결제 시 바코드 스캔 필요" }
+  - { id: 2,  kind: event,  brand: 온라인 다이소몰,       match: 다이소몰, title: "다이소몰 결제 시 1,000포인트 적립",     benefit: point,    amount: 1000, min_amount: 30000, starts: 2026-11-01, ends: 2026-11-30, payout: "2026-12-10",      note: "3만 원 이상 결제" }
+  - { id: 3,  kind: event,  brand: 온라인 다이소몰,       match: 다이소몰, title: "다이소데이 페이팡팡 500P 추가 적립",     benefit: point,    amount: 500,                 starts: 2026-11-16, ends: 2026-11-30, payout: "2026-12-10",      note: "11월 16일 오픈. 2번 행사와 별개 혜택" }
+  - { id: 4,  kind: event,  brand: W컨셉(앱/웹),          match: W컨셉,   title: "W컨셉에서 20만 원 이상 결제하고 1만 원 받자!", benefit: point, amount: 10000, min_amount: 200000, starts: 2026-11-01, ends: 2026-11-30, payout: "2026-12-16", note: "20만 원 이상 결제" }
+  - { id: 5,  kind: event,  brand: 해피오더,              title: "X-MAS 사전예약 제품 결제 2천 원 즉시 할인",  benefit: discount, amount: 2000, min_amount: 15000, starts: 2026-11-11, ends: 2026-12-25, payout: "즉시 할인",        note: "매일 오전 10:30부터 선착순, 사전예약 제품 대상", needs_check: true }
+  - { id: 6,  kind: event,  brand: 유튜브 프리미엄,       title: "유튜브 프리미엄 신규 정기결제 5천 원 캐시백", benefit: cashback, amount: 5000,                starts: 2026-11-01, ends: 2026-11-30, payout: "2027년 1월 중",   note: "이벤트 응모 후 신규 정기 결제. 2026-05-01~10-31 결제 이력 없는 고객 대상", needs_check: true }
+  - { id: 7,  kind: myshop, brand: 살롱드마샬,            title: "마이샵 혜택", benefit: discount, rate: 0.20,                                  starts: 2026-11-20, ends: 2026-11-30, note: "최대 20% 할인. 원문에 할인금액 상한 미기재" }
+  - { id: 8,  kind: myshop, brand: 11번가,                title: "마이샵 혜택", benefit: cashback, amount: 3000, min_amount: 50000,          starts: 2026-11-01, ends: 2026-11-30, note: "5만 원 이상 결제" }
+  - { id: 9,  kind: myshop, brand: CU,                    title: "마이샵 혜택", benefit: cashback, amount: 500,                                starts: 2026-11-01, ends: 2026-11-15 }
+  - { id: 10, kind: myshop, brand: 마켓컬리,              title: "마이샵 혜택", benefit: cashback, rate: 0.20, max_amount: 40000,            starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 11, kind: myshop, brand: 에이치몰,              title: "마이샵 혜택", benefit: cashback, rate: 0.05, max_amount: 20000,            starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 12, kind: myshop, brand: 알리익스프레스,        title: "마이샵 혜택", benefit: cashback, rate: 0.10, min_amount: 20000, max_amount: 20000, starts: 2026-11-01, ends: 2026-11-30, note: "2만 원 이상 결제" }
+  - { id: 13, kind: myshop, brand: 신라아이파크면세점,    title: "마이샵 혜택", benefit: cashback, rate: 0.10, max_amount: 20000,            starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 14, kind: myshop, brand: 동원몰,                title: "마이샵 혜택", benefit: cashback, rate: 0.07, min_amount: 20000, max_amount: 20000, starts: 2026-11-01, ends: 2026-11-30, note: "2만 원 이상 결제" }
+  - { id: 15, kind: myshop, brand: 할리스,                title: "마이샵 혜택", benefit: cashback, rate: 0.10, max_amount: 20000,            starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 16, kind: myshop, brand: 신세계면세점,          title: "마이샵 혜택", benefit: cashback, rate: 0.11, max_amount: 100000,           starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 17, kind: myshop, brand: 닥터자르트,            title: "마이샵 혜택", benefit: cashback, rate: 0.12, max_amount: 50000,            starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 18, kind: myshop, brand: 현대백화점,            title: "마이샵 혜택", benefit: cashback, rate: 0.15, max_amount: 40000,            starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 19, kind: myshop, brand: SSG닷컴,               title: "마이샵 혜택", benefit: cashback, rate: 0.10, max_amount: 20000,            starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 20, kind: myshop, brand: 이마트몰,              title: "마이샵 혜택", benefit: cashback, rate: 0.10, max_amount: 20000,            starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 21, kind: myshop, brand: 차앤박(CNP),           match: 차앤박,  title: "마이샵 혜택", benefit: cashback, rate: 0.12, max_amount: 20000, starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 22, kind: myshop, brand: 오설록,                title: "마이샵 혜택", benefit: cashback, rate: 0.10, max_amount: 20000,            starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 23, kind: myshop, brand: 레드캡투어,            title: "마이샵 혜택", benefit: cashback, rate: 0.12, max_amount: 20000,            starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 24, kind: myshop, brand: 야놀자,                title: "마이샵 혜택", benefit: cashback, rate: 0.08, max_amount: 20000,            starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 25, kind: myshop, brand: 교보문고,              title: "마이샵 혜택", benefit: cashback, rate: 0.10, min_amount: 30000, max_amount: 20000, starts: 2026-11-01, ends: 2026-11-30, note: "3만 원 이상 결제" }
+  - { id: 26, kind: myshop, brand: 위메프,                title: "마이샵 혜택", benefit: cashback, rate: 0.20, max_amount: 20000,            starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 27, kind: myshop, brand: 올리브영,              title: "마이샵 혜택", benefit: cashback, rate: 0.25, max_amount: 20000,            starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 28, kind: myshop, brand: 파리바게뜨,            title: "마이샵 혜택", benefit: cashback, rate: 0.12, min_amount: 20000, max_amount: 20000, starts: 2026-11-01, ends: 2026-11-30, note: "2만 원 이상 결제" }
+  - { id: 29, kind: myshop, brand: 유니클로,              title: "마이샵 혜택", benefit: cashback, rate: 0.16, max_amount: 40000,            starts: 2026-11-01, ends: 2026-11-30 }
+  - { id: 30, kind: myshop, brand: 미식 브랜드(식별불가), title: "마이샵 혜택", benefit: cashback, rate: 0.16, min_amount: 30000, max_amount: 30000, starts: 2026-11-01, ends: 2026-11-30, note: "원본에서 정확한 가맹점명 식별 불가", needs_check: true }
+  - { id: 31, kind: myshop, brand: 종합쇼핑몰(식별불가), title: "마이샵 혜택", benefit: cashback, amount: 8000, min_amount: 200000,         starts: 2026-11-01, ends: 2026-11-30, note: "원본에서 정확한 가맹점명 식별 불가", needs_check: true }

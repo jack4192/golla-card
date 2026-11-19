@@ -1,0 +1,52 @@
+# 실제 카드 데이터(config/real_cards/*.csv)를 혜택 계산에 넣을 때의 규칙
+# 원본: 신한·KB 상품설명서에서 추출한 표 (신한 16장, KB 6장). 원본 표는 고치지 않고 여기서만 걸러 낸다.
+
+# 돈으로 바로 환산할 수 없어 계산에서 빼는 혜택 유형 (표에는 남는다)
+exclude_types: [PERK, FEE_WAIVER, INSTALLMENT_FREE, POINT_BONUS]
+# 가상 결제는 전부 국내라 해외 혜택은 뺀다
+exclude_regions: [OVERSEAS]
+
+# 결제마다 반복해서 받을 수 없는 혜택 (card_benefit_id: 이유)
+exclude_rows:
+  50: 장보기 캐시백 연 1회
+  76: 디지털 명세서 신청 최초 1회
+  127: 웰컴 포인트 발급 초년도 1회
+  128: 웰컴 포인트 발급 초년도 1회
+  129: 웰컴 포인트 발급 초년도 1회
+  162: 가족카드 분기 실적 캐시백
+  163: 웰컴 캐시백 발급 초년도 1회
+  164: 웰컴 캐시백 발급 초년도 1회
+  165: 웰컴 캐시백 발급 초년도 1회
+  306: 보험 환급 연 1회
+
+# 결제와 무관하게 전월 실적만 보고 주는 월 리워드. 결제 혜택이 아니라 실적 기여 가치에만 들어간다.
+reward_rows: [48, 49]
+
+# 다른 적립에 얹어 주는 추가 적립. 같은 카드·같은 묶음의 전 업종 적립률에 더한다.
+fold_rows: [173]
+
+# BRAND_EXAMPLE(스타벅스·이디야 '등')은 업종 전체로 본다
+brand_example_as_category: true
+
+# 상품설명서 메모의 예외 (2026-11-14). 원본 53개 업종에 없는 세부 업종 VET_HOSPITAL(동물병원)·GOLF_RANGE(골프연습장)을
+# 따로 두었기 때문에, 그 세부 업종에도 혜택이 붙는다고 적힌 행만 여기 적는다. 적히지 않은 병원 혜택은 동물병원에 붙지 않는다.
+also_categories:
+  182: [VET_HOSPITAL]   # SOL메이트 특별 적립-병원 (동물병원 포함)
+  183: [VET_HOSPITAL]
+  46: [GOLF]            # Discount Plan+ 피트니스 (스포츠센터·테니스장·수영장·골프장)
+  85: [GOLF]            # ECO Plan 피트니스 (… 골프장)
+  248: [GOLF_RANGE]     # KB Biz Prime 골프장·골프연습장
+  249: [GOLF_RANGE]
+
+# 매월 1일 첫 할인 2배 (Plan Day). MULTIPLIER 행을 읽어 같은 묶음 혜택에 붙인다.
+
+# K-패스 등록 카드로 보는 카드
+kpass_cards: [SH_MODU]
+
+# 발급 자격이 있는 카드: 이 유형의 배경 사용자에게만 배정한다 ([] 이면 배정하지 않음)
+eligibility:
+  SH_KUKMIN_CREDIT: [FAMILY]
+  SH_KUKMIN_CHECK: [FAMILY]
+  SH_CHEOUM_CHECK: [STUDENT]
+  SH_NARASARANG_CHECK: []
+  KB_BIZ_PRIME: []

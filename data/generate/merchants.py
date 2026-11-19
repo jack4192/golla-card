@@ -12,13 +12,20 @@ import numpy as np
 import pandas as pd
 
 from .common import CACHE_DIR, load_config
+from .card_db import alias_table, brand_categories, brand_home_category, brand_of, normalize
 
-# 가상 모드에서 브랜드 목록이 없는 업종의 가게 이름
+# 가상 모드에서 브랜드 목록이 없는 종류의 가게 이름
 GENERIC_NAMES = {
     "REST": ["한식당", "김밥", "국밥", "분식", "중식당", "일식당", "샐러드", "쌀국수", "백반집", "고깃집"],
     "MEDICAL": ["내과", "치과", "이비인후과", "정형외과", "약국", "피부과"],
     "EDU": ["영어학원", "수학학원", "피아노학원", "코딩학원", "미술학원"],
     "FUEL": ["주유소"],
+    "STUDY": ["스터디카페", "독서실"],
+    "STATIONERY": ["문구"],
+    "HAIR": ["헤어살롱", "미용실"],
+    "FITNESS": ["헬스", "필라테스"],
+    "PARKING": ["공영주차장", "주차장"],
+    "OPTICAL": ["안경원"],
 }
 
 
@@ -51,25 +58,31 @@ def _from_kakao(rng, zones, places) -> tuple[list[dict], list[tuple[str, str]]]:
 
     picked: dict[str, dict] = {}
     links: list[tuple[str, str]] = []
-    for z in zones:
-        for cat, quota in places["per_zone_quota"].items():
-            cand = raw[(raw.zone_code == z["code"]) & (raw.category_code == cat)].sort_values("kakao_id")
-            if cand.empty:
+    # 기본 종류를 먼저 다 뽑고, 새 카드 DB 혜택 브랜드를 위해 더 받은 종류(extra_zone_quota)는 뒤에 뽑는다
+    # (기존 가맹점 선택이 바뀌지 않게). 더 받은 종류는 kind_fold 로 원래 종류에 합친다.
+    plans = [(z, cat, quota) for z in zones for cat, quota in places["per_zone_quota"].items()]
+    plans += [(z, cat, quota) for z in zones for cat, quota in places.get("extra_zone_quota", {}).items()]
+    fold = places.get("kind_fold", {})
+    for z, cat, quota in plans:
+        cand = raw[(raw.zone_code == z["code"]) & (raw.category_code == cat)].sort_values("kakao_id")
+        if cand.empty:
+            continue
+        pick = cand.iloc[sorted(rng.choice(len(cand), size=min(quota, len(cand)), replace=False))]
+        for _, r in pick.iterrows():
+            links.append((r.kakao_id, z["code"]))
+            dist = float(r.distance_m) if pd.notna(r.distance_m) else 0.0
+            prev = picked.get(r.kakao_id)
+            if prev is not None and prev["_dist"] <= dist:
                 continue
-            pick = cand.iloc[sorted(rng.choice(len(cand), size=min(quota, len(cand)), replace=False))]
-            for _, r in pick.iterrows():
-                links.append((r.kakao_id, z["code"]))
-                dist = float(r.distance_m) if pd.notna(r.distance_m) else 0.0
-                prev = picked.get(r.kakao_id)
-                if prev is not None and prev["_dist"] <= dist:
-                    continue
-                brand, branch = _split_brand(r.place_name, places["known_brands"].get(cat, []))
-                picked[r.kakao_id] = {
-                    "brand": brand, "branch_name": branch, "place_name": r.place_name,
-                    "category_code": cat, "zone_code": z["code"], "lat": float(r.lat), "lng": float(r.lng),
-                    "address": r.road_address_name if isinstance(r.road_address_name, str) else r.address_name,
-                    "source": "kakao", "kakao_id": r.kakao_id, "_dist": dist,
-                }
+            kind = fold.get(cat, cat)
+            brand, branch = _split_brand(r.place_name, places["known_brands"].get(kind, []))
+            picked[r.kakao_id] = {
+                "brand": brand, "branch_name": branch, "place_name": r.place_name,
+                "kind": kind, "_kakao_category": r.category_name if isinstance(r.category_name, str) else "",
+                "zone_code": z["code"], "lat": float(r.lat), "lng": float(r.lng),
+                "address": r.road_address_name if isinstance(r.road_address_name, str) else r.address_name,
+                "source": "kakao", "kakao_id": r.kakao_id, "_dist": dist,
+            }
     rows = [{k: v for k, v in r.items() if k != "_dist"} for r in picked.values()]
     return rows, links
 
@@ -91,12 +104,32 @@ def _synthetic(rng, zones, places) -> list[dict]:
                 branch = f"{z['name']}{k + 1}호점"
                 rows.append({
                     "brand": base, "branch_name": branch, "place_name": f"{base} {branch}",
-                    "category_code": cat, "zone_code": z["code"],
+                    "kind": cat, "zone_code": z["code"],
                     "lat": round(z["lat"] + dy / m_per_deg_lat, 6),
                     "lng": round(z["lng"] + dx / m_per_deg_lng, 6),
                     "address": None, "source": "synthetic", "kakao_id": None,
                 })
     return rows
+
+
+def _attach_brand_codes(df: pd.DataFrame, places: dict) -> None:
+    """혜택 계산용 브랜드(최종 카드 DB의 정규화된 브랜드명).
+    현장 가맹점은 새 DB가 그 브랜드를 다른 업종으로 두었으면 새 DB 업종을 따른다 (다이소 → 잡화, 써브웨이 → 그린푸드).
+    온라인·자동이체 가맹점은 업종을 바꾸지 않고, 새 DB에서 그 업종의 브랜드일 때만 브랜드를 붙인다 (쿠팡와우는 쿠팡 쇼핑이 아니다)."""
+    aliases = alias_table()
+    cats, home = brand_categories(), brand_home_category()
+    excluded = [normalize(n) for n in places.get("brand_exclude", [])]
+    codes = []
+    for i, r in df.iterrows():
+        code = None if any(normalize(r.place_name).startswith(e) for e in excluded) else brand_of(r.place_name, aliases)
+        cat = df.at[i, "category_code"]
+        if code is not None and cat not in cats.get(code, {cat}):
+            if r.is_online or r.kind in places.get("keep_category_kinds", []):
+                code = None
+            else:
+                df.at[i, "category_code"] = home.get(code, cat)
+        codes.append(code)
+    df.insert(df.columns.get_loc("brand") + 1, "brand_code", codes)
 
 
 def build_merchants(rng: np.random.Generator) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -111,16 +144,25 @@ def build_merchants(rng: np.random.Generator) -> tuple[pd.DataFrame, pd.DataFram
     for r in rows:
         r.update(is_online=False, rating=_rating(rng))
 
-    for cat, names in places["online"].items():
+    for kind, names in places["online"].items():
         for name in names:
             rows.append({
-                "brand": name, "branch_name": "", "place_name": name, "category_code": cat,
+                "brand": name, "branch_name": "", "place_name": name, "kind": kind,
                 "zone_code": None, "lat": None, "lng": None, "address": None,
                 "source": "online", "kakao_id": None, "is_online": True, "rating": None,
             })
 
     df = pd.DataFrame(rows)
     df.insert(0, "merchant_id", range(1, len(df) + 1))
+    df.insert(df.columns.get_loc("kind") + 1, "category_code", df.kind.map(places["kinds"]))
+    # 카카오 분류로 업종을 나눈다 (병원 검색에 잡힌 약국 → PHARMACY)
+    if "_kakao_category" in df.columns:
+        for kind, rules in places.get("category_by_kakao", {}).items():
+            for word, code in rules.items():
+                hit = (df.kind == kind) & df._kakao_category.fillna("").str.contains(word)
+                df.loc[hit, "category_code"] = code
+        df = df.drop(columns=["_kakao_category"])
+    _attach_brand_codes(df, places)
     df["normalized_name"] = df["place_name"].map(_normalize)
     df["is_demo_fixed"] = False
 

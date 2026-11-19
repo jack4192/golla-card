@@ -39,7 +39,7 @@ archetypes:
     habit: { habit: 0.85, random: 0.15 }
     choice_model: { type: main_card }
 
-# 데모 사용자. cards는 기본 순서(display_order) 순이다.
+# 데모 사용자. cards는 기본 순서(display_order) 순이다. 카드는 최종 카드 DB 테스트 계정 test1~5와 같다 (2026-11-15).
 # kpass_card: K-패스로 등록한 카드 (정부 환급 횟수는 이 카드로 탄 것만 센다)
 # transit_default: 교통 대표 카드 (앱을 열지 않고 찍으면 이 카드로 결제)
 # amount_level: 일반 결제 금액 배율. 공과금을 포함한 월 지출이 197만, 88만, 212만, 123만, 146만이 되도록 맞춘 값이다.
@@ -51,11 +51,12 @@ demo_users:
     gender: F
     zones: { home: BANGBAE, work: GANGNAM, weekend: SEONGSU }
     kpass_tier: general
-    cards: [SH_LIFE_CR, SH_DINE_CR, SH_KPASS_CR, KB_CAFE_CK, HN_DELI_CR]
+    cards: [SH_DISCOUNT_PLAN_PLUS, SH_SOL_TRAVEL_CHECK, KB_ALL]
     amount_level: 0.892
-    kpass_card: SH_KPASS_CR
-    transit_default: SH_KPASS_CR
-    note: 메인 시연. 신한 생활 카드 카페 한도 소진 → KB 카드 1순위, 외식 카드 실적 28만/30만
+    kpass_card: null
+    transit_default: SH_DISCOUNT_PLAN_PLUS
+    special: [golf, car]             # 특수 고액 결제 (pet 동물병원, golf 골프, car 자동차 정비)
+    note: 메인 시연. 최종 카드 DB test1 카드. Discount Plan+ 오전 카페·음식점 10%(Time Plan)와 KB ALL 전 업종 할인, SOL트래블 편의점 적립의 경쟁
 
   - id: 2
     display_name: 데모 사용자 2
@@ -64,11 +65,15 @@ demo_users:
     gender: M
     zones: { home: SILLIM, work: SINCHON, weekend: HONGDAE }
     kpass_tier: youth
-    cards: [SH_KPASS_CR, SH_TRAVEL_CK, HN_TRAVEL_CK]
+    cards: [HANA_MOVING_ALLDAY, NH_ZGM, LOTTE_LOCA_LIKIT]
+    # 2026-11-18 결정: 모든 사용자가 신한카드를 갖는다. 4번째 카드로 더하고 1년 동안 가진 카드로 본다
+    # (카드 번호는 배경 사용자 카드 다음 번호, 업종별 습관은 별도 난수로 다시 정한다. 다른 사용자 데이터는 그대로)
+    added_cards: [SH_SOL_TRAVEL_CHECK]
     amount_level: 0.702
-    kpass_card: SH_KPASS_CR
-    transit_default: SH_KPASS_CR
-    note: 소액 결제가 잦음, K-패스 월 15회 기준
+    kpass_card: null
+    transit_default: HANA_MOVING_ALLDAY
+    special: []             # 특수 고액 결제 (pet 동물병원, golf 골프, car 자동차 정비)
+    note: 최종 카드 DB test2 카드 3장 + 신한 SOL트래블 체크(2026-11-18 추가). 소액 결제가 잦고, LOCA LIKIT 스타벅스·영화와 zgm 생활 10%, MOVING 일상 적립의 경쟁
 
   - id: 3
     display_name: 데모 사용자 3
@@ -77,11 +82,13 @@ demo_users:
     gender: F
     zones: { home: JEONGJA, work: null, weekend: JEONGJA }
     kpass_tier: general
-    cards: [SH_SHOP_CR, NH_FLAT_CR, LT_LIFE_CK, KB_KPASS_CR]
+    cards: [BC_UPTURN, LOTTE_LIKIT_FUN_CHECK, KB_NORI2_CHECK]
+    added_cards: [SH_SIMPLE_PLAN]       # 2026-11-18 추가 (test2 와 같은 방식)
     amount_level: 0.844
-    kpass_card: KB_KPASS_CR
-    transit_default: KB_KPASS_CR
-    note: 평일 낮 동네 소비·홈쇼핑·병원, 주말 마트·주유, 통합할인 카드와 특화 카드의 경쟁
+    kpass_card: null
+    transit_default: null
+    special: [pet, car]             # 특수 고액 결제 (pet 동물병원, golf 골프, car 자동차 정비)
+    note: 최종 카드 DB test3 카드 3장 + 신한 Simple Plan(2026-11-18 추가). 평일 낮 동네 소비·병원, 주말 마트·주유. 업턴 주유·편의점·외식과 라이킷 펀 정액 캐시백, 노리2의 경쟁
 
   - id: 4
     display_name: 데모 사용자 4
@@ -90,11 +97,12 @@ demo_users:
     gender: M
     zones: { home: MANGWON, work: GASAN, weekend: MANGWON }
     kpass_tier: youth
-    cards: [SH_LIFE_CR, HN_DELI_CR, KB_KPASS_CR, SH_BASIC_CK]
+    cards: [SH_EVERYWHERE, NH_ALLWONDERFUL_DC, HANA_HERO_CHECK]
     amount_level: 0.697
-    kpass_card: KB_KPASS_CR
-    transit_default: KB_KPASS_CR
-    note: 배달 금액에 따라 신한 10%와 하나 15%(1.5만 원 이상) 중 승자가 바뀜
+    kpass_card: null
+    transit_default: SH_EVERYWHERE
+    special: [pet]             # 특수 고액 결제 (pet 동물병원, golf 골프, car 자동차 정비)
+    note: 최종 카드 DB test4 카드. 저녁·심야 편의점·배달. EVerywhere 생활 할인과 올원더풀 할인 PACK, HERO 구독·마트 적립의 경쟁
 
   - id: 5
     display_name: 데모 사용자 5
@@ -103,8 +111,9 @@ demo_users:
     gender: M
     zones: { home: YEONNAM, work: null, weekend: YEONNAM }
     kpass_tier: general
-    cards: [SH_SHOP_CR, SH_TRAVEL_CK, BC_FLAT_CR]
+    cards: [SH_MODU, HANA_PBA_CHECK, BC_THE_OIL]
     amount_level: 0.726
-    kpass_card: null
-    transit_default: null
-    note: 온라인 쇼핑, 실적 구간에 따라 BC 통합 0.7%와 1% 차이
+    kpass_card: SH_MODU
+    transit_default: SH_MODU
+    special: [car]             # 특수 고액 결제 (pet 동물병원, golf 골프, car 자동차 정비)
+    note: 최종 카드 DB test5 카드. 온라인 쇼핑·카페. 모두의카드 간편결제 5%와 PBA 음식점·편의점 캐시백, 더 오일 주유의 경쟁

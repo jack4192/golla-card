@@ -1,0 +1,23 @@
+card_id,name,description,image_url,card_type,annual_fee,issuer_code,card_code,tags,is_placeholder_name,data_origin
+1,신한카드 국민행복(신용),국가바우처(임신·출산·보육) 통합 카드. 병원/온라인몰/교육/배달/OTT 할인. 연회비 없음(Local/VISA),,CREDIT,0,SHINHAN,SH_KUKMIN_CREDIT,바우처;생활할인;병원;교육;배달,FALSE,SHINHAN_BROCHURE_2026
+2,신한카드 국민행복(체크),국가바우처 통합 체크카드. 신한은행 이체수수료 면제 등 금융서비스. 연회비 없음,,CHECK,0,SHINHAN,SH_KUKMIN_CHECK,바우처;생활할인;병원;교육;배달,FALSE,SHINHAN_BROCHURE_2026
+3,신한 모두의카드,대중교통 10%·간편결제 5%·생활 5% 통합할인. 연회비 Local 7천/Mastercard 1만원,,CREDIT,7000,SHINHAN,SH_MODU,대중교통;간편결제;생활할인,FALSE,SHINHAN_BROCHURE_2026
+4,신한카드 Discount Plan+,Time/Daily/Plan Day/Monthly/Annual Plan. 월 최대 10만원 혜택. 연회비 Local·Mastercard Platinum 5만원,,CREDIT,50000,SHINHAN,SH_DISCOUNT_PLAN_PLUS,할인;카페;편의점;마트;주유;구독;영화,FALSE,SHINHAN_BROCHURE_2026
+5,신한카드 Discount Plan,Time/Daily/Plan Day/Monthly/Annual Plan. 월 최대 6만원 혜택. 연회비 Local·Mastercard 1.5만원,,CREDIT,15000,SHINHAN,SH_DISCOUNT_PLAN,할인;카페;편의점;마트;주유;구독;영화,FALSE,SHINHAN_BROCHURE_2026
+6,신한카드 ECO Plan,"ECO 기부포인트 0.2%, 월요일 대중교통 캐시백, 교통/페이퍼리스/그린마켓·피트니스·편의점 10% 할인. 연회비 Local 2만/VISA 2.3만원",,CREDIT,20000,SHINHAN,SH_ECO_PLAN,친환경;대중교통;편의점;피트니스,FALSE,SHINHAN_BROCHURE_2026
+7,신한카드 EVerywhere,"전기차 충전 30~50% 캐시백, 생활/주차 캐시백. 연회비 Local 1.9만/VISA 2.2만원",,CREDIT,19000,SHINHAN,SH_EVERYWHERE,전기차;충전;주차;구독;편의점,FALSE,SHINHAN_BROCHURE_2026
+8,신한카드 Hi-Point Plan+,국내외 최대 2% 기본적립 + 생활밀착 가맹점 최대 6% 마이신한포인트. 연회비 Local 5만/해외겸용 5.3만원,,CREDIT,50000,SHINHAN,SH_HI_POINT_PLAN_PLUS,포인트적립;마트;주유;카페;통신,FALSE,SHINHAN_BROCHURE_2026
+9,신한카드 Hi-Point Plan,국내외 최대 1.5% 기본적립 + 생활밀착 가맹점 최대 5% 마이신한포인트. 연회비 Local 2만/해외겸용 2.3만원,,CREDIT,20000,SHINHAN,SH_HI_POINT_PLAN,포인트적립;마트;주유;카페;통신,FALSE,SHINHAN_BROCHURE_2026
+10,신한카드 Simple Plan+,실적/한도 없이 국내 1.5%·해외 2% 결제일 할인. 연회비 Local 4.7만/Mastercard Platinum 5만원,,CREDIT,47000,SHINHAN,SH_SIMPLE_PLAN_PLUS,무실적;무한도;할인;무이자할부,FALSE,SHINHAN_BROCHURE_2026
+11,신한카드 Simple Plan,실적/한도 없이 국내 1%·해외 2% 결제일 할인. 연회비 Local 1.5만/Mastercard 1.8만원,,CREDIT,15000,SHINHAN,SH_SIMPLE_PLAN,무실적;무한도;할인;무이자할부,FALSE,SHINHAN_BROCHURE_2026
+12,SOL LINK 신한카드 Point Plan 체크,"건당 결제금액별 0.2~1% 적립, 편의점 5%, 주말 배달앱 적립. 연회비 없음. 신한 SOL LINK 계좌 전용",,CHECK,0,SHINHAN,SH_SOLLINK_POINT_PLAN_CHECK,체크;포인트적립;편의점;배달앱,FALSE,SHINHAN_BROCHURE_2026
+13,SOL메이트 신한카드 SOL Plan 체크,"기본 최대 0.4%·병원/마트/카페 최대 2% SOL포인트, 포인트박스 10% 추가. 연회비 없음. 만 14세 이상, 신한은행 계좌",,CHECK,0,SHINHAN,SH_SOLMATE_SOL_PLAN_CHECK,체크;포인트적립;병원;마트;카페;OTT,FALSE,SHINHAN_BROCHURE_2026
+14,신한카드 SOL트래블 체크,"해외 수수료 면제, 해외 ATM 수수료 면제, 라운지, 국내 편의점/대중교통 할인. 연회비 없음",,CHECK,0,SHINHAN,SH_SOL_TRAVEL_CHECK,체크;해외;여행;라운지;편의점,FALSE,SHINHAN_BROCHURE_2026
+15,신한카드 나라사랑카드 체크,국방부 나라사랑카드 발급 대상자 한정. PX/군시설 캐시백 + 교통·편의점·커피 등 Life 캐시백. 연회비 없음,,CHECK,0,SHINHAN,SH_NARASARANG_CHECK,체크;군장병;교통;편의점;캐시백,FALSE,SHINHAN_BROCHURE_2026
+16,신한카드 처음 체크,학생용 체크. 스터디/일상/오늘도 적립 월 최대 5천 포인트. 만 7세 이상 발급. 연회비 없음,,CHECK,0,SHINHAN,SH_CHEOUM_CHECK,체크;학생;포인트적립;편의점;카페,FALSE,SHINHAN_BROCHURE_2026
+17,KB국민 굿데이카드,"직전월 결제회수실적 30/60/120만원 구간별 주유 60원/ℓ·통신·대중교통 10%, 음식/커피/편의점/약국·학원/피트니스 10% 청구할인. 연회비 국내 일반 5천원",,CREDIT,5000,KB,KB_GOODDAY,청구할인;주유;통신;대중교통;음식;편의점;학원,FALSE,KB_BROCHURE_2026
+18,KB Biz Prime 카드,개인사업자용. 국내 0.2~0.5% 기본적립 + Life(백화점·면세점·주유·골프) 최대 1% + 제약/의료기기 최대 1% + 4대보험 10% 포인트리 적립. 해외 1.4%. 연회비 본인 12만원,,CREDIT,120000,KB,KB_BIZ_PRIME,개인사업자;포인트리;4대보험;백화점;주유;골프,FALSE,KB_BROCHURE_2026
+19,KB ALL 카드,"국내 가맹점 1% 청구할인(실적·한도 없음), 해외 2%(월 4만원), 쇼핑멤버십 50%·OTT 10%·이동통신 5%(통합 월 5천원). 연회비 일반 2만원",,CREDIT,20000,KB,KB_ALL,무실적;무한도;청구할인;OTT;멤버십;해외,FALSE,KB_BROCHURE_2026
+20,KB국민 첵첵 체크카드,9개 영역(CU·스타벅스·CGV·텐바이텐·간편결제·올리브영/안경·서점·인터파크티켓·대중교통) 건당 최대 2천원 환급할인. 연회비 없음. 만 7세 이상,,CHECK,0,KB,KB_CHECKCHECK,체크;환급할인;편의점;커피;영화;대중교통,FALSE,KB_BROCHURE_2026
+21,KB국민 노리2 체크카드,일상혜택(커피·모바일·문화·뷰티·편의점·구독·배달·이동통신·영화·놀이공원) + 선택 발급 KB Pay(오프라인/온라인 2% 추가) 또는 Global(해외 2% 추가·공항라운지 연 1회). 연회비 없음,,CHECK,0,KB,KB_NORI2_CHECK,체크;일상혜택;KB Pay;해외;커피;영화,FALSE,KB_BROCHURE_2026
+22,KB On the Go 체크카드,"주유소·커피/음료·패스트푸드 3% 환급할인, 이동통신 정액할인, KB손해보험 연 1회 1만원. 통합할인한도 월 1만/2만원. 연회비 없음. 만 18세 이상",,CHECK,0,KB,KB_ON_THE_GO_CHECK,체크;주유;커피;패스트푸드;이동통신,FALSE,KB_BROCHURE_2026

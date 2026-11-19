@@ -1,0 +1,113 @@
+# 최종 카드 DB(config/card_db/*.csv, 원본: ~/Downloads/카드서비스_DB)를 가상 데이터에 맞추는 규칙 (2026-11-15 결정)
+# 원본 표는 고치지 않고 여기서만 이름표를 붙이거나 걸러 낸다.
+
+# 카드 코드: 생성기·엔진·설정 파일이 카드를 부르는 이름. 예전 22장과 같은 카드는 예전 코드를 그대로 쓴다.
+card_codes:
+  1: SH_DISCOUNT_PLAN
+  2: SH_DISCOUNT_PLAN_PLUS
+  3: SH_SIMPLE_PLAN
+  4: SH_SIMPLE_PLAN_PLUS
+  5: SH_ECO_PLAN
+  6: SH_EVERYWHERE
+  7: SH_MODU
+  8: SH_KUKMIN_CREDIT
+  9: SH_KUKMIN_CHECK
+  10: SH_CHEOUM_CHECK
+  11: SH_NARASARANG_CHECK
+  12: SH_SOL_TRAVEL_CHECK
+  13: SH_SOLMATE_SOL_PLAN_CHECK
+  14: SH_SOLLINK_POINT_PLAN_CHECK
+  15: KB_GOODDAY
+  16: KB_BIZ_PRIME
+  17: KB_ALL
+  18: KB_CHECKCHECK
+  19: KB_NORI2_CHECK
+  20: KB_ON_THE_GO_CHECK
+  21: BC_THE_OIL
+  22: BC_BAROBARO_CHECK
+  23: BC_BALANCE
+  24: BC_UPTURN
+  25: BC_K_FIRST
+  26: HANA_HERO_CHECK
+  27: HANA_PBA_CHECK
+  28: HANA_TRAVELOG_CHECK
+  29: HANA_MOVING_ALLDAY
+  30: HANA_MOVING_ONLINE
+  31: HANA_MOVING_GLOBAL
+  32: NH_ZGM
+  33: NH_ALLWONDERFUL_DC
+  34: NH_ALLWONDERFUL_PT
+  35: NH_GLOBALWITH_CHECK
+  36: NH_ZGM_SAVE_CHECK
+  37: LOTTE_LIKIT_ALL_CHECK
+  38: LOTTE_LIKIT_FUN_CHECK
+  39: LOTTE_LOCA_LIKIT
+  40: LOTTE_DIGILOCA_LASVEGAS
+
+# 카드사 이름 → 코드 (데모 화면 색과 엔진의 '자사 카드' 판단에 쓴다)
+issuers:
+  신한: { code: SHINHAN, name: 신한카드, openpay_supported: true, is_recommend_target: true }
+  KB국민: { code: KB, name: KB국민카드, openpay_supported: true, is_recommend_target: false }
+  BC: { code: BC, name: BC카드, openpay_supported: true, is_recommend_target: false }
+  하나: { code: HANA, name: 하나카드, openpay_supported: true, is_recommend_target: false }
+  NH농협: { code: NH, name: NH농협카드, openpay_supported: true, is_recommend_target: false }
+  롯데: { code: LOTTE, name: 롯데카드, openpay_supported: true, is_recommend_target: false }
+
+# 한 장의 카드를 모드·팩으로 나눠 둔 행. 한 사람은 묶음마다 하나만 가진다.
+exclusive_groups:
+  - [HANA_MOVING_ALLDAY, HANA_MOVING_ONLINE, HANA_MOVING_GLOBAL]
+  - [NH_ALLWONDERFUL_DC, NH_ALLWONDERFUL_PT]
+
+# 가상 결제는 전부 국내라 이 업종만 대상인 혜택은 뺀다 (대상 행에서도 뺀다)
+exclude_target_categories: [OVERSEAS, OVERSEAS_TRANSIT]
+
+# 간편결제 조건(pay_type): SOL페이 현장 결제는 간편결제(SOLPAY)로 본다. 온라인·자동이체·교통은 간편결제가 아닌 것으로 본다.
+
+# 같은 표기가 두 브랜드로 나올 때 쓸 브랜드 (2026-11-18). 새 DB 에 두 표기가 함께 있어(SSG.COM·SSG닷컴, YES24·예스24,
+# 컬리·마켓컬리) 그동안 실행마다 달라지던 값을, 지금까지 만든 데이터와 같은 값으로 고정한다.
+alias_resolve:
+  SSG닷컴: SSG.COM
+  YES24: YES24
+  컬리: 컬리
+
+# 우리 가맹점 이름 → 새 DB 브랜드 (새 DB merchant_aliases 에 없는 표기만). 앞부분이 맞으면 그 브랜드로 본다.
+brand_aliases:
+  이디야커피: 이디야
+  할리스: 할리스커피
+  매머드익스프레스: 매머드커피
+  하나로마트: 농협 하나로마트
+  GS더프레시: GS THE FRESH
+  YES24: 예스24
+  애플 앱스토어: 앱스토어
+  GS샵: GS SHOP
+  SSG닷컴: SSG.COM
+  디즈니+: 디즈니플러스
+  갤러리아: 갤러리아백화점
+  SK에너지: SK에너지
+  SK주유소: SK에너지
+  빕스: VIPS
+  우티: UT
+  배민클럽: 배민클럽
+  유튜브프리미엄: 유튜브 프리미엄
+  이마트에브리데이: 이마트 에브리데이
+  아웃백스테이크하우스: 아웃백
+  써브웨이: 써브웨이
+
+# 새 DB 브랜드 이름의 표기 차이 (혜택 대상 이름 → 대표 이름). 같은 브랜드를 다르게 적은 경우만.
+brand_canonical:
+  베스킨라빈스: 배스킨라빈스
+  SK주유소: SK에너지
+
+# 브랜드는 맞지만 이 업종은 바꾸지 않는다 (예: 오프라인 교보문고는 서점, 다이소는 잡화)
+keep_category_brands: []
+
+# K-패스 등록 카드로 보는 카드
+kpass_cards: [SH_MODU]
+
+# 발급 자격이 있는 카드: 이 유형의 배경 사용자에게만 배정한다 ([] 이면 배정하지 않음)
+eligibility:
+  SH_KUKMIN_CREDIT: [FAMILY]
+  SH_KUKMIN_CHECK: [FAMILY]
+  SH_CHEOUM_CHECK: [STUDENT]
+  SH_NARASARANG_CHECK: []
+  KB_BIZ_PRIME: []

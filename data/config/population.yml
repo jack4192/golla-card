@@ -2,12 +2,23 @@
 
 archetype_share: { OFFICE: 0.40, STUDENT: 0.20, FAMILY: 0.20, NIGHTOWL: 0.10, REMOTE: 0.10 }
 
+# 추가 인원 (2026-11-14 결정). 50대가 시연 사용자 1명뿐이라 기존 300명은 그대로 두고 50대 60명을 더한다 (360명).
+#   HOME50  출근 없는 50대 (데모 3번과 같은 유형)
+#   OFFICE  50대 직장인
+extra_users:
+  - { archetype: HOME50, age_band: 50s, n: 30 }
+  - { archetype: OFFICE, age_band: 50s, n: 30 }
+
+# 회사 동네가 없는 유형
+no_work_zone: [REMOTE, HOME50]
+
 # 사용자별 지출 격차. 사용자마다 일반 결제의 건수·금액 배율을 한 번 정해 끝까지 쓴다 (로그정규 분포를 인원수대로 나눠 배정).
 # 공과금과 충동·대형 결제를 포함한 월 지출이 제공 데이터(CreDB 하위 10% 24만 / 중앙 107만 / 상위 10% 352만)에 가깝도록 맞춘 값이다.
 # 교통·자동이체에는 적용하지 않는다. correlation은 많이 사는 사람이 비싼 것도 사는 경향의 세기다.
 spend_level:
-  count:  { median: 0.46, sigma: 0.75, range: [0.25, 3.0] }
-  amount: { median: 0.65, sigma: 0.75, range: [0.40, 3.0] }
+  # 상한 3.0 → 2.0 (2026-11-14 결정): 두 배율이 곱해져 월 1,600만 원대 사용자가 나오던 문제
+  count:  { median: 0.46, sigma: 0.75, range: [0.25, 2.0] }
+  amount: { median: 0.65, sigma: 0.75, range: [0.40, 2.0] }
   correlation: 0.3
 
 # 단골 3곳 중에서 고를 확률. 사용자마다 이 범위에서 고르게 나눠 정한다.
@@ -16,17 +27,19 @@ favorite_prob_range: [0.40, 0.85]
 # 습관 비율에 사용자마다 더하는 편차 (정규분포 표준편차, 더한 뒤 다시 합 1로 맞춤)
 habit_jitter_sd: 0.05
 
-# 보유 카드 규칙
+# 보유 카드 규칙 (최종 카드 DB 40장: 신한 14, KB국민 6, 하나 6, BC 5, NH농협 5, 롯데 4. 사용자 결정 2026-11-15)
+#   신한 1장 이상, 사용자의 60%는 타사(KB·하나·BC·NH·롯데) 카드도 1장 이상 보유. 나머지 40%는 신한 카드만.
+#   발급 자격 카드와 한 카드의 모드·팩 묶음은 config/card_db_map.yml 을 따른다.
 cards:
-  count: { min: 3, max: 5 }
+  count: { min: 2, max: 4 }
   must_have_issuer: SHINHAN     # 신한카드 최소 1장
-  min_issuers: 2
+  other_issuer_share: 0.6       # 이 비율의 사용자만 타사 카드를 1장 이상 가진다
   min_check: 1
   # 유형별로 신용카드를 뽑을 상대 가중치 (체크는 1)
-  credit_weight: { OFFICE: 1.0, STUDENT: 0.2, FAMILY: 1.2, NIGHTOWL: 1.0, REMOTE: 1.0 }
+  credit_weight: { OFFICE: 1.0, STUDENT: 0.2, FAMILY: 1.2, NIGHTOWL: 1.0, REMOTE: 1.0, HOME50: 1.2 }
 
 # 연령대·성별 (통계 보정과 K-패스 청년 구분용)
-age_band: { STUDENT: [20s], OFFICE: [20s, 30s, 40s], FAMILY: [30s, 40s], NIGHTOWL: [20s, 30s], REMOTE: [30s, 40s] }
+age_band: { STUDENT: [20s], OFFICE: [20s, 30s, 40s], FAMILY: [30s, 40s], NIGHTOWL: [20s, 30s], REMOTE: [30s, 40s], HOME50: [50s] }
 youth_kpass_share_20s: 0.8      # 20대 중 청년 K-패스 비율
 
 # 동네 배정: 집·회사(학교) 동네를 아래 후보에서 고른다

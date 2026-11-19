@@ -5,19 +5,19 @@
 
 실행: uv run python -m generate.main
 결과: data/out/parquet/*.parquet (전체), data/out/csv/*.csv (마스터 + 데모 사용자 5명)
-카드 혜택과 실적 조건은 임의로 만든 가정값이다. 혜택은 습관대로 쓴 결제 위에서 계산한다.
+카드는 최종 카드 DB(config/card_db, 6개 카드사 40장)다. 혜택은 습관대로 쓴 결제 위에서 계산한다.
 """
 
 import time
 
 import numpy as np
 
-from .benefit import load_cards
 from .card_status import build_card_status
 from .common import CACHE_DIR, OUT_DIR, load_config
 from .masters import build_masters
 from .merchants import build_merchants
 from .payments import Simulator, simulate
+from .card_db import load_cards
 from .users import build_users, users_frames
 
 # DB에는 넣지 않는 생성기 전용 컬럼 (가상 사용자가 카드를 고른 이유)
@@ -30,7 +30,7 @@ def main() -> None:
     dists = load_config("distributions")
     rng = np.random.default_rng(settings["seed"])
 
-    cards = load_cards(load_config("cards"))
+    cards = load_cards()
     tables = build_masters(cards)
     merchants, merchant_zones = build_merchants(rng)
     tables["merchants"] = merchants
@@ -45,7 +45,7 @@ def main() -> None:
     pay = simulate(sim, users)
     pay.insert(0, "payment_id", range(1, len(pay) + 1))
     tables["payments"] = pay
-    tables["card_month_status"] = build_card_status(cards, tables["user_cards"], pay)
+    tables["card_month_status"] = build_card_status(cards, tables["user_cards"], pay, merchants)
 
     write(tables)
     print(f"결제 {len(pay):,}건 · 사용자 {len(users)}명 · {time.time() - t0:.1f}초")
