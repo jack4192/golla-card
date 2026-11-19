@@ -1,4 +1,4 @@
-import {DETAIL_CATEGORIES,detailSignals,validateDetails} from './routineDetails';
+import { DETAIL_CATEGORIES, INDUSTRIES, ROUTINE_TITLE_LIMIT, detailSignals, normalizeTime, routineLabel, validateDetails } from './routineDetails';
 import { Platform } from 'react-native';
 import * as Store from './demoStore';
 
@@ -85,6 +85,23 @@ export const QUESTIONS = [
     ],
   },
 ];
+
+export const ROUTINE_WEEKDAYS = [1, 2, 3, 4, 5, 6, 0];
+
+export const ROUTINE_ACTIVITY_TIMES = {
+  lunchPlace: {
+    label: '점심',
+    scheduleKey: 'lunchSchedule',
+    excludedAnswer: 'skip',
+    hours: Array.from({ length: 7 }, (_, index) => index + 9),
+  },
+  coffee: {
+    label: '커피',
+    scheduleKey: 'coffeeSchedule',
+    excludedAnswer: 'never',
+    hours: Array.from({ length: 8 }, (_, index) => index + 9),
+  },
+};
 
 export const EVENT_OPTIONS = [
   ['hospital', '🏥 병원 예약'],
@@ -175,7 +192,7 @@ export function normalizeProfile(value) {
       ? value
       : {};
 
-  return {
+  const normalized = {
     ...profile,
     ...Object.fromEntries(
       QUESTIONS.map(question => [
@@ -186,12 +203,55 @@ export function normalizeProfile(value) {
       ])
     ),
   };
+
+  for (const [key, { scheduleKey, excludedAnswer, hours }] of Object.entries(ROUTINE_ACTIVITY_TIMES)) {
+    const schedule = normalized[key] === excludedAnswer ? null : profile[scheduleKey];
+    normalized[scheduleKey] = {
+      days: ROUTINE_WEEKDAYS.filter(day => Array.isArray(schedule?.days) && schedule.days.includes(day)),
+      hours: hours.filter(hour => Array.isArray(schedule?.hours) && schedule.hours.includes(hour)),
+    };
+  }
+
+  return normalized;
 }
 
 export function completeProfile(profile) {
   return QUESTIONS.every(question =>
     question.options.some(([value]) => value === profile?.[question.key])
   );
+}
+
+export function dailyBasicSchedule(profile, day = dateKey()) {
+  const weekday = new Date(day + 'T12:00:00').getDay();
+  const { coffee, coffeeSchedule, lunchPlace, lunchSchedule } = normalizeProfile(profile);
+  const lunchCategory = { restaurant: 'restaurant', convenience: 'convenience' }[lunchPlace];
+  const activities = [
+    [lunchPlace && lunchPlace !== 'skip', '점심', lunchCategory, lunchSchedule],
+    [coffee && coffee !== 'never', '커피', 'cafe', coffeeSchedule],
+  ];
+
+  return activities.flatMap(([enabled, label, category, schedule]) => {
+    if (!enabled || (schedule.days.length && !schedule.days.includes(weekday))) return [];
+
+    const intervals = [];
+    for (const hour of schedule.hours) {
+      const previous = intervals[intervals.length - 1];
+      if (previous?.end === hour) previous.end += 1;
+      else intervals.push({ start: hour, end: hour + 1 });
+    }
+    return intervals.map(({ start, end }) => ({ label, category, start, end }));
+  });
+}
+
+export function effectiveDetailedRoutine(profile) {
+  const { lunchPlace, lunchSchedule, coffee, coffeeSchedule, detailedRoutine } = normalizeProfile(profile);
+  if (!Array.isArray(detailedRoutine)) return [];
+
+  return detailedRoutine.filter(row => {
+    if (row?.category === 'cafe') return coffee !== 'never' && !(coffee && coffeeSchedule.hours.length);
+    if (row?.category === 'restaurant') return lunchPlace !== 'skip' && !(lunchPlace && lunchSchedule.hours.length);
+    return true;
+  });
 }
 
 async function readJson(key, fallback) {
@@ -260,6 +320,11 @@ export async function readEvents() {
       !validDate(event.date) ||
       !Array.isArray(event.types) ||
       event.types.some(type => typeof type !== 'string') ||
+      (event.category !== undefined && (
+        !INDUSTRIES.some(([id]) => id === event.category) ||
+        !event.start || normalizeTime(event.start) !== event.start ||
+        !event.end || normalizeEventEnd(event.end) !== event.end || event.start === event.end
+      )) ||
       (event.memo !== undefined && typeof event.memo !== 'string')
     );
 
@@ -272,16 +337,59 @@ export async function readEvents() {
   return events;
 }
 
-export async function saveEvent(input) {
+let eventWrites = Promise.resolve();
+
+function writeEventRecord(action) {
+  const write = eventWrites.catch(() => {}).then(action);
+  eventWrites = write;
+  return write;
+}
+
+export const waitForEventWrites = () => eventWrites.catch(() => {});
+
+const normalizeEventEnd = value => value === '24:00' ? value : normalizeTime(value);
+
+export function eventEndDate(event) {
+  if (event.end === '24:00') return new Date(`${shiftDate(event.date, 1)}T00:00:00`);
+  const day = event.end < event.start ? shiftDate(event.date, 1) : event.date;
+  return new Date(`${day}T${event.end}:00`);
+}
+
+export function eventTimeCaption(event) {
+  return event.start && event.end
+    ? `${event.start}~${event.end < event.start ? '다음 날 ' : ''}${event.end}`
+    : '';
+}
+
+export function eventTitle(event) {
+  return event.category ? routineLabel(event) : event.types.map(eventLabel).join(' · ');
+}
+
+export const saveEvent = input => writeEventRecord(async () => {
   if (!validDate(input.date)) {
     throw Error('날짜를 YYYY-MM-DD 형식으로 입력해주세요.');
   }
 
-  const types = [...new Set(input.types || [])].filter(type =>
+  const timed = Boolean(input.category);
+  const timing = {};
+  if (timed) {
+    if (!INDUSTRIES.some(([id]) => id === input.category)) throw Error('일과 종류를 선택해주세요.');
+    const start = normalizeTime(input.start);
+    const end = normalizeEventEnd(input.end);
+    if (!start || !end) throw Error('시작과 종료 시간을 09:30처럼 입력해주세요.');
+    if (start === end) throw Error('시작 시간과 종료 시간을 다르게 설정해주세요.');
+    const title = String(input.title || '').trim();
+    if (input.category === 'other' && (!title || title.length > ROUTINE_TITLE_LIMIT)) {
+      throw Error(`기타 일정의 제목을 ${ROUTINE_TITLE_LIMIT}자 이내로 입력해주세요.`);
+    }
+    Object.assign(timing, { category: input.category, start, end, title: input.category === 'other' ? title : '' });
+  }
+
+  const types = timed ? [] : [...new Set(input.types || [])].filter(type =>
     EVENT_OPTIONS.some(([value]) => value === type)
   );
 
-  if (!types.length) {
+  if (!timed && !types.length) {
     throw Error('일정 종류를 선택해주세요.');
   }
 
@@ -298,12 +406,13 @@ export async function saveEvent(input) {
 
   const event = {
     ...old,
+    ...timing,
     id:
       old?.id ||
       Date.now() + '-' + Math.random().toString(36).slice(2, 10),
     date: input.date,
     types,
-    memo: String(input.memo || '').trim().slice(0, 80),
+    memo: String(input.memo ?? old?.memo ?? '').trim().slice(0, 80),
     createdAt: old?.createdAt || now,
     updatedAt: now,
   };
@@ -314,16 +423,16 @@ export async function saveEvent(input) {
   ]);
 
   return event;
-}
+});
 
-export async function deleteEvent(id) {
+export const deleteEvent = id => writeEventRecord(async () => {
   const events = await readEvents();
 
   await writeJson(
     EVENTS_KEY,
     events.filter(event => event.id !== id)
   );
-}
+});
 
 export async function isTodayConfirmed(day = dateKey()) {
   return (await readJson(CHECKED_KEY, null))?.date === day;
@@ -338,6 +447,20 @@ export async function confirmToday() {
 
 export function eventLabel(type) {
   return EVENT_OPTIONS.find(([id]) => id === type)?.[1] || type;
+}
+
+const EVENT_BENEFITS = {
+  hospital: ['medical', '오늘 병원 방문'],
+  team_dinner: ['restaurant', '오늘 회식·모임'],
+  night_snack: ['delivery', '오늘 야식·배달'],
+  travel: ['transport', '오늘 외출·여행'],
+  shopping: ['shopping', '오늘 쇼핑·장보기'],
+  refuel: ['fuel', '오늘 주유·충전'],
+};
+
+export function eventBenefitCategories(event) {
+  if (event.category) return event.category === 'other' ? [] : [event.category];
+  return event.types.map(type => EVENT_BENEFITS[type]?.[0]).filter(Boolean);
 }
 
 export function makeSignals(profile, events, day = dateKey()) {
@@ -367,22 +490,22 @@ export function makeSignals(profile, events, day = dateKey()) {
   const off = today.some(event =>
     event.types.includes('day_off') || event.types.includes('unwell')
   );
+  const weekday = new Date(day + 'T12:00:00').getDay();
+  const { lunchSchedule, coffeeSchedule } = normalizeProfile(profile);
+  const occursOnDay = schedule => !schedule.days.length || schedule.days.includes(weekday);
+  const withTime = (reason, schedule) => schedule.hours.length
+    ? `${reason} · ${schedule.hours.map(hour => `${hour}시`).join(', ')}`
+    : reason;
 
-  if (profile?.coffee === 'always') {
-    add('cafe', 3, '평소 커피를 거의 매일 마심');
-  }
-
-  if (profile?.coffee === 'sometimes') {
-    add('cafe', 1, '가끔 커피를 마심');
+  if (occursOnDay(coffeeSchedule)) {
+    if (profile?.coffee === 'always') add('cafe', 3, withTime('평소 커피를 거의 매일 마심', coffeeSchedule));
+    if (profile?.coffee === 'sometimes') add('cafe', 1, withTime('가끔 커피를 마심', coffeeSchedule));
   }
 
   if (!off) {
-    if (profile?.lunchPlace === 'restaurant') {
-      add('restaurant', 2, '점심을 근처 음식점에서 먹음');
-    }
-
-    if (profile?.lunchPlace === 'convenience') {
-      add('convenience', 2, '점심에 편의점을 이용함');
+    if (occursOnDay(lunchSchedule)) {
+      if (profile?.lunchPlace === 'restaurant') add('restaurant', 2, withTime('점심을 근처 음식점에서 먹음', lunchSchedule));
+      if (profile?.lunchPlace === 'convenience') add('convenience', 2, withTime('점심에 편의점을 이용함', lunchSchedule));
     }
 
     if (['public', 'mixed', 'taxi'].includes(profile?.transport)) {
@@ -410,18 +533,13 @@ export function makeSignals(profile, events, day = dateKey()) {
     add('shopping', 2, '평소 쇼핑·장보기 습관');
   }
 
-  const mapping = {
-    hospital: ['medical', '오늘 병원 방문'],
-    team_dinner: ['restaurant', '오늘 회식·모임'],
-    night_snack: ['delivery', '오늘 야식·배달'],
-    travel: ['transport', '오늘 외출·여행'],
-    shopping: ['shopping', '오늘 쇼핑·장보기'],
-    refuel: ['fuel', '오늘 주유·충전'],
-  };
-
   today.forEach(event => {
+    if (event.category) {
+      eventBenefitCategories(event).forEach(category => add(category, 4, `특별 일정 · ${eventTitle(event)} ${eventTimeCaption(event)}`.trim()));
+      return;
+    }
     event.types.forEach(type => {
-      const match = mapping[type];
+      const match = EVENT_BENEFITS[type];
 
       if (match) {
         add(match[0], 4, match[1]);
@@ -429,7 +547,7 @@ export function makeSignals(profile, events, day = dateKey()) {
     });
   });
 
-  detailSignals(profile?.detailedRoutine, day).forEach(signal => add(signal.id, signal.weight, signal.reason));
+  detailSignals(effectiveDetailedRoutine(profile), day).forEach(signal => add(signal.id, signal.weight, signal.reason));
   return [...found.values()];
 }
 // DETAILED_ROUTINE_DATA_V1

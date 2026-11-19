@@ -1,30 +1,37 @@
 import PaymentCardOrder from '../components/PaymentCardOrder';
+import PaymentBenefitChat from '../components/PaymentBenefitChat';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 import makeQR from 'qrcode-generator';
 import JsBarcode from 'jsbarcode';
 import { CARD_CATALOG, DEMO_WALLET_CARDS } from '../data/cards';
+import { findCatalog40Product } from '../data/cardCatalog40';
 import { CARD_PRODUCTS } from '../data/cardRecommendationProducts';
 import { CSV_CARD_CATALOG } from '../data/cardCatalogCsv';
 import { evaluatePdfCard } from '../data/paymentBenefits';
 import { benefitText, evaluateBenefit } from '../utils/cardRecommendation';
 import { createPinSalt } from '../utils/pinCrypto';
+import { makeSchedulePaymentScenario } from '../utils/schedulePayment';
+import { estimateCatalogBenefit, matchesCatalogPaymentBenefit } from '../utils/catalogPayment';
 const SCENARIOS = [{
   id: 'coffee',
   merchant: '스타벅스',
+  namedMerchant: true,
   amount: 15000,
   category: /카페|커피/,
   brand: /스타벅스/i
 }, {
   id: 'cu',
   merchant: 'CU',
+  namedMerchant: true,
   amount: 10000,
   category: /편의점/,
   brand: /\bCU\b|씨유/i
 }, {
   id: 'gs',
   merchant: 'GS25',
+  namedMerchant: true,
   amount: 12000,
   category: /편의점/,
   brand: /GS25/i
@@ -46,16 +53,17 @@ export function realProductCard(card) {
   }
   const catalog = catalogOf(card);
   const pdf = CARD_CATALOG[card.id];
-  const image = catalog ? CARD_PRODUCTS[catalog.code]?.image : pdf?.image;
-  if (!image || !catalog && !pdf) {
+  const product = findCatalog40Product(card);
+  const image = product?.image ?? (catalog ? CARD_PRODUCTS[catalog.code]?.image : pdf?.image);
+  if (!image || (!catalog && !pdf && !product)) {
     return null;
   }
   return {
     ...card,
-    name: catalog?.name || pdf.name,
-    issuer: catalog?.issuer || '신한카드',
-    type: catalog?.type || '체크',
-    catalogCode: catalog?.code,
+    name: product?.name || catalog?.name || pdf?.name,
+    issuer: product?.issuer || catalog?.issuer || '신한카드',
+    type: product?.type || catalog?.type || '체크',
+    catalogCode: catalog?.code || product?.code,
     image,
     realProduct: true
   };
@@ -64,19 +72,82 @@ export function realWalletCards(card, cards = []) {
   const matched = [...(card ? [card] : []), ...cards].map(realProductCard).filter(Boolean);
   return Array.from(new Map(matched.map(item => [item.id, item])).values());
 }
-export function estimatePayment(card, scenario, assume) {
-  const unknown = reason => ({
-    value: null,
-    unit: 'KRW',
-    reason,
-    name: '확인 필요'
+const unknown = (reason, name = null, condition) => ({
+  value: null,
+  unit: 'KRW',
+  reason,
+  name,
+  condition,
+});
+const unsupportedEstimate = /해외|추가 적립|추가 할인|웰컴|리워드|정기결제|자동납부|구독|리터/;
+
+function bestBenefit(rows) {
+  const known = rows.filter(row => Number.isFinite(row.value));
+  known.sort((a, b) => a.unit === b.unit ? b.value - a.value : a.unit === 'KRW' ? -1 : 1);
+  return known[0] || rows[0];
+}
+
+function estimateCatalogPayment(card, scenario, assume, now) {
+  const product = findCatalog40Product(card);
+  if (!product) return null;
+  const spend = Number.isFinite(card.status?.previousSpend) ? card.status.previousSpend : null;
+  const matches = product.benefits.filter(benefit => matchesCatalogPaymentBenefit(benefit, scenario));
+  const rows = matches.map(benefit => estimateCatalogBenefit(benefit, scenario, { spend, assume, now }));
+  return bestBenefit(rows) || unknown('이 거래에 맞는 혜택을 상품 안내에서 찾지 못했어요.');
+}
+
+function estimateSchedulePayment(card, scenario, assume) {
+  const catalog = catalogOf(card);
+  const { schedule, matches, amount } = scenario;
+  const now = new Date(schedule.date + 'T' + (schedule.time || '12:00') + ':00');
+  const benefits = catalog?.benefits.filter(benefit => matches(benefit.name)) || [];
+  if (!benefits.length) {
+    if (schedule.pdfScenario && card.id === schedule.cardId) {
+      if (!assume) return unknown('실적·한도·대상 거래 조건을 확인하기 전에는 금액을 계산하지 않습니다.');
+      const spend = Number.isFinite(card.status?.previousSpend) ? card.status.previousSpend : null;
+      const row = evaluatePdfCard(card, schedule.pdfScenario, amount, spend);
+      return {
+        value: row.status === 'eligible' ? row.value : null,
+        unit: row.unit === '원' ? 'KRW' : row.unit,
+        name: row.label,
+        reason: row.detail,
+        condition: row.rule,
+      };
+    }
+    return estimateCatalogPayment(card, scenario, assume, now)
+      || unknown('선택한 일정의 업종과 연결되는 카드 혜택을 확인하지 못했어요.');
+  }
+
+  const spend = Number.isFinite(card.status?.previousSpend) ? card.status.previousSpend : null;
+  const rows = benefits.map(benefit => {
+    const blocked = label => ({ benefit, value: null, unit: 'KRW', label });
+    if (benefit.brandScope !== 'CATEGORY' && !(scenario.namedMerchant && scenario.brand?.test(benefit.name))) return blocked('혜택이 적용되는 대상 가맹점을 확인해주세요.');
+    if (unsupportedEstimate.test(benefit.name)) return blocked('이 혜택은 거래 방식이나 추가 조건을 확인해주세요.');
+    if (!schedule.time && (benefit.timeStart || benefit.timeEnd)) return blocked('결제 예정 시간을 확인해주세요.');
+    return evaluateBenefit(catalog, benefit, { spend, amount, assume, now });
   });
+  const row = bestBenefit(rows);
+  const benefit = row.benefit;
+  const threshold = benefit.minPrevSpend > 0 ? '전월 실적 ' + won(benefit.minPrevSpend) + ' 이상' : '';
+  return {
+    value: row.value,
+    unit: row.unit,
+    name: benefit.name + ' · ' + benefitText(benefit),
+    reason: row.label.replace('현재 날짜·시간', '일정 날짜·시간'),
+    condition: [threshold, benefit.note].filter(Boolean).join('\n'),
+  };
+}
+
+export function estimatePayment(card, scenario, assume, now = new Date()) {
+  if (scenario.schedule) return estimateSchedulePayment(card, scenario, assume);
   if (!assume) {
     return unknown('실적·한도·대상 거래 조건을 확인하기 전에는 금액을 계산하지 않습니다.');
   }
   const spend = Number.isFinite(card.status?.previousSpend) ? card.status.previousSpend : 400000;
   const catalog = catalogOf(card);
   if (!catalog) {
+    const estimate = estimateCatalogPayment(card, scenario, assume, now);
+    if (estimate) return estimate;
     const row = evaluatePdfCard(card, scenario.id, scenario.amount, spend);
     return {
       value: row.status === 'eligible' ? row.value : null,
@@ -86,7 +157,7 @@ export function estimatePayment(card, scenario, assume) {
       condition: row.rule
     };
   }
-  const benefits = catalog.benefits.filter(benefit => scenario.category.test(benefit.name) && (benefit.brandScope !== 'BRAND_ONLY' || scenario.brand.test(benefit.name)) && !/해외|추가 적립|추가 할인|웰컴|리워드|정기결제|자동납부|구독|리터/.test(benefit.name));
+  const benefits = catalog.benefits.filter(benefit => scenario.category.test(benefit.name) && (benefit.brandScope !== 'BRAND_ONLY' || scenario.brand.test(benefit.name)) && !unsupportedEstimate.test(benefit.name));
   if (!benefits.length) {
     return unknown('선택한 거래와 정확히 연결되는 혜택을 확인하지 못했습니다.');
   }
@@ -95,11 +166,9 @@ export function estimatePayment(card, scenario, assume) {
     amount: scenario.amount,
     remaining: {},
     assume: true,
-    now: new Date()
+    now
   }));
-  const known = evaluated.filter(row => Number.isFinite(row.value));
-  known.sort((a, b) => a.unit === b.unit ? b.value - a.value : a.unit === 'KRW' ? -1 : 1);
-  const row = known[0] || evaluated[0];
+  const row = bestBenefit(evaluated);
   return {
     value: row.value,
     unit: row.unit,
@@ -161,7 +230,7 @@ function Codes({
     };
   }, [value]);
   if (!drawing) return null;
-  return <View accessibilityLabel={inactive ? '사용할 수 없는 가상 결제 코드' : '가상 결제 QR 및 바코드'} style={[s.codes, inactive && s.dim]}>
+  return <View accessibilityLabel={inactive ? '만료된 결제 예시 코드' : '결제 예시 QR 및 바코드'} style={[s.codes, inactive && s.dim]}>
       <Svg width={184} height={184} viewBox={'0 0 ' + drawing.size + ' ' + drawing.size}>
         <Rect width="100%" height="100%" fill="white" />
         <Path d={drawing.path} fill="#101820" />
@@ -212,6 +281,7 @@ async function protectScreen() {
 export default function PaymentScreen({
   card,
   cards = DEMO_WALLET_CARDS,
+  schedule,
   onSelectCard,
   onClose,
   navigation
@@ -236,13 +306,37 @@ export default function PaymentScreen({
   const notified = useRef(null);
   const selected = options.find(item => item.id === selectedId) || options[0];
   const baseline = options.find(item => item.id === baselineId) || options[0];
-  const scenario = SCENARIOS.find(item => item.id === scenarioId) || SCENARIOS[0];
-  const selectedBenefit = useMemo(() => selected ? estimatePayment(selected, scenario, assume) : null, [selected, scenario, assume]);
-  const baseBenefit = useMemo(() => baseline ? estimatePayment(baseline, scenario, assume) : null, [baseline, scenario, assume]);
-  const difference = comparePayment(selectedBenefit, baseBenefit);
+  const scheduleScenario = useMemo(() => {
+    const example = makeSchedulePaymentScenario(schedule);
+    return schedule?.sample ? { ...example, ...SCENARIOS.find(item => item.id === 'cu'), id: 'schedule' } : example;
+  }, [schedule]);
+  const scenario = scheduleScenario || SCENARIOS.find(item => item.id === scenarioId) || SCENARIOS[0];
+  const contextKey = scenario.id + ':' + assume;
+  const estimates = useMemo(() => {
+    const transactionDate = new Date();
+    return options.map(card => ({ card, benefit: estimatePayment(card, scenario, assume, transactionDate) }));
+  }, [options, scenario, assume]);
+  const selectedBenefit = estimates.find(row => row.card.id === selected?.id)?.benefit;
+  const baseBenefit = estimates.find(row => row.card.id === baseline?.id)?.benefit;
+  const difference = selected?.id === baseline?.id ? null : comparePayment(selectedBenefit, baseBenefit);
+  const estimateGroups = [
+    {
+      label: '할인·캐시백',
+      rows: estimates.filter(({ benefit }) => benefit.unit === 'KRW' && Number.isFinite(benefit.value))
+        .sort((a, b) => b.benefit.value - a.benefit.value),
+    },
+    {
+      label: '포인트 적립',
+      rows: estimates.filter(({ benefit }) => benefit.unit === 'POINT' && Number.isFinite(benefit.value)),
+    },
+    {
+      label: '조건 확인 필요',
+      rows: estimates.filter(({ benefit }) => !Number.isFinite(benefit.value)),
+    },
+  ];
   const source = selected?.image;
   const seconds = payment ? Math.max(0, Math.ceil((payment.expiresAt - now) / 1000)) : 0;
-  const expired = !payment || seconds === 0 || payment.status !== 'pending' || payment.cardId !== selected?.id || payment.contextKey !== scenario.id + ':' + assume;
+  const expired = !payment || seconds === 0 || payment.status !== 'pending' || payment.cardId !== selected?.id || payment.contextKey !== contextKey;
   useEffect(() => {
     if (options.some(item => item.id === card?.id)) {
       setSelectedId(card.id);
@@ -303,7 +397,7 @@ export default function PaymentScreen({
     setError('');
     if (selected.isOwned === false || selected.isRecommendedOnly) {
       setGenerating(false);
-      setError('보유한 카드만 결제 시연에 사용할 수 있습니다.');
+      setError('등록된 카드를 선택해주세요.');
       return;
     }
     try {
@@ -314,7 +408,7 @@ export default function PaymentScreen({
       const next = {
         value,
         cardId: selected.id,
-        contextKey: scenario.id + ':' + assume,
+        contextKey,
         status: 'pending',
         expiresAt: Date.now() + 60000
       };
@@ -334,7 +428,7 @@ export default function PaymentScreen({
   useEffect(() => {
     setReceipt(null);
     issue();
-  }, [selected?.id, scenarioId, assume]);
+  }, [selected?.id, contextKey]);
   const choose = item => {
     if (selected?.id === item.id) return;
     setSelectedId(item.id);
@@ -355,7 +449,7 @@ export default function PaymentScreen({
   };
   const approve = () => {
     const token = current.current;
-    if (!active || !token || token.status !== 'pending' || token.expiresAt <= Date.now() || token.cardId !== selected.id || token.contextKey !== scenario.id + ':' + assume) {
+    if (!active || !token || token.status !== 'pending' || token.expiresAt <= Date.now() || token.cardId !== selected.id || token.contextKey !== contextKey) {
       setError('만료되었거나 변경된 코드입니다. 새로 발급해주세요.');
       return;
     }
@@ -390,7 +484,8 @@ export default function PaymentScreen({
         </TouchableOpacity>
       </View>;
   }
-  return <ScrollView style={s.screen} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+  return <>
+    <ScrollView style={s.screen} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
       <View style={s.container}>
         <View style={s.header}>
           <TouchableOpacity accessibilityRole="button" onPress={close}>
@@ -398,13 +493,18 @@ export default function PaymentScreen({
           </TouchableOpacity>
 
           <Text style={s.demo}>
-            DEMO · 실제 출금 없음
+            실제 출금 없음
           </Text>
         </View>
 
         <Text style={s.title}>
-          {receipt ? '가상 결제 완료' : '현장 결제'}
+          {receipt ? '예시 승인 결과' : '결제 체험'}
         </Text>
+
+        {scheduleScenario && <View style={s.scheduleContext}>
+          <Text style={s.eyebrow}>오늘 일정</Text>
+          <Text style={s.scheduleTitle}>{[schedule.time, schedule.title].filter(Boolean).join(' ')}</Text>
+        </View>}
 
         {/* 맨 위: QR 및 바코드 */}
         {!receipt && <View style={s.box}>
@@ -425,7 +525,7 @@ export default function PaymentScreen({
               </Text>}
 
             <Text style={s.hint}>
-              60초간 유효한 프론트 데모 코드입니다.
+              코드는 발급 후 60초 동안 표시돼요.
               실제 매장에서 결제할 수 없습니다.
               재발급하면 이전 코드는 폐기됩니다.
             </Text>
@@ -438,7 +538,7 @@ export default function PaymentScreen({
 
             <TouchableOpacity accessibilityRole="button" disabled={expired || generating || !active} onPress={approve} style={[s.primary, (expired || generating || !active) && s.dim]}>
               <Text style={s.white}>
-                가상 POS 승인 체험
+                승인 결과 보기
               </Text>
             </TouchableOpacity>
           </View>}
@@ -478,21 +578,27 @@ export default function PaymentScreen({
 
           <View style={s.benefitBox}>
             <Text style={s.label}>
-              이번 가상 거래의 예상 혜택
+              이 거래의 예상 혜택
             </Text>
 
             <Text style={s.hint}>
               {scenario.merchant}
               {' · '}{won(scenario.amount)}
-              {' · '}가상 거래 예시
+              {' · '}결제 예시
             </Text>
+
+            {!!selectedBenefit.name && <Text style={s.benefitName}>{selectedBenefit.name}</Text>}
 
             <Text style={s.benefit}>
               {reward(selectedBenefit)}
             </Text>
 
+            {!Number.isFinite(selectedBenefit.value) && <Text style={s.hint}>
+              {selectedBenefit.reason}
+            </Text>}
+
             <Text style={s.comparison}>
-              {difference === null ? '기존 카드와 비교할 수 있는 원화 혜택 정보가 부족해요.' : difference > 0 ? '가정대로라면 기존 카드보다 ' + won(difference) + ' 더 아낄 수 있어요!' : difference === 0 ? '이 조건에서는 기존 카드와 원화 혜택이 같아요.' : '이 조건에서는 기존 카드가 ' + won(-difference) + ' 더 유리해요.'}
+              {selected.id === baseline.id ? '아래에서 다른 비교 카드를 선택할 수 있어요.' : difference === null ? '두 카드의 원화 혜택이 확인되면 차이를 보여드려요.' : difference > 0 ? '가정대로라면 비교 카드보다 ' + won(difference) + ' 더 아낄 수 있어요!' : difference === 0 ? '이 조건에서는 두 카드의 원화 혜택이 같아요.' : '이 조건에서는 비교 카드가 ' + won(-difference) + ' 더 유리해요.'}
             </Text>
 
             <Text style={s.hint}>
@@ -500,15 +606,20 @@ export default function PaymentScreen({
               {' · '}{reward(baseBenefit)}
             </Text>
 
+            {baseline.id !== selected.id && !Number.isFinite(baseBenefit.value) && <Text style={s.hint}>
+              {baseBenefit.reason}
+            </Text>}
+
             <Text style={s.hint}>
-              실적은 DB 값 또는 40만 원,
-              월 한도 미사용·상세 조건 충족 가정입니다.
+              {scheduleScenario
+                ? '일정 업종에 맞춘 결제 예시입니다. 실제 혜택은 가맹점·실적·잔여 한도에 따라 달라요.'
+                : '기록된 전월 실적을 사용하고, 기록이 없으면 40만 원으로 계산해요.'}
             </Text>
           </View>
         </View>
 
         {receipt && <View style={s.box}>
-            <Text style={s.heading}>가상 승인 결과</Text>
+            <Text style={s.heading}>예시 승인 결과</Text>
 
             <Text style={s.text}>
               {receipt.merchant}
@@ -524,7 +635,7 @@ export default function PaymentScreen({
             </Text>
 
             <Text style={s.comparison}>
-              {receipt.difference > 0 ? '가정한 가상 거래에서 기존 카드보다 ' + won(receipt.difference) + ' 더 아꼈어요.' : '예상 혜택 ' + reward(receipt.benefit)}
+              {receipt.difference > 0 ? '비교 카드보다 예상 혜택이 ' + won(receipt.difference) + ' 더 커요.' : '예상 혜택 ' + reward(receipt.benefit)}
             </Text>
 
             <Text style={s.hint}>
@@ -533,7 +644,7 @@ export default function PaymentScreen({
             </Text>
 
             <TouchableOpacity style={s.primary} onPress={close}>
-              <Text style={s.white}>메인으로</Text>
+              <Text style={s.white}>{scheduleScenario ? '일정으로 돌아가기' : '메인으로'}</Text>
             </TouchableOpacity>
           </View>}
 
@@ -545,20 +656,33 @@ export default function PaymentScreen({
           아래에서 카드 선택 이유와 상세 혜택을 확인하세요 ↓
         </Text>
 
-        <PaymentCardOrder cards={options} selectedId={selected.id} onSelect={choose} />
+        {schedule?.sample ? <View style={s.box}>
+          <Text style={s.heading}>체험용 결제 카드</Text>
+          <View style={s.chips}>
+            {options.map(item => <TouchableOpacity
+              key={item.id}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: item.id === selected.id }}
+              onPress={() => choose(item)}
+              style={[s.chip, item.id === selected.id && s.chipOn]}
+            >
+              <Text style={item.id === selected.id ? s.whiteSmall : s.chipText}>{item.name}</Text>
+            </TouchableOpacity>)}
+          </View>
+        </View> : <PaymentCardOrder cards={options} selectedId={selected.id} onSelect={choose} />}
 
         <View style={s.box}>
           <Text style={s.heading}>카드 선정 이유</Text>
 
           <Text style={s.text}>
-            지갑에서 선택한 {selected.name}를
-            결제 카드로 유지하고 있어요.
-            선택하지 않은 카드로 자동 변경하지 않습니다.
+            {scheduleScenario
+              ? selected.id === schedule.cardId
+                ? '오늘 일정의 업종과 관련된 혜택이 있는 보유 카드예요.'
+                : '결제 카드를 바꿨어요. 바꾸기 전과 같은 일정·금액으로 혜택을 확인할 수 있어요.'
+              : '지갑에서 선택한 ' + selected.name + '을 결제 카드로 유지하고 있어요.'}
           </Text>
 
-          <Text style={s.text}>
-            {selectedBenefit?.name}
-          </Text>
+          {!!selectedBenefit?.name && <Text style={s.text}>{selectedBenefit.name}</Text>}
 
           <Text style={s.hint}>
             {selectedBenefit?.reason}
@@ -571,7 +695,7 @@ export default function PaymentScreen({
 
         <View style={s.box}>
           <Text style={s.heading}>
-            혜택 비교에 사용한 가상 조건
+            혜택 비교 조건
           </Text>
 
           <Text style={s.text}>
@@ -579,29 +703,26 @@ export default function PaymentScreen({
             {' · '}{won(scenario.amount)}
           </Text>
 
-          <View style={s.chips}>
+          {!scheduleScenario && <View style={s.chips}>
             {SCENARIOS.map(item => <TouchableOpacity key={item.id} onPress={() => setScenarioId(item.id)} style={[s.chip, item.id === scenario.id && s.chipOn]}>
                 <Text style={item.id === scenario.id ? s.whiteSmall : s.chipText}>
                   {item.merchant}
                 </Text>
               </TouchableOpacity>)}
-          </View>
+          </View>}
 
           <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{
           checked: assume
         }} onPress={() => setAssume(!assume)} style={s.secondary}>
             <Text style={s.link}>
-              {assume ? '☑' : '☐'} 가상 조건 충족 가정
+              {assume ? '☑' : '☐'} 비교 조건 적용
             </Text>
           </TouchableOpacity>
 
           <Text style={s.hint}>
-            DB 전월 실적이 있으면 그 값을 사용하고,
-            없으면 전월 40만 원을 가정합니다.
-            월 한도 미사용·대상 거래·결제 방식·횟수
-            조건 충족을 가정한 예시입니다.
-            실제 절약액이 아닙니다.
-            포인트는 원화와 비교하지 않습니다.
+            {scheduleScenario
+              ? '등록된 전월 실적을 사용합니다. 업종 외에 확인이 필요한 조건이 있으면 위에 표시돼요. 예상치는 월 한도 미사용을 가정하며, 포인트는 원화와 비교하지 않아요.'
+              : '전월 실적 기록이 없으면 40만 원으로 계산해요. 월 한도를 사용하지 않았고 거래 조건을 충족했다고 가정해요. 포인트는 별도로 표시해요.'}
           </Text>
 
           {selected.status && <Text style={s.hint}>
@@ -611,17 +732,37 @@ export default function PaymentScreen({
               {won(selected.status.previousSpend)}
             </Text>}
 
-          <Text style={s.label}>
-            비교할 기존 카드
-          </Text>
+        </View>
 
-          <View style={s.chips}>
-            {options.map(item => <TouchableOpacity key={item.id} onPress={() => setBaselineId(item.id)} style={[s.chip, item.id === baseline.id && s.chipOn]}>
-                <Text style={item.id === baseline.id ? s.whiteSmall : s.chipText}>
-                  {item.name}
-                </Text>
-              </TouchableOpacity>)}
-          </View>
+        <View style={s.box}>
+          <Text accessibilityRole="header" style={s.heading}>같은 거래로 내 카드 비교</Text>
+          <Text style={s.text}>{scenario.merchant} · {won(scenario.amount)} · 결제 예시</Text>
+          <Text style={s.hint}>카드를 누르면 위 예상 혜택의 비교 카드가 바뀌어요.</Text>
+          {estimateGroups.filter(group => group.rows.length).map(group => <View key={group.label} style={s.estimateGroup}>
+            <Text style={s.label}>{group.label}</Text>
+            {group.rows.map(({ card, benefit }) => {
+              const isBaseline = baseline.id === card.id;
+              return <TouchableOpacity
+                key={card.id}
+                accessibilityRole="radio"
+                accessibilityLabel={card.name + ' 비교 대상 · ' + reward(benefit)}
+                accessibilityState={{ checked: isBaseline }}
+                onPress={() => setBaselineId(card.id)}
+                style={[s.estimateRow, isBaseline && s.estimateRowSelected]}
+              >
+                <View style={s.estimateContent}>
+                  <Text style={s.label}>{card.name}</Text>
+                  {!!benefit.name && <Text style={s.hint}>{benefit.name}</Text>}
+                  {!Number.isFinite(benefit.value) && <Text style={s.hint}>{benefit.reason}</Text>}
+                  {selected.id === card.id && <Text style={s.estimateBadge}>결제 카드</Text>}
+                </View>
+                <View style={s.estimateValue}>
+                  <Text style={s.estimateBadge}>{reward(benefit)}</Text>
+                  {isBaseline && <Text style={s.hint}>비교 중</Text>}
+                </View>
+              </TouchableOpacity>;
+            })}
+          </View>)}
         </View>
 
         <View style={s.box}>
@@ -643,33 +784,43 @@ export default function PaymentScreen({
                   </Text>}
               </View>)}
 
-          {!catalogOf(selected) && <Text style={s.hint}>
+          {!catalogOf(selected) && findCatalog40Product(selected)?.benefits.slice(0, 6).map(benefit => <View key={benefit.benefitId} style={s.detail}>
+            <Text style={s.label}>{benefit.name}</Text>
+            {!!benefit.note && <Text style={s.hint}>{benefit.note}</Text>}
+          </View>)}
+          {!catalogOf(selected) && !findCatalog40Product(selected) && <Text style={s.hint}>
               {selectedBenefit?.condition || selected.reason || '정확한 혜택 조건은 카드사 상품 안내에서 확인해주세요.'}
             </Text>}
         </View>
 
         <Text style={s.hint}>
-          QR·Code128 바코드는 같은 18자리 가상 코드를
-          담습니다. 웹에서는 화면 밝기 변경과
-          캡처 차단을 지원하지 않습니다.
+          QR과 바코드에는 같은 코드가 들어 있어요.
         </Text>
       </View>
-    </ScrollView>;
+    </ScrollView>
+    <PaymentBenefitChat
+      key={JSON.stringify([contextKey, selected.id, baseline.id])}
+      transaction={scenario.merchant + ' · ' + won(scenario.amount) + ' 결제 예시'}
+      selected={{ id: selected.id, name: selected.name, benefit: selectedBenefit, reward: reward(selectedBenefit) }}
+      baseline={{ id: baseline.id, name: baseline.name, benefit: baseBenefit, reward: reward(baseBenefit) }}
+      difference={difference}
+    />
+  </>;
 }
 const s = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F5F7FC'
+    backgroundColor: "#F4F7FB"
   },
   content: {
     padding: 20,
-    paddingBottom: 100
+    paddingBottom: 90
   },
   container: {
-    width: '100%',
-    maxWidth: 520,
-    alignSelf: 'center',
-    gap: 16
+    width: "100%",
+    maxWidth: 560,
+    alignSelf: "center",
+    gap: 18
   },
   header: {
     flexDirection: 'row',
@@ -678,23 +829,60 @@ const s = StyleSheet.create({
     gap: 8
   },
   demo: {
-    color: '#8090A9',
-    fontSize: 10
+    color: "#5A6E89",
+    fontSize: 12,
+    lineHeight: 20
   },
   title: {
-    fontSize: 27,
-    fontWeight: '900',
-    color: '#183252',
-    textAlign: 'center'
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#142D4E",
+    textAlign: 'center',
+    lineHeight: 39
   },
-  hero: {
+  scheduleContext: {
+    alignItems: 'center',
+    backgroundColor: '#EAF1FF',
+    borderRadius: 14,
+    padding: 12,
+    gap: 3,
+  },
+  scheduleTitle: {
+    color: '#142D4E',
+    fontWeight: '800',
+    fontSize: 15,
+    textAlign: 'center',
+  },
+  benefitName: {
+    color: '#345179',
+    fontWeight: '700',
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  estimateGroup: { gap: 7 },
+  estimateRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 12,
+    minHeight: 52,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E3EAF4',
     backgroundColor: '#FFF',
+  },
+  estimateRowSelected: { borderColor: '#245DE5', backgroundColor: '#EDF3FF' },
+  estimateContent: { flex: 1, gap: 3 },
+  estimateValue: { alignItems: 'flex-end', flexShrink: 1, maxWidth: '36%', gap: 4 },
+  estimateBadge: { color: '#17439C', fontSize: 13, fontWeight: '700' },
+  hero: {
+    backgroundColor: "#FFFFFF",
     borderRadius: 24,
     padding: 22,
     alignItems: 'center',
     gap: 10,
     borderWidth: 1,
-    borderColor: '#E7EDF7'
+    borderColor: "#E3EAF4"
   },
   eyebrow: {
     color: '#5B7AB4',
@@ -709,7 +897,7 @@ const s = StyleSheet.create({
     color: '#213F69',
     fontSize: 20,
     lineHeight: 29,
-    fontWeight: '900',
+    fontWeight: "800",
     textAlign: 'center'
   },
   imagePlaceholder: {
@@ -720,7 +908,7 @@ const s = StyleSheet.create({
   },
   benefitBox: {
     width: '100%',
-    backgroundColor: '#EDF4FF',
+    backgroundColor: "#EDF3FF",
     padding: 16,
     borderRadius: 15,
     alignItems: 'center',
@@ -728,8 +916,8 @@ const s = StyleSheet.create({
   },
   benefit: {
     fontSize: 25,
-    fontWeight: '900',
-    color: '#245DE5',
+    fontWeight: "800",
+    color: "#245DE5",
     textAlign: 'center'
   },
   comparison: {
@@ -740,17 +928,18 @@ const s = StyleSheet.create({
     textAlign: 'center'
   },
   box: {
-    backgroundColor: '#FFF',
-    borderRadius: 20,
-    padding: 18,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    padding: 20,
     gap: 13,
     borderWidth: 1,
-    borderColor: '#E7EDF7'
+    borderColor: "#E3EAF4"
   },
   heading: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '800',
-    color: '#233E63'
+    color: "#142D4E",
+    lineHeight: 27
   },
   label: {
     fontSize: 13,
@@ -764,12 +953,12 @@ const s = StyleSheet.create({
     lineHeight: 24
   },
   hint: {
-    color: '#8391A7',
-    fontSize: 12,
-    lineHeight: 21
+    color: "#5A6E89",
+    fontSize: 13,
+    lineHeight: 22
   },
   codes: {
-    backgroundColor: '#FFF',
+    backgroundColor: "#FFFFFF",
     alignItems: 'center',
     paddingVertical: 10,
     gap: 15
@@ -777,39 +966,41 @@ const s = StyleSheet.create({
   codeNumber: {
     color: '#20334F',
     fontSize: 15,
-    letterSpacing: 2
+    letterSpacing: 1.5
   },
   timer: {
-    color: '#245DE5',
+    color: "#245DE5",
     fontSize: 18,
-    fontWeight: '900'
+    fontWeight: "800"
   },
   red: {
     color: '#C14756'
   },
   primary: {
-    padding: 15,
-    minHeight: 50,
-    backgroundColor: '#245DE5',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center'
+    padding: 16,
+    minHeight: 54,
+    backgroundColor: "#245DE5",
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center"
   },
   secondary: {
-    padding: 13,
-    backgroundColor: '#EDF3FF',
-    borderRadius: 12,
-    alignItems: 'center'
+    padding: 14,
+    backgroundColor: "#EDF3FF",
+    borderRadius: 14,
+    alignItems: "center",
+    minHeight: 46,
+    justifyContent: "center"
   },
   white: {
-    color: '#FFF',
+    color: "#FFFFFF",
     fontSize: 15,
-    fontWeight: '800'
+    fontWeight: "700"
   },
   link: {
-    color: '#245DE5',
+    color: "#245DE5",
     fontSize: 13,
-    fontWeight: '700'
+    fontWeight: "700"
   },
   dim: {
     opacity: 0.25
@@ -822,17 +1013,18 @@ const s = StyleSheet.create({
   chip: {
     padding: 11,
     borderRadius: 10,
-    backgroundColor: '#EEF2FA'
+    backgroundColor: '#EEF2FA',
+    minHeight: 44
   },
   chipOn: {
-    backgroundColor: '#245DE5'
+    backgroundColor: "#245DE5"
   },
   chipText: {
     color: '#506B91',
     fontSize: 12
   },
   whiteSmall: {
-    color: '#FFF',
+    color: "#FFFFFF",
     fontSize: 12,
     fontWeight: '700'
   },
@@ -843,12 +1035,12 @@ const s = StyleSheet.create({
   },
   detail: {
     borderTopWidth: 1,
-    borderColor: '#EDF1F7',
+    borderColor: "#E3EAF4",
     paddingTop: 12,
     gap: 5
   },
   error: {
-    color: '#B83850',
+    color: "#C53D56",
     fontSize: 13,
     lineHeight: 22
   },

@@ -1,63 +1,39 @@
-
 import { Platform } from 'react-native';
 import * as Store from './demoStore';
 
-export const POPUP_KEY = 'solpay_recommendation_hide_until_v1';
-export const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-
-const webKey = 'solpay_demo_' + POPUP_KEY;
-
-export function parseHiddenUntil(raw) {
-  if (raw === null) return 0;
-
-  const value = JSON.parse(raw);
-
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw Error('추천 팝업 설정을 확인해주세요.');
-  }
-
+const DAY = 24 * 60 * 60 * 1000;
+const keys = {
+  recommendation: ['solpay_recommendation_hide_until_v1', 'solpay_recommendation_last_shown_v1'],
+  promotion: ['solpay_promotion_hide_until_v1', 'solpay_promotion_last_shown_v1'],
+};
+const get = key => Platform.OS === 'web'
+  ? window.localStorage.getItem('solpay_demo_' + key)
+  : Store.getItemAsync(key);
+const set = (key, at) => {
+  const value = JSON.stringify(at);
+  return Platform.OS === 'web'
+    ? window.localStorage.setItem('solpay_demo_' + key, value)
+    : Store.setItemAsync(key, value);
+};
+const parse = raw => {
+  const value = raw === null ? 0 : JSON.parse(raw);
+  if (!Number.isSafeInteger(value) || value < 0) throw Error('팝업 설정을 확인해주세요.');
   return value;
+};
+const kstDay = at => Math.floor((at + 9 * 60 * 60 * 1000) / DAY);
+
+export function isAdDue(kind, hiddenUntil, lastShown, now) {
+  if (now < hiddenUntil) return false;
+  if (!lastShown) return true;
+  return kind === 'recommendation'
+    ? now - lastShown >= 3 * DAY
+    : kstDay(now) > kstDay(lastShown);
 }
 
-export async function readHiddenUntil() {
-  const raw = Platform.OS === 'web'
-    ? window.localStorage.getItem(webKey)
-    : await Store.getItemAsync(POPUP_KEY);
-
-  return parseHiddenUntil(raw);
+export async function readAdDue(kind, now = Date.now()) {
+  const [until, last] = await Promise.all(keys[kind].map(get));
+  return isAdDue(kind, parse(until), parse(last), now);
 }
 
-export async function hideForSevenDays(now = Date.now()) {
-  const until = now + SEVEN_DAYS;
-  const raw = JSON.stringify(until);
-
-  parseHiddenUntil(raw);
-
-  if (Platform.OS === 'web') {
-    window.localStorage.setItem(webKey, raw);
-  } else {
-    await Store.setItemAsync(POPUP_KEY, raw);
-  }
-
-  return until;
-}
-
-export const canShowPopup = (until, now = Date.now()) =>
-  now >= until;
-
-// 앱 안에서 화면만 이동하면 재노출하지 않습니다.
-let launch = 0;
-let claimed = -1;
-
-export const currentLaunch = () => launch;
-export const nextLaunch = () => ++launch;
-
-export const launchPending = id =>
-  id === launch && id !== claimed;
-
-export function claimLaunch(id) {
-  if (!launchPending(id)) return false;
-
-  claimed = id;
-  return true;
-}
+export const recordAdShown = (kind, now = Date.now()) => set(keys[kind][1], now);
+export const hideAdForSevenDays = (kind, now = Date.now()) => set(keys[kind][0], now + 7 * DAY);
