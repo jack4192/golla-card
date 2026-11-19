@@ -29,8 +29,12 @@ def priors_from_frame(df: pd.DataFrame, params: Params, built_until: str = "") -
     slot_counts: dict[str, dict[str, int]] = {}
     for (is_we, b, category), n in counts.items():
         slot_counts.setdefault(slot_key((bool(is_we), int(b))), {})[category] = int(n)
-    amounts = {c: [int(x) for x in np.percentile(g.amount, [25, 50, 75])] for c, g in place.groupby("category_code")}
-    return Priors(slot_counts, amounts, built_until)
+    amounts = {c: int(g.amount.median()) for c, g in place.groupby("category_code")}
+    brands: dict[str, dict[str, int]] = {}
+    if "brand_code" in place.columns:
+        for (category, brand), n in place.fillna({"brand_code": ""}).groupby(["category_code", "brand_code"]).size().items():
+            brands.setdefault(category, {})[brand] = int(n)
+    return Priors(slot_counts, amounts, built_until, brands)
 
 
 def main() -> None:

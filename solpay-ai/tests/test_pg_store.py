@@ -18,7 +18,12 @@ pytestmark = pytest.mark.skipif(not URL, reason="SOLPAY_TEST_DATABASE_URL 이 �
 
 @pytest.fixture(scope="module")
 def services():
+    import psycopg
     from engine.pg_store import PostgresStore
+    # 엔진이 쓰는 기록(추천 로그·규칙)을 비우고 시작한다. 남아 있으면 '직전 기본 카드'가 달라져 문구가 바뀐다
+    with psycopg.connect(URL, autocommit=True) as conn:
+        conn.execute("delete from placement.recommendation_logs")
+        conn.execute("delete from placement.user_rules")
     priors = priors_from_frame(loader.read_payments(), Params())
     pg, parquet = PostgresStore(URL), ParquetStore()
     return (PlacementService(pg, PlacementEngine(pg.load_catalog(), priors)),
@@ -38,10 +43,11 @@ def test_DB와_가상_데이터의_배치_결과가_같다(services, user_id, wh
 
 def test_추천_로그와_규칙을_저장한다(services):
     pg, _ = services
-    rule = {"rule_type": "force", "target": {"issuer": "SHINHAN"}, "source_text": "신한카드로 해줘"}
+    card = pg.store.context(2, at(10, 7, 12)).cards[-1].user_card_id      # 사용자 2 의 마지막 카드 (타사 카드만 보유)
+    rule = {"rule_type": "force", "target": {"user_card_ids": [card]}, "source_text": "이 카드로 해줘"}
     pg.store.save_rules(2, [rule])
-    recommendation_id, result = pg.rank(RankRequest(2, at(10, 7, 12), 37.5, 127.0, 20))
-    assert recommendation_id > 0 and result.reason_code == "RULE"
+    recommendation_id, result = pg.rank(RankRequest(2, at(10, 7, 12)))      # GPS 는 쓰지 않는다 (2026-11-14)
+    assert recommendation_id > 0 and result.reason_code == "RULE" and result.cards[0].user_card_id == card
     pg.store.save_rules(2, [])
     assert pg.rank(RankRequest(2, at(10, 7, 12)))[1].reason_code != "RULE"
 

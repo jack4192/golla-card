@@ -1,13 +1,13 @@
 """저장소 인터페이스와 가상 데이터용 구현. 운영 DB 구현은 pg_store.py 에 있다."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Protocol
 
 from engine import loader
 from engine.catalog import Catalog
-from engine.domain import Payment, Promotion, User, UserCard, UserWeights
+from engine.domain import Payment, Promotion, ScheduleItem, User, UserCard, UserWeights
 from engine.rules import Rule, parse_rule
 
 
@@ -25,6 +25,7 @@ class UserContext:
     promotions: list[Promotion] = field(default_factory=list)
     last_base: int | None = None
     benefit_start: str | None = None
+    schedules: list[ScheduleItem] = field(default_factory=list)     # 그날 일정
 
 
 class Store(Protocol):
@@ -34,14 +35,18 @@ class Store(Protocol):
     def log_recommendation(self, record: dict) -> int: ...
     def save_rules(self, user_id: int, rules: list[dict]) -> None: ...
     def raw_rules(self, user_id: int) -> list[dict]: ...
-    def set_consent(self, user_id: int, loc_consent: bool, loc_feature_on: bool) -> None: ...
+    def put_schedule(self, user_id: int, day: date, items: list[ScheduleItem]) -> None: ...
+    def schedules(self, user_id: int, day: date) -> list[ScheduleItem]: ...
+    def purge_schedules(self, today: date) -> int: ...
+    def recommendation_history(self, user_id: int) -> list[dict]: ...
+    def log_card_recommendation(self, record: dict) -> None: ...
     def add_payment(self, payment: Payment) -> None: ...
     def reset(self) -> None: ...
 
 
 class ParquetStore:
     """가상 데이터를 메모리에 올려 쓴다. 시연과 로컬 실행용이다."""
-    BENEFIT_START = "2026-08"           # 첫 달은 전월 실적이 없어 혜택 없이 실적만 쌓는다
+    BENEFIT_START = "2025-12"           # 첫 달은 전월 실적이 없어 혜택 없이 실적만 쌓는다
 
     def __init__(self, directory: Path | None = None):
         self.directory = directory
@@ -49,36 +54,63 @@ class ParquetStore:
         self.reset()
 
     def reset(self) -> None:
-        """시연 중 더한 결제, 규칙, 위치 설정을 지우고 가상 데이터 상태로 돌아간다."""
+        """시연 중 더한 결제, 규칙, 일정, 카드 추천 기록을 지우고 가상 데이터 상태로 돌아간다."""
         self.users = loader.load_users(self.directory)
         self.payments = loader.payments_from_frame(loader.read_payments(self.directory))
         self.rules: dict[int, list[Rule]] = {}
         self.rules_raw: dict[int, list[dict]] = {}
         self.logs: list[dict] = []
         self.last_bases: dict[int, int] = {}
+        self.schedule_items: dict[tuple[int, date], list[ScheduleItem]] = {}   # 메모리에만 둔다 (재시작하면 사라짐)
+        self.card_recommendations: dict[int, list[dict]] = {}
+        self.drafts: dict[int, dict] = {}       # 챗봇 규칙 초안 (DB 저장소는 app.chat_rule_drafts)
 
     def user(self, user_id: int) -> User:
         if user_id not in self.users:
             raise UnknownUser(user_id)
         return self.users[user_id]
 
-    def set_consent(self, user_id: int, loc_consent: bool, loc_feature_on: bool) -> None:
+    def put_schedule(self, user_id: int, day: date, items: list[ScheduleItem]) -> None:
         self.user(user_id)
-        self.users[user_id] = User(user_id, loc_consent, loc_feature_on)
+        if items:
+            self.schedule_items[(user_id, day)] = list(items)
+        else:
+            self.schedule_items.pop((user_id, day), None)
+
+    def schedules(self, user_id: int, day: date) -> list[ScheduleItem]:
+        return list(self.schedule_items.get((user_id, day), []))
+
+    def purge_schedules(self, today: date) -> int:
+        """지난 날의 일정을 지운다 (최소 보관)."""
+        old = [k for k in self.schedule_items if k[1] < today]
+        for k in old:
+            del self.schedule_items[k]
+        return len(old)
+
+    def recommendation_history(self, user_id: int) -> list[dict]:
+        return list(self.card_recommendations.get(user_id, []))
+
+    def log_card_recommendation(self, record: dict) -> None:
+        self.card_recommendations.setdefault(record["user_id"], []).append(record)
 
     def raw_rules(self, user_id: int) -> list[dict]:
         self.user(user_id)
         return list(self.rules_raw.get(user_id, []))
 
     def load_catalog(self) -> Catalog:
-        return loader.load_catalog(self.directory)
+        self.catalog = loader.load_catalog(self.directory)
+        self.promotions = loader.load_promotions(self.catalog, self.directory)
+        return self.catalog
 
     def context(self, user_id: int, at: datetime) -> UserContext:
         if user_id not in self.users:
             raise UnknownUser(user_id)
         visible = [p for p in self.payments.get(user_id, []) if p.visible_at <= at]
+        active = [p for p in getattr(self, "promotions", []) if p.active(at)]
+        self.purge_schedules(at.date())
         return UserContext(self.users[user_id], self.cards[user_id], visible, self.rules.get(user_id, []),
-                           last_base=self.last_bases.get(user_id), benefit_start=self.BENEFIT_START)
+                           promotions=active, last_base=self.last_bases.get(user_id), benefit_start=self.BENEFIT_START,
+                           schedules=self.schedules(user_id, at.date()))
 
     def log_recommendation(self, record: dict) -> int:
         self.logs.append(record)
@@ -90,6 +122,29 @@ class ParquetStore:
             raise UnknownUser(user_id)
         self.rules[user_id] = [parse_rule(r, i + 1, i) for i, r in enumerate(rules)]
         self.rules_raw[user_id] = list(rules)
+
+    def recommendation(self, user_id: int, recommendation_id: int) -> dict | None:
+        if not 1 <= recommendation_id <= len(self.logs):
+            return None
+        record = self.logs[recommendation_id - 1]
+        return record if record.get("user_id") == user_id else None
+
+    def add_rule(self, user_id: int, rule: dict) -> int:
+        rules = self.raw_rules(user_id) + [rule]
+        self.save_rules(user_id, rules)
+        return len(rules)
+
+    def save_draft(self, user_id: int, session_id: str | None, rule: dict, summary: str) -> int:
+        draft_id = len(self.drafts) + 1
+        self.drafts[draft_id] = {"draft_id": draft_id, "user_id": user_id, "session_id": session_id, "rule": rule,
+                                 "summary": summary, "status": "pending"}
+        return draft_id
+
+    def draft(self, draft_id: int) -> dict | None:
+        return self.drafts.get(draft_id)
+
+    def decide_draft(self, draft_id: int, status: str) -> None:
+        self.drafts[draft_id]["status"] = status
 
     def add_payment(self, payment: Payment) -> None:
         if payment.user_id not in self.users:

@@ -10,13 +10,6 @@ MODE_MANUAL = "manual"
 @dataclass(frozen=True)
 class User:
     user_id: int
-    loc_consent: bool = False
-    loc_feature_on: bool = False
-
-    @property
-    def location_enabled(self) -> bool:
-        """위치 동의와 기능 설정이 모두 켜져 있어야 동의 버전을 쓴다."""
-        return self.loc_consent and self.loc_feature_on
 
 
 @dataclass(frozen=True)
@@ -37,6 +30,12 @@ class Merchant:
     lng: float | None = None
     is_online: bool = False
     zone: str | None = None
+    brand: str | None = None
+    brand_code: str | None = None       # 혜택 계산용 실제 브랜드 코드 (STARBUCKS, CU …). 없으면 브랜드 한정 혜택 대상 아님
+
+    def is_brand(self, brand: str) -> bool:
+        """이벤트는 브랜드 단위다. 브랜드명이 같거나 가맹점 이름이 브랜드명으로 시작하면 그 브랜드로 본다."""
+        return self.brand == brand or self.name.startswith(brand)
 
 
 @dataclass(frozen=True)
@@ -51,6 +50,11 @@ class Payment:
     amount: int
     paid_at: datetime
     synced_at: datetime | None = None
+
+    @property
+    def pay(self) -> str | None:
+        """결제수단 조건용. SOL페이 결제화면을 연 결제는 SOL페이 간편결제, 나머지는 간편결제가 아니다 (benefit_calc.pay_method 와 같다)."""
+        return "SOLPAY" if self.is_placement else None
 
     @property
     def is_placement(self) -> bool:
@@ -69,24 +73,45 @@ class Payment:
 
 @dataclass(frozen=True)
 class Promotion:
+    """카드사 이벤트·마이샵 혜택. 브랜드 단위이며 merchant_ids 는 그 브랜드로 매칭된 가맹점이다.
+
+    포인트·캐시백·즉시할인은 모두 1P = 1원으로 본다. max_amount 는 결제 한 건의 상한이다.
+    """
     promotion_id: int
-    merchant_id: int
+    brand: str
     starts_at: datetime
     ends_at: datetime
-    card_id: int | None = None          # 없으면 모든 카드
+    merchant_ids: frozenset[int] = frozenset()
+    issuer: str | None = None           # 없으면 모든 카드사
+    card_id: int | None = None          # 없으면 그 카드사의 모든 카드
     amount: int | None = None           # 정액 혜택
     rate: float | None = None           # 비율 혜택
     min_amount: int = 0
+    max_amount: int | None = None
     title: str = ""
+    kind: str = "event"                 # event / myshop
+    needs_check: bool = False           # 엔진이 확인할 수 없는 조건이 있어 계산에서 뺀다
 
-    def value(self, card_id: int, amount: int, at: datetime) -> int:
-        if not self.starts_at <= at <= self.ends_at or amount < self.min_amount:
+    def active(self, at: datetime) -> bool:
+        return self.starts_at <= at <= self.ends_at
+
+    def applies(self, merchant_id: int, card_issuer: str, card_id: int, at: datetime) -> bool:
+        if self.needs_check or not self.active(at) or merchant_id not in self.merchant_ids:
+            return False
+        if self.issuer is not None and self.issuer != card_issuer:
+            return False
+        return self.card_id is None or self.card_id == card_id
+
+    def value(self, merchant_id: int, card_issuer: str, card_id: int, amount: int, at: datetime) -> int:
+        if amount < self.min_amount or not self.applies(merchant_id, card_issuer, card_id, at):
             return 0
-        if self.card_id is not None and self.card_id != card_id:
-            return 0
-        if self.amount is not None:
-            return min(self.amount, amount)
-        return int(amount * (self.rate or 0.0) / 10) * 10
+        got = min(self.amount, amount) if self.amount is not None else int(amount * (self.rate or 0.0) / 10) * 10
+        return min(got, self.max_amount) if self.max_amount is not None else got
+
+    def label(self) -> str:
+        what = f"{self.amount:,}원" if self.amount is not None else f"{(self.rate or 0) * 100:g}%"
+        kind = "마이샵" if self.kind == "myshop" else "이벤트"
+        return f"{self.brand} {kind} {what}"
 
 
 @dataclass(frozen=True)
@@ -102,10 +127,18 @@ class UserWeights:
 class RankRequest:
     user_id: int
     at: datetime
-    lat: float | None = None
-    lng: float | None = None
-    accuracy_m: float | None = None
-    selected_merchant_id: int | None = None     # 후보 칩을 눌렀을 때
+
+
+@dataclass(frozen=True)
+class ScheduleItem:
+    """하루 일정 한 줄. 최소 수집: 시간·업종·예상 금액만 받고 장소·메모 같은 자유 입력은 받지 않는다.
+    그날이 지나면 지운다 (store.purge_schedules)."""
+    item_id: int
+    user_id: int
+    start: datetime
+    end: datetime
+    category: str
+    amount: int
 
 
 @dataclass(frozen=True)
@@ -128,10 +161,9 @@ class RankedCard:
 class RankResult:
     cards: list[RankedCard]
     display_count: int
-    merchant_chips: list[dict]
     reason_code: str
     rule_applied: int | None
-    version: str                        # consent / no_consent
+    version: str                        # schedule (일정으로 정함) / pattern (소비 패턴으로 정함)
     scenario_mode: str
     base_card: int
     swapped: bool = False

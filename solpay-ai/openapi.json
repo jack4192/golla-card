@@ -138,11 +138,236 @@
     }
    }
   },
-  "/internal/users/{user_id}/consent": {
+  "/internal/users/{user_id}/schedules/{day}": {
    "put": {
-    "summary": "Set Consent",
-    "description": "위치 동의가 바뀌면 Spring 이 알린다. 다음 요청부터 그 버전으로 계산한다.",
-    "operationId": "set_consent_internal_users__user_id__consent_put",
+    "summary": "Put Schedule",
+    "description": "하루 일정을 통째로 저장한다 (빈 목록이면 지운다). 그날이 지나면 엔진이 지운다.",
+    "operationId": "put_schedule_internal_users__user_id__schedules__day__put",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "User Id"
+      }
+     },
+     {
+      "name": "day",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "title": "Day"
+      }
+     },
+     {
+      "name": "at",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "format": "date-time"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "At"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ScheduleBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Put Schedule Internal Users  User Id  Schedules  Day  Put"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "summary": "Get Schedule",
+    "operationId": "get_schedule_internal_users__user_id__schedules__day__get",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "User Id"
+      }
+     },
+     {
+      "name": "day",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "title": "Day"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Schedule Internal Users  User Id  Schedules  Day  Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "summary": "Delete Schedule",
+    "operationId": "delete_schedule_internal_users__user_id__schedules__day__delete",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "User Id"
+      }
+     },
+     {
+      "name": "day",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "title": "Day"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Delete Schedule Internal Users  User Id  Schedules  Day  Delete"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/users/{user_id}/recommendation-page": {
+   "post": {
+    "summary": "Recommendation Page",
+    "description": "맞춤 추천 페이지 (일정 저장·건너뛰기 뒤). tabs: card(아직 없는 신한카드) / merchant(프로모션 가맹점).\n카드날(마지막 카드 추천 3일 뒤)은 두 탭, 그 외 날은 가맹점 탭, 프로모션이 없으면 카드 탭. 비면 페이지를 건너뛴다.\n카드·금액은 엔진 계산, 문구는 OpenAI (실패하면 정해진 문구, copy_source=template). 같은 날 다시 부르면 cached=true.",
+    "operationId": "recommendation_page_internal_users__user_id__recommendation_page_post",
     "parameters": [
      {
       "name": "user_id",
@@ -175,7 +400,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "$ref": "#/components/schemas/ConsentBody"
+        "$ref": "#/components/schemas/AtBody"
        }
       }
      }
@@ -188,8 +413,377 @@
         "schema": {
          "type": "object",
          "additionalProperties": true,
-         "title": "Response Set Consent Internal Users  User Id  Consent Put"
+         "title": "Response Recommendation Page Internal Users  User Id  Recommendation Page Post"
         }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/users/{user_id}/card-recommendation": {
+   "post": {
+    "summary": "Card Recommendation",
+    "description": "신규 카드 추천. 계기(일정·특수 업종 방문·반복 소비·3일 간격)가 없거나 이득이 작으면 recommend=false.",
+    "operationId": "card_recommendation_internal_users__user_id__card_recommendation_post",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "User Id"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AtBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Card Recommendation Internal Users  User Id  Card Recommendation Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/users/{user_id}/schedule-popup": {
+   "post": {
+    "summary": "Schedule Popup",
+    "description": "일정 저장 뒤 팝업 (설계서 v4.1). 3일마다 카드 추천(kind=card), 그 외의 날은 일정에 맞는 프로모션 추천\n(kind=promotion, offers 최대 2건). 둘 다 없으면 kind=none. 프로모션을 추천한 일정 시간에는 그 신한카드가 1순위다.",
+    "operationId": "schedule_popup_internal_users__user_id__schedule_popup_post",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "User Id"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AtBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Schedule Popup Internal Users  User Id  Schedule Popup Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/users/{user_id}/strategy": {
+   "get": {
+    "summary": "Strategy",
+    "description": "이번 달 실적 채우기 방식과 고른 근거 (화면·챗봇 표시용).",
+    "operationId": "strategy_internal_users__user_id__strategy_get",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "User Id"
+      }
+     },
+     {
+      "name": "at",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "format": "date-time"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "At"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Strategy Internal Users  User Id  Strategy Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/users/{user_id}/missed-benefit": {
+   "get": {
+    "summary": "Missed",
+    "description": "연말정산 안내: 지난 기간에 각 신한카드가 있었다면 더 받았을 금액 (상위 3장).",
+    "operationId": "missed_internal_users__user_id__missed_benefit_get",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "User Id"
+      }
+     },
+     {
+      "name": "at",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "format": "date-time"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "At"
+      }
+     },
+     {
+      "name": "days",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 365,
+       "title": "Days"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "additionalProperties": true
+         },
+         "title": "Response Missed Internal Users  User Id  Missed Benefit Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/users/{user_id}/strategy/initialize": {
+   "post": {
+    "summary": "Initialize Strategy",
+    "operationId": "initialize_strategy_internal_users__user_id__strategy_initialize_post",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "User Id"
+      }
+     },
+     {
+      "name": "at",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "format": "date-time"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "At"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
        }
       }
      },
@@ -544,7 +1138,7 @@
   "/internal/dev/reset": {
    "post": {
     "summary": "Reset",
-    "description": "로컬 시연용. 시연 중 더한 결제, 규칙, 위치 설정을 지운다.",
+    "description": "로컬 시연용. 시연 중 더한 결제, 규칙, 일정, 카드 추천 기록을 지운다.",
     "operationId": "reset_internal_dev_reset_post",
     "parameters": [
      {
@@ -573,6 +1167,257 @@
          "type": "object",
          "additionalProperties": true,
          "title": "Response Reset Internal Dev Reset Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/chat": {
+   "post": {
+    "summary": "Chat",
+    "description": "질문 하나에 답한다 (최대 15초). FastAPI 는 세션을 기억하지 않고 DB 에 쓰지 않는다.",
+    "operationId": "chat_internal_chat_post",
+    "parameters": [
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ChatBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ChatResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/rules/validate": {
+   "post": {
+    "summary": "Validate Rule",
+    "description": "Spring 이 규칙 초안을 저장하기 직전에 다시 검사한다 (그사이 카드를 지웠으면 여기서 걸린다).",
+    "operationId": "validate_rule_internal_rules_validate_post",
+    "parameters": [
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RuleValidateBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Validate Rule Internal Rules Validate Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/rules/drafts/{draft_id}/confirm": {
+   "post": {
+    "summary": "Confirm Draft",
+    "description": "규칙 카드의 '저장'. 다시 검사한 뒤 규칙에 더한다 (Spring 이 붙으면 Spring 의 confirm API 가 이 일을 한다).",
+    "operationId": "confirm_draft_internal_rules_drafts__draft_id__confirm_post",
+    "parameters": [
+     {
+      "name": "draft_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Draft Id"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DraftDecisionBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Confirm Draft Internal Rules Drafts  Draft Id  Confirm Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/internal/rules/drafts/{draft_id}/cancel": {
+   "post": {
+    "summary": "Cancel Draft",
+    "operationId": "cancel_draft_internal_rules_drafts__draft_id__cancel_post",
+    "parameters": [
+     {
+      "name": "draft_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Draft Id"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DraftDecisionBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Cancel Draft Internal Rules Drafts  Draft Id  Cancel Post"
         }
        }
       }
@@ -652,6 +1497,24 @@
  },
  "components": {
   "schemas": {
+   "AtBody": {
+    "properties": {
+     "at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At"
+     }
+    },
+    "type": "object",
+    "title": "AtBody"
+   },
    "CardBody": {
     "properties": {
      "user_card_id": {
@@ -680,41 +1543,175 @@
     ],
     "title": "CardBody"
    },
-   "ChipBody": {
+   "ChatBody": {
     "properties": {
-     "merchant_id": {
+     "user_id": {
       "type": "integer",
-      "title": "Merchant Id"
+      "title": "User Id"
      },
-     "probability": {
-      "type": "number",
-      "title": "Probability"
+     "session_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 64
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Session Id"
+     },
+     "message": {
+      "type": "string",
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Message"
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At"
+     },
+     "history": {
+      "items": {
+       "$ref": "#/components/schemas/ChatTurn"
+      },
+      "type": "array",
+      "maxItems": 40,
+      "title": "History"
+     },
+     "screen": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ChatScreen"
+       },
+       {
+        "type": "null"
+       }
+      ]
      }
     },
     "type": "object",
     "required": [
-     "merchant_id",
-     "probability"
+     "user_id",
+     "message"
     ],
-    "title": "ChipBody"
+    "title": "ChatBody",
+    "description": "Spring 이 로그인한 사용자 ID 와 같은 세션의 최근 대화를 붙여 보낸다. LLM 은 사용자 ID 를 바꿀 수 없다."
    },
-   "ConsentBody": {
+   "ChatResponse": {
     "properties": {
-     "loc_consent": {
-      "type": "boolean",
-      "title": "Loc Consent"
+     "reply": {
+      "type": "string",
+      "title": "Reply"
      },
-     "loc_feature_on": {
+     "blocks": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Blocks"
+     },
+     "rule_draft": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rule Draft"
+     },
+     "fallback": {
       "type": "boolean",
-      "title": "Loc Feature On"
+      "title": "Fallback"
+     },
+     "log": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Log"
      }
     },
     "type": "object",
     "required": [
-     "loc_consent",
-     "loc_feature_on"
+     "reply",
+     "blocks",
+     "rule_draft",
+     "fallback",
+     "log"
     ],
-    "title": "ConsentBody"
+    "title": "ChatResponse"
+   },
+   "ChatScreen": {
+    "properties": {
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     },
+     "recommendation_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Recommendation Id"
+     }
+    },
+    "type": "object",
+    "title": "ChatScreen"
+   },
+   "ChatTurn": {
+    "properties": {
+     "role": {
+      "type": "string",
+      "pattern": "^(user|assistant)$",
+      "title": "Role"
+     },
+     "text": {
+      "type": "string",
+      "maxLength": 2000,
+      "title": "Text"
+     }
+    },
+    "type": "object",
+    "required": [
+     "role",
+     "text"
+    ],
+    "title": "ChatTurn"
+   },
+   "DraftDecisionBody": {
+    "properties": {
+     "user_id": {
+      "type": "integer",
+      "title": "User Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "user_id"
+    ],
+    "title": "DraftDecisionBody"
    },
    "EvaluateBody": {
     "properties": {
@@ -753,6 +1750,17 @@
        }
       ],
       "title": "User Card Id"
+     },
+     "merchant_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Merchant Id"
      }
     },
     "type": "object",
@@ -855,44 +1863,6 @@
       "type": "integer",
       "title": "User Id"
      },
-     "lat": {
-      "anyOf": [
-       {
-        "type": "number",
-        "maximum": 90.0,
-        "minimum": -90.0
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Lat"
-     },
-     "lng": {
-      "anyOf": [
-       {
-        "type": "number",
-        "maximum": 180.0,
-        "minimum": -180.0
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Lng"
-     },
-     "accuracy_m": {
-      "anyOf": [
-       {
-        "type": "number",
-        "minimum": 0.0
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Accuracy M"
-     },
      "at": {
       "anyOf": [
        {
@@ -905,17 +1875,6 @@
       ],
       "title": "At"
      },
-     "selected_merchant_id": {
-      "anyOf": [
-       {
-        "type": "integer"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Selected Merchant Id"
-     },
      "explain": {
       "type": "boolean",
       "title": "Explain",
@@ -926,7 +1885,8 @@
     "required": [
      "user_id"
     ],
-    "title": "RankBody"
+    "title": "RankBody",
+    "description": "GPS 는 받지 않는다 (2026-11-14). 일정이 있으면 일정, 없으면 소비 패턴으로 정한다."
    },
    "RankResponse": {
     "properties": {
@@ -944,13 +1904,6 @@
      "display_count": {
       "type": "integer",
       "title": "Display Count"
-     },
-     "merchant_chips": {
-      "items": {
-       "$ref": "#/components/schemas/ChipBody"
-      },
-      "type": "array",
-      "title": "Merchant Chips"
      },
      "reason_code": {
       "type": "string",
@@ -993,13 +1946,82 @@
      "recommendation_id",
      "cards",
      "display_count",
-     "merchant_chips",
      "reason_code",
      "rule_applied",
      "version",
      "scenario_mode"
     ],
     "title": "RankResponse"
+   },
+   "RuleValidateBody": {
+    "properties": {
+     "user_id": {
+      "type": "integer",
+      "title": "User Id"
+     },
+     "rule": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Rule"
+     }
+    },
+    "type": "object",
+    "required": [
+     "user_id",
+     "rule"
+    ],
+    "title": "RuleValidateBody"
+   },
+   "ScheduleBody": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ScheduleItemBody"
+      },
+      "type": "array",
+      "maxItems": 10,
+      "title": "Items"
+     }
+    },
+    "type": "object",
+    "required": [
+     "items"
+    ],
+    "title": "ScheduleBody"
+   },
+   "ScheduleItemBody": {
+    "properties": {
+     "start": {
+      "type": "string",
+      "format": "time",
+      "title": "Start"
+     },
+     "end": {
+      "type": "string",
+      "format": "time",
+      "title": "End"
+     },
+     "category": {
+      "type": "string",
+      "maxLength": 40,
+      "title": "Category"
+     },
+     "amount": {
+      "type": "integer",
+      "maximum": 10000000.0,
+      "exclusiveMinimum": 0.0,
+      "title": "Amount"
+     }
+    },
+    "type": "object",
+    "required": [
+     "start",
+     "end",
+     "category",
+     "amount"
+    ],
+    "title": "ScheduleItemBody",
+    "description": "하루 일정 한 줄. 시간·업종·예상 금액만 받는다 (장소·메모 등 자유 입력 없음)."
    },
    "ValidationError": {
     "properties": {
