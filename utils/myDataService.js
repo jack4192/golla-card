@@ -1,15 +1,17 @@
 
 import * as Store from './demoStore';
 import fixtures from '../data/myDataFixture.json';
+import { findCatalog40Product } from '../data/cardCatalog40';
 import { CSV_CARD_CATALOG } from '../data/cardCatalogCsv';
 import { CARD_PRODUCTS } from '../data/cardRecommendationProducts';
 
 export const MYDATA_KEY = 'solpay_mydata_import_v1';
+const profileLabel = label => label.replace(/데모/g, '예시');
 
 export const DEMO_USERS = Object.values(fixtures).map(
   snapshot => ({
     id: snapshot.userId,
-    label: snapshot.label,
+    label: profileLabel(snapshot.label),
   })
 );
 
@@ -30,12 +32,14 @@ function hydrate(id) {
   const raw = fixtures[id];
 
   if (!raw) {
-    throw Error('선택한 데모 사용자 데이터가 없습니다.');
+    throw Error('선택한 예시 내역을 찾지 못했어요.');
   }
 
   return {
     ...raw,
+    label: profileLabel(raw.label),
     cards: raw.cards.map(card => {
+      const product = findCatalog40Product(card);
       const matches = CSV_CARD_CATALOG.filter(
         old =>
           normalize(old.name) === normalize(card.name) &&
@@ -45,14 +49,13 @@ function hydrate(id) {
       const code =
         matches.length === 1
           ? matches[0].code
-          : null;
+          : product?.code ?? null;
 
       return {
         ...card,
+        number: card.number?.replace('가상 보유', '예시 카드'),
         catalogCode: code,
-        image: code
-          ? CARD_PRODUCTS[code]?.image
-          : undefined,
+        image: product?.image ?? CARD_PRODUCTS[code]?.image,
         color: card.issuer.includes('KB')
           ? '#FFCA4B'
           : '#1459F5',
@@ -63,9 +66,9 @@ function hydrate(id) {
         isDemoOwned: true,
         isImportedMyData: true,
         isManuallyRegistered: false,
-        category: '가상 마이데이터 자동 등록',
+        category: '예시 내역에서 추가한 카드',
         reason:
-          '선택한 데모 사용자의 DB 보유 카드입니다. 실제 금융기관 조회가 아닙니다.',
+          '예시 내역에 포함된 카드예요. 금융기관에서 조회한 정보는 제공되지 않아요.',
       };
     }),
   };

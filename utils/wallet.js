@@ -13,7 +13,7 @@ let pendingWrite = Promise.resolve();
 export const walletIdForCode = code =>
   code === 'SH_SOLMATE_SOL_PLAN_CHECK' ? 'solmate' : code;
 
-export function buildWallet(preferences) {
+export function buildWallet(preferences, includeMyData = true) {
   const registered = [...new Set(preferences.owned)].flatMap(code => {
     const card = CSV_CARD_CATALOG.find(item => item.code === code);
     if (!card) return [];
@@ -27,14 +27,14 @@ export function buildWallet(preferences) {
       id,
       catalogCode: code,
       image: CARD_PRODUCTS[code]?.image || existing?.image,
-      number: '직접 등록 · DEMO',
+      number: '직접 등록',
       color: card.issuer.includes('KB') ? '#FFCA4B' : '#1459F5',
       textColor: card.issuer.includes('KB') ? '#263041' : '#FFFFFF',
       isOwned: true,
       isDemoOwned: true,
       isManuallyRegistered: true,
       isRecommendedOnly: false,
-      category: '직접 등록한 보유 카드 · 결제 시연용',
+      category: '직접 등록한 카드',
       reason:
         '상품명으로 직접 등록한 카드입니다. 실제 보유 인증이나 실물 카드 등록은 아닙니다.',
     }];
@@ -45,7 +45,7 @@ export function buildWallet(preferences) {
   return mergeImportedWallet([
     ...registered,
     ...DEMO_WALLET_CARDS.filter(card => !ids.has(card.id)),
-  ], getMyDataSnapshot());
+  ], includeMyData ? getMyDataSnapshot() : null);
 }
 
 export function validWalletId(cards, id) {
@@ -74,12 +74,12 @@ export async function waitForWalletWrites() {
   await pendingWrite.catch(() => {});
 }
 
-export async function readWallet() {
+export async function readWallet(includeMyData = true) {
   await waitForWalletWrites();
 
-  await restoreMyData();
+  if (includeMyData) await restoreMyData();
   const preferences = await readPreferences();
-  const cards = buildWallet(preferences);
+  const cards = buildWallet(preferences, includeMyData);
 
   let id = cards[0].id;
   let warning = '';

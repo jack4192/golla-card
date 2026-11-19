@@ -1,7 +1,7 @@
 
 export const INDUSTRIES = [
-  ['cafe', '☕ 카페'],
-  ['restaurant', '🍽 음식점'],
+  ['cafe', '☕ 커피'],
+  ['restaurant', '🍽 식사'],
   ['pcroom', '🎮 PC방'],
   ['travel', '✈️ 여행·숙박'],
   ['train', '🚆 기차'],
@@ -13,9 +13,16 @@ export const INDUSTRIES = [
   ['fuel', '⛽ 주유·충전'],
   ['shopping', '🛍 쇼핑'],
   ['medical', '🏥 병원·약국'],
+  ['other', '✏️ 기타'],
 ];
 
 export const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
+export const ROUTINE_TITLE_LIMIT = 40;
+
+export function routineLabel(row) {
+  if (row.category === 'other' && row.title) return row.title;
+  return INDUSTRIES.find(([id]) => id === row.category)?.[1] || '업종 확인 필요';
+}
 
 export const DETAIL_CATEGORIES = {
   pcroom: {
@@ -83,6 +90,11 @@ export function validateDetails(rows) {
       fail('업종을 선택해주세요.');
     }
 
+    const title = typeof row.title === 'string' ? row.title.trim() : '';
+    if (row.category === 'other' && (!title || title.length > ROUTINE_TITLE_LIMIT)) {
+      fail('기타 일과 제목을 1~' + ROUTINE_TITLE_LIMIT + '자로 입력해주세요.');
+    }
+
     const start = normalizeTime(row.start);
     const end = normalizeTime(row.end);
 
@@ -90,18 +102,8 @@ export function validateDetails(rows) {
       fail('시간을 00:00~23:59로 입력해주세요. 예: 09:30');
     }
 
-    const minutes = time =>
-      +time.slice(0, 2) * 60 + +time.slice(3);
-
-    const duration =
-      minutes(end) -
-      minutes(start) +
-      (row.nextDay === true ? 1440 : 0);
-
-    if (duration <= 0 || duration >= 1440) {
-      fail(
-        '종료 시간을 확인해주세요. 자정을 넘으면 ‘다음 날 종료’를 선택하세요.'
-      );
+    if (start === end) {
+      fail('시작 시간과 종료 시간을 다르게 입력해주세요.');
     }
 
     if (
@@ -124,9 +126,10 @@ export function validateDetails(rows) {
     return {
       id: row.id,
       category: row.category,
+      ...(row.category === 'other' ? { title } : {}),
       start,
       end,
-      nextDay: row.nextDay === true,
+      nextDay: end < start,
       days: [...new Set(row.days)].sort((a, b) => a - b),
       unit: row.unit,
       count: Number(row.count),
@@ -146,12 +149,8 @@ export function detailSignals(rows, day) {
   const weekday = new Date(day + 'T12:00:00').getDay();
 
   return valid
-    .filter(row => row.days.includes(weekday))
+    .filter(row => row.category !== 'other' && row.days.includes(weekday))
     .map(row => {
-      const label = INDUSTRIES.find(
-        ([id]) => id === row.category
-      )[1];
-
       const weekly =
         row.unit === 'week'
           ? row.count
@@ -162,7 +161,7 @@ export function detailSignals(rows, day) {
         weight: Math.min(4, 1 + Math.floor(weekly / 2)),
         reason:
           '직접 설정: ' +
-          label +
+          routineLabel(row) +
           ' ' +
           row.start +
           '~' +

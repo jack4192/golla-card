@@ -5,7 +5,7 @@ function storage() {
     typeof window === 'undefined' ||
     !window.sessionStorage
   ) {
-    throw new Error('브라우저 시연 저장소를 사용할 수 없습니다.');
+    throw new Error('이 브라우저에 정보를 저장할 수 없어요.');
   }
 
   return window.sessionStorage;

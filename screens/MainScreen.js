@@ -1,15 +1,25 @@
+import BenefitReport from '../components/BenefitReport';
+import { CARD_CATALOG_40, CARD_CATALOG_40_BENEFITS, findCatalog40Product } from '../data/cardCatalog40';
+import { PROMOTION_BRANDS } from '../data/promotionBrands';
+import { PROMOTIONS, activePromotions } from '../data/promotions';
+import { MYSHOP_LOGOS } from '../data/myshopLogos';
+import WalletDeck from '../components/WalletDeck';
+import WalletProductCard from '../components/WalletProductCard';
+import WalletWheelControls from '../components/WalletWheelControls';
 import RecommendationLaunchPopup from '../components/RecommendationLaunchPopup';
 import MyDataCardStatus, { useMyDataSnapshot, mergeImportedWallet } from '../components/MyDataCardStatus';
 import AccountWithdrawal from '../components/AccountWithdrawal';
 import TodaySchedulePanel from '../components/TodaySchedulePanel';
+import CardCatalogCompare from '../components/CardCatalogCompare';
+import { SAMPLE_PAYMENT_CARDS } from '../data/samplePayment';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform, useWindowDimensions, Vibration } from 'react-native';
+import { View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform, useWindowDimensions, Vibration } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Alert } from '../utils/demoAlert';
 import * as SecureStore from '../utils/demoStore';
 import { createPinSalt, hashPin } from '../utils/pinCrypto';
-import PaymentScreen from './PaymentScreen';
-import { CSV_CARD_CATALOG, getCatalogCardForWallet } from '../data/cardCatalogCsv'; // SOLPAY_CSV_CATALOG_V1
+import PaymentScreen, { realProductCard, realWalletCards } from './PaymentScreen';
+import { getCatalogCardForWallet } from '../data/cardCatalogCsv'; // SOLPAY_CSV_CATALOG_V1
 import { DEMO_WALLET_CARDS, getActiveWalletCard } from '../data/cards';
 const NAV = [{
   id: 'home',
@@ -37,21 +47,8 @@ const NAV = [{
   icon: 'card-outline',
   active: 'card'
 }];
-const EVENT_ROWS = [['메가MGC커피', '500 마이신한포인트 적립', null, '2026-11-01', '2026-11-30', '2026-12-13', '신한 슈퍼SOL/SOL페이 바코드 결제', '키오스크에서 바코드 스캔 필요'], ['온라인 다이소몰', '1,000 마이신한포인트 적립', 30000, '2026-11-01', '2026-11-30', '2026-12-10', '신한 슈퍼SOL/SOL페이 결제', '3만 원 이상 결제'], ['온라인 다이소몰', '500 마이신한포인트 추가 적립', null, '2026-11-16', '2026-11-30', '2026-12-10', '신한 슈퍼SOL/SOL페이 결제', '다이소데이 11월 16일 오픈. 기존 행사와 별도이며 중복 적용 여부는 확인 필요'], ['W컨셉(앱/웹)', '10,000 마이신한포인트 적립', 200000, '2026-11-01', '2026-11-30', '2026-12-16', '신한 슈퍼SOL/SOL페이 결제', '20만 원 이상 결제'], ['해피오더', '2,000원 즉시 할인', 15000, '2026-11-11', '2026-12-25', '즉시 할인', '신한 슈퍼SOL/SOL페이 결제', 'X-MAS 사전예약 제품 대상. 매일 오전 10:30부터 선착순'], ['유튜브 프리미엄', '5,000원 캐시백', null, '2026-11-01', '2026-11-30', '2027년 1월 중', '이벤트 응모 후 신규 정기 결제', '2026.05.01~10.31 결제 이력이 없는 고객 대상']];
 const MYSHOP_ROWS = [['살롱드마샬', '최대 20% 할인', null, null, '2026-11-20', '2026-11-30', ''], ['11번가', '3,000원 캐시백', 50000, null, '2026-11-01', '2026-11-30', ''], ['CU', '500원 캐시백', null, null, '2026-11-01', '2026-11-15', ''], ['마켓컬리', '20% 캐시백', null, 40000, '2026-11-01', '2026-11-30', ''], ['에이치몰', '5% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['알리익스프레스', '10% 캐시백', 20000, 20000, '2026-11-01', '2026-11-30', ''], ['신라아이파크면세점', '10% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['동원몰', '7% 캐시백', 20000, 20000, '2026-11-01', '2026-11-30', ''], ['할리스', '10% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['신세계면세점', '11% 캐시백', null, 100000, '2026-11-01', '2026-11-30', ''], ['닥터자르트', '12% 캐시백', null, 50000, '2026-11-01', '2026-11-30', ''], ['현대백화점', '15% 캐시백', null, 40000, '2026-11-01', '2026-11-30', ''], ['SSG닷컴', '10% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['이마트몰', '10% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['차앤박(CNP)', '12% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['오설록', '10% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['레드캡투어', '12% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['야놀자', '8% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['교보문고', '10% 캐시백', 30000, 20000, '2026-11-01', '2026-11-30', ''], ['위메프', '20% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['올리브영', '25% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['파리바게뜨', '12% 캐시백', 20000, 20000, '2026-11-01', '2026-11-30', ''], ['유니클로', '16% 캐시백', null, 40000, '2026-11-01', '2026-11-30', ''], ['미식 브랜드(식별불가)', '16% 캐시백', 30000, 30000, '2026-11-01', '2026-11-30', '가맹점명 원본 확인 필요'], ['종합쇼핑몰(식별불가)', '8,000원 캐시백', 200000, null, '2026-11-01', '2026-11-30', '가맹점명 원본 확인 필요']];
-const ALL_BENEFITS = [...EVENT_ROWS.map((row, index) => ({
-  id: `event-${index + 1}`,
-  type: '이벤트',
-  merchant: row[0],
-  benefit: row[1],
-  minimum: row[2],
-  cap: null,
-  start: row[3],
-  end: row[4],
-  payout: row[5],
-  method: row[6],
-  note: row[7]
-})), ...MYSHOP_ROWS.map((row, index) => ({
+const ALL_BENEFITS = [...PROMOTIONS, ...MYSHOP_ROWS.map((row, index) => ({
   id: `myshop-${index + 1}`,
   type: '마이샵',
   merchant: row[0],
@@ -261,18 +258,22 @@ const SettingsToggle = ({
   </View>;
 export default function MainScreen({
   onLogout,
+  canLock = false,
   onOpenChat,
   onEditRoutine,
   onViewBenefits,
   scheduleDisabled = false,
+  allowAutomaticAds = false,
+  includeMyData = true,
   walletCards = DEMO_WALLET_CARDS,
   activeCardId = DEMO_WALLET_CARDS[0].id,
   onSelectCard = () => {}
 }) {
+  const [walletViewportWidth, setWalletViewportWidth] = useState(0);
   // MYDATA_UI_LINK_V1
   const {
     snapshot: importedMyData
-  } = useMyDataSnapshot();
+  } = useMyDataSnapshot(includeMyData);
   const [importedSelection, setImportedSelection] = useState(null);
   const suppliedCards = walletCards;
   const suppliedActive = activeCardId;
@@ -292,9 +293,13 @@ export default function MainScreen({
   const {
     width
   } = useWindowDimensions();
-  const cardWidth = Math.max(250, width - 40);
+  const cardWidth = Math.max(1, walletViewportWidth || width - 40);
   const [tab, setTab] = useState('home');
+  const [schedulePayment, setSchedulePayment] = useState(null);
+  const [sampleActive, setSampleActive] = useState(false);
+  const [adRequest, setAdRequest] = useState(null);
   const [catalogQuery, setCatalogQuery] = useState('');
+  const [catalogCompareOpen, setCatalogCompareOpen] = useState(false);
   const [selectedCatalog, setSelectedCatalog] = useState(null);
   const walletRef = useRef(null);
   const currentCard = getActiveWalletCard(walletCards, activeCardId);
@@ -306,6 +311,7 @@ export default function MainScreen({
   const [chatVisible, setChatVisible] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState([]);
+  const [exitOpen, setExitOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pinChangeOpen, setPinChangeOpen] = useState(false);
   const [pinForm, setPinForm] = useState({
@@ -345,9 +351,7 @@ export default function MainScreen({
         }
         if (rawConsent) {
           const consentValue = JSON.parse(rawConsent);
-          if (consentValue?.myDataAgreed === true) {
-            setSavedConsent(consentValue);
-          }
+          setSavedConsent(consentValue);
         }
         setHasPin(!!rawPin);
       } catch (error) {
@@ -480,7 +484,7 @@ export default function MainScreen({
   };
   const goFromSettings = nextTab => {
     setSettingsOpen(false);
-    setTab(nextTab);
+    selectTab(nextTab);
   };
   const visibleBenefits = useMemo(() => ALL_BENEFITS.filter(item => {
     if (filter !== '전체' && item.type !== filter) {
@@ -490,7 +494,10 @@ export default function MainScreen({
     return !keyword || `${item.merchant} ${item.benefit}`.toLowerCase().includes(keyword);
   }), [filter, search]);
   const homeBenefits = ALL_BENEFITS.filter(item => benefitStatus(item) === '기간 내' && !item.merchant.includes('식별불가')).slice(0, 3);
-  const selectTab = nextTab => setTab(nextTab);
+  const selectTab = nextTab => {
+    setSchedulePayment(null);
+    setTab(nextTab);
+  };
   const openChat = () => {
     if (typeof onOpenChat === 'function') {
       onOpenChat({
@@ -501,7 +508,7 @@ export default function MainScreen({
     }
     setChatMessages([{
       role: 'bot',
-      text: '안녕하세요! SOL AI 도우미예요.\n' + `현재 카드는 ${currentCard.name}입니다.\n` + '※ 실제 AI API는 아직 연결되지 않았습니다.'
+      text: '안녕하세요! SOL AI 도우미예요.\n' + `현재 선택한 ${currentCard.name}의 카드 정보와 혜택을 안내해드려요.`
     }]);
     setChatInput('');
     setChatVisible(true);
@@ -509,9 +516,9 @@ export default function MainScreen({
   const askBot = (question = chatInput) => {
     const q = String(question).trim();
     if (!q) return;
-    let answer = '시연용 챗봇이에요. 실제 사용 내역이나 실시간 혜택은 확인할 수 없어요.';
+    let answer = '선택한 카드의 상품 정보와 혜택을 안내해드려요.';
     if (/추천/.test(q)) {
-      answer = '맞춤 카드 추천 기능은 추후 챗봇에 연동할 예정이에요. 현재는 선택한 카드 정보와 혜택 안내만 제공해요.';
+      answer = '맞춤 카드는 홈의 ‘오늘의 카드 추천’에서 확인할 수 있어요.';
     } else if (/현재 카드|카드 정보|이유|왜/.test(q)) {
       answer = `${currentCard.name}: ${currentCard.reason}`;
     } else if (/혜택|할인|적립/.test(q)) {
@@ -519,7 +526,7 @@ export default function MainScreen({
     } else if (/실적|한도/.test(q)) {
       answer = '전월 실적·남은 혜택 한도는 실제 금융 데이터가 연결되지 않아 확인할 수 없어요.';
     } else if (/규칙/.test(q)) {
-      answer = '자동 결제 규칙은 현재 시연용 스위치예요. 실제 카드 추천 순위는 변경하지 않아요.';
+      answer = '자동 결제 규칙을 바꿔도 카드 추천 순위는 그대로예요.';
     }
     setChatMessages(items => [...items, {
       role: 'user',
@@ -530,91 +537,64 @@ export default function MainScreen({
     }]);
     setChatInput('');
   };
-  const benefitTile = (item, compact = false) => <TouchableOpacity key={item.id} style={[styles.benefitTile, compact && styles.compactBenefitTile]} activeOpacity={0.8} onPress={() => setSelectedBenefit(item)}>
-      <View style={styles.tileTop}>
-        <Text style={styles.tileMerchant} numberOfLines={2}>
-          {item.merchant}
-        </Text>
-        <Text style={styles.smallCategory}>{item.type}</Text>
+  const benefitTile = (item, compact = false) => {
+    const logo = PROMOTION_BRANDS[item.merchant]?.image || MYSHOP_LOGOS[item.merchant];
+    return <TouchableOpacity
+      key={item.id}
+      accessibilityRole="button"
+      accessibilityLabel={item.merchant + ' ' + item.benefit + ' 상세 조건'}
+      style={[styles.benefitTile, compact && styles.compactBenefitTile]}
+      activeOpacity={0.8}
+      onPress={() => setSelectedBenefit(item)}
+    >
+      <View style={styles.tileLogoArea}>
+        {logo
+          ? <Image source={logo} resizeMode="contain" style={styles.tileLogo} accessible={false} />
+          : <Text style={styles.tileMerchant} numberOfLines={2}>{item.merchant}</Text>}
       </View>
-
-      <Text style={styles.tileAmount} numberOfLines={2}>
-        {item.benefit}
-      </Text>
-
-      <Text style={styles.tileCondition} numberOfLines={2}>
-        {item.minimum != null ? `${money(item.minimum)} 이상 결제` : item.type === '마이샵' ? '혜택 ON 설정 필요' : '상세 조건 확인'}
-      </Text>
-
+      {logo && <Text style={styles.tileBrandLabel} numberOfLines={1}>{item.merchant}</Text>}
+      <Text style={[styles.tileAmount, styles.tileCentered]}>{item.benefit}</Text>
       <View style={styles.tileFooter}>
-        <Text style={styles.tileStatus}>
-          {benefitStatus(item)}
-        </Text>
+        <Text style={styles.tileStatus}>{item.type} · {benefitStatus(item)}</Text>
         <Ionicons name="chevron-forward" size={15} color="#3168DF" />
       </View>
     </TouchableOpacity>;
-  const wallet = () => <>
+  };
+  const wallet = () => <WalletWheelControls cards={walletCards} selectedId={currentCard.id} onSelect={onSelectCard} onLayout={event => {
+    const measured = Math.round(event.nativeEvent.layout.width);
+    if (Number.isFinite(measured) && measured > 0) setWalletViewportWidth(previous => previous === measured ? previous : measured);
+  }}><>
       <FlatList ref={walletRef} data={walletCards} extraData={activeCardId} horizontal pagingEnabled showsHorizontalScrollIndicator={false} keyExtractor={item => item.id} initialScrollIndex={activeCardIndex} getItemLayout={(_, index) => ({
-      length: cardWidth,
-      offset: cardWidth * index,
-      index
-    })} onMomentumScrollEnd={event => {
-      const index = Math.round(event.nativeEvent.contentOffset.x / cardWidth);
-      const nextIndex = Math.max(0, Math.min(index, walletCards.length - 1));
-      if (walletCards[nextIndex]) {
-        onSelectCard(walletCards[nextIndex].id);
-      }
-    }} renderItem={({
-      item
-    }) => <View style={{
-      width: cardWidth
-    }}>
-            <TouchableOpacity activeOpacity={0.88} accessibilityRole="button" accessibilityLabel={`${item.name} 카드로 결제 화면 열기`} onPress={() => {
-        onSelectCard(item.id);
-        setTab('payment');
-      }} style={[styles.walletCard, {
-        backgroundColor: item.color
-      }]}>
-              <View style={styles.walletCardTop}>
-                <Text style={[styles.walletIssuer, {
-            color: item.textColor
-          }]}>
-                  {item.issuer}
-                </Text>
-                <Ionicons name="wifi" size={20} color={item.textColor} />
-              </View>
-
-              <Text style={[styles.walletCardName, {
-          color: item.textColor
-        }]}>
-                {item.name}
-              </Text>
-
-              <View style={styles.walletCardBottom}>
-                <View style={styles.chipMark} />
-                <Text style={[styles.cardDigits, {
-            color: item.textColor
-          }]}>
-                  {item.number}
-                </Text>
-              </View>
-            </TouchableOpacity>
+        length: cardWidth,
+        offset: cardWidth * index,
+        index
+      })} onMomentumScrollEnd={event => {
+        const index = Math.round(event.nativeEvent.contentOffset.x / cardWidth);
+        const nextIndex = Math.max(0, Math.min(index, walletCards.length - 1));
+        if (walletCards[nextIndex]) {
+          onSelectCard(walletCards[nextIndex].id);
+        }
+      }} renderItem={({
+        item
+      }) => <View style={{
+        width: cardWidth
+      }}>
+            <WalletProductCard card={item} onPress={() => {
+          onSelectCard(item.id);
+          selectTab('payment');
+        }} />
           </View>} />
 
       <View style={styles.dotsRow}>
         {walletCards.map((item, index) => <View key={item.id} style={[styles.dot, activeCardIndex === index && styles.dotActive]} />)}
       </View>
 
-      <View style={styles.walletHintRow}>
-        <Ionicons name="qr-code-outline" size={14} color="#6281B6" />
-        <Text style={styles.walletHintText}>
-          카드를 누르면 해당 카드의 QR·바코드 결제 화면으로 바로 이동해요.
-        </Text>
-      </View>
-    </>;
+
+    </></WalletWheelControls>;
 
   // 내 지갑에서 선택된 카드에 맞는 혜택 표시
   const walletBenefitSummary = () => {
+    const product = findCatalog40Product(currentCard);
     const details = WALLET_CARD_BENEFITS[currentCard.id];
     return <View style={styles.walletBenefitBox}>
         <View style={styles.walletBenefitHeading}>
@@ -634,7 +614,25 @@ export default function MainScreen({
           {currentCard.name}
         </Text>
 
-        {details ? <>
+        {product ? <>
+          <View style={styles.walletBenefitChips}>
+            {product.benefits.slice(0, 2).map(benefit => {
+              const requirement = benefit.note.match(/^전월 [^·\n]+이상/m)?.[0];
+              return <View key={benefit.benefitId} style={styles.walletBenefitChip}>
+                <Ionicons name="pricetag-outline" size={16} color="#225CD6" />
+                <View style={styles.walletBenefitChipTexts}>
+                  <Text style={styles.walletBenefitChipValue}>{benefit.name}</Text>
+                  {!!requirement && <Text style={styles.walletBenefitChipLabel}>{requirement}</Text>}
+                </View>
+              </View>;
+            })}
+          </View>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={product.name + ' 혜택 상세보기'}
+            style={styles.walletBenefitDetailButton} onPress={() => setSelectedCatalog(product)}>
+            <Text style={styles.walletBenefitDetailButtonText}>혜택 자세히 보기</Text>
+            <Ionicons name="chevron-forward" size={17} color="#225CD6" />
+          </TouchableOpacity>
+        </> : details ? <>
             <View style={styles.walletBenefitChips}>
               {details.highlights.map((entry, index) => <View key={`${currentCard.id}-${index}`} style={styles.walletBenefitChip}>
                   <Ionicons name={entry.icon} size={16} color="#225CD6" />
@@ -679,38 +677,68 @@ export default function MainScreen({
           </> : <View style={styles.walletBenefitUnknown}>
             <Ionicons name="information-circle-outline" size={19} color="#8795A9" />
             <Text style={styles.walletBenefitUnknownText}>
-              이 카드는 정확한 상품 안내서가 없어 할인율과
-              실적 조건을 표시하지 않아요.
+              이 카드의 상품 정보를 확인할 수 없어요.
             </Text>
           </View>}
 
         <Text style={styles.walletBenefitFootnote}>
-          ※ 가상 보유 카드의 상품정보 요약입니다.
+          상품 안내서에서 확인한 혜택이에요.
           실제 혜택 적용 여부·실적·잔여 한도는 확인되지 않았어요.
         </Text>
       </View>;
   };
-  const renderHome = () => <>
-      <View style={styles.hero}>
-        <Text style={styles.heroEyebrow}>
-          SOL PAY · WEB DEMO v2
-        </Text>
-        <Text style={styles.heroTitle}>
-          내 카드부터,{'\n'}결제까지 간편하게
-        </Text>
-        <Text style={styles.heroSub}>
-          내 지갑의 카드를 확인하고 바코드·QR로 빠르게 결제해 보세요.
-        </Text>
-
-        <TouchableOpacity style={styles.heroAction} onPress={() => selectTab('cards')}>
-          <Text style={styles.heroActionText}>
-            내 카드 관리하기
-          </Text>
-          <Ionicons name="arrow-forward" size={17} color="#173E89" />
+  const renderSchedule = (home = false) => <TodaySchedulePanel
+    home={home}
+    disabled={scheduleDisabled}
+    onEditRoutine={onEditRoutine}
+    onViewBenefits={onViewBenefits}
+    cards={realWalletCards(currentCard, walletCards)}
+    sampleActive={sampleActive}
+    onStartSample={() => setSampleActive(true)}
+    onEndSample={() => setSampleActive(false)}
+    onPay={context => {
+      if (!context.sample) onSelectCard(context.cardId);
+      setSchedulePayment({ ...context, returnTab: tab });
+      setTab('payment');
+    }}
+  />;
+  const renderHome = () => {
+    const canPay = Boolean(realProductCard(currentCard));
+    const product = findCatalog40Product(currentCard);
+    const mainBenefit = product?.benefits[0]?.name || WALLET_CARD_BENEFITS[currentCard.id]?.highlights[0]?.value;
+    return <>
+      {renderSchedule(true)}
+      <View style={styles.homeLinks}>
+        {[['calendar-outline','오늘의 일정',() => selectTab('schedule')],
+          ['sparkles-outline','오늘의 카드 추천',() => setAdRequest({kind:'recommendation'})],
+          ['pricetag-outline','오늘의 프로모션',() => setAdRequest({kind:'promotion'})]].map(([icon,label,open]) =>
+          <TouchableOpacity key={label} accessibilityRole="button" accessibilityLabel={label} style={styles.homeLink} onPress={open}>
+            <View style={styles.homeLinkIcon}><Ionicons name={icon} color="#174BC5" size={21}/></View>
+            <Text style={styles.homeLinkTitle}>{label}</Text>
+            <Ionicons name="chevron-forward" size={17} color="#66768D"/>
+          </TouchableOpacity>)}
+      </View>
+      <View style={styles.homeHeroHeading}>
+        <View style={{flex:1}}>
+          <Text accessibilityRole="header" style={styles.sectionTitle}>내 지갑</Text>
+          <Text style={styles.homeHeroCaption}>보유 카드 {walletCards.length}장</Text>
+        </View>
+        <TouchableOpacity accessibilityRole="button" onPress={() => selectTab('cards')} style={styles.moreRow}>
+          <Text style={styles.moreText}>전체 카드</Text>
+          <Ionicons name="chevron-forward" size={15} color="#516884" />
         </TouchableOpacity>
       </View>
-
-      {appNotice && <View style={styles.noticeStrip}>
+      {wallet()}
+      {!!mainBenefit && <View style={styles.homeBenefitPill}>
+        <Ionicons name="pricetag-outline" size={19} color="#1657D9"/>
+        <Text style={styles.homeBenefitPillText}>{mainBenefit}</Text>
+      </View>}
+      <TouchableOpacity accessibilityRole="button" accessibilityState={{disabled: !canPay}} disabled={!canPay}
+        style={[styles.payShortcut,!canPay && styles.unavailablePay]} onPress={() => selectTab('payment')}>
+        <Ionicons name="qr-code-outline" size={22} color="#FFFFFF" />
+        <Text style={styles.payShortcutText}>{canPay ? '이 카드로 결제' : '결제할 카드를 선택해주세요'}</Text>
+      </TouchableOpacity>
+      {walletBenefitSummary()}{appNotice && <View style={styles.noticeStrip}>
           <Ionicons name="notifications-outline" size={16} color="#2C60C2" />
           <Text style={styles.noticeStripText}>
             이번 달 혜택{' '}
@@ -718,19 +746,8 @@ export default function MainScreen({
             건을 확인해보세요.
           </Text>
         </View>}
-
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>내 지갑</Text>
-        <TouchableOpacity onPress={() => selectTab('cards')} style={styles.moreRow}>
-          <Text style={styles.moreText}>전체 카드</Text>
-          <Ionicons name="chevron-forward" size={15} color="#6A7590" />
-        </TouchableOpacity>
-      </View>
-
-      {wallet()}
-      {walletBenefitSummary()}
       <TouchableOpacity onPress={() => selectTab('cards')} style={{
-      backgroundColor: '#EAF1FF',
+      backgroundColor: "#EDF3FF",
       padding: 14,
       borderRadius: 14,
       marginTop: 12,
@@ -743,14 +760,14 @@ export default function MainScreen({
           color: '#204CA2',
           fontWeight: '800'
         }}>
-            신한·국민 카드 22종 혜택 보기
+            카드 {CARD_CATALOG_40.length}종 혜택 보기
           </Text>
           <Text style={{
           color: '#607DAC',
           fontSize: 12,
           marginTop: 4
         }}>
-            카드별 혜택 조건 306건
+            카드별 혜택 {CARD_CATALOG_40_BENEFITS}건
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={19} color="#204CA2" />
@@ -759,7 +776,7 @@ export default function MainScreen({
       {getCatalogCardForWallet(currentCard) && <TouchableOpacity onPress={() => setSelectedCatalog(getCatalogCardForWallet(currentCard))} style={{
       padding: 12,
       marginTop: 9,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: "#FFFFFF",
       borderRadius: 12
     }}>
           <Text style={{
@@ -784,22 +801,15 @@ export default function MainScreen({
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.previewScroll}>
         {homeBenefits.map(item => benefitTile(item, true))}
       </ScrollView>
-
-      <TouchableOpacity style={styles.payShortcut} onPress={() => selectTab('payment')}>
-        <Ionicons name="qr-code-outline" size={23} color="#FFFFFF" />
-        <Text style={styles.payShortcutText}>
-          바코드 / QR 현장 결제
-        </Text>
-        <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
-      </TouchableOpacity>
     </>;
+  };
   const renderBenefits = () => <>
-      <Text style={styles.pageEyebrow}>BENEFIT CENTER</Text>
-      <Text style={styles.pageTitle}>혜택을 한곳에서</Text>
-      <Text style={styles.pageSubtitle}>
-        이벤트 6개와 마이샵 25개를 비교해보세요.
-      </Text>
 
+      <BenefitReport offers={ALL_BENEFITS} date={kstToday()} data={importedMyData} onCardPress={card => {
+        onSelectCard(card.id);
+        selectTab('cards');
+      }}/>
+      <Text accessibilityRole="header" style={styles.sectionTitle}>혜택 둘러보기</Text>
       <View style={styles.searchBox}>
         <Ionicons name="search-outline" size={18} color="#8C98AE" />
         <TextInput style={styles.searchInput} placeholder="가맹점 또는 혜택 검색" value={search} onChangeText={setSearch} placeholderTextColor="#99A4B3" />
@@ -828,9 +838,7 @@ export default function MainScreen({
         </Text>}
 
       <Text style={styles.disclaimer}>
-        ※ PDF 기반 시연용 혜택입니다. 현재 이용 가능 여부,
-        마이샵 개인별 활성화 여부와 카드별 적용 가능 여부는
-        확인되지 않았습니다.
+        현재 이용 가능 여부와 카드별 적용 조건은 각 혜택의 상세 안내를 확인해주세요.
       </Text>
     </>;
   const renderFinance = () => <>
@@ -843,12 +851,10 @@ export default function MainScreen({
       <View style={styles.financeHero}>
         <Ionicons name="shield-checkmark-outline" size={30} color="#1D63D1" />
         <Text style={styles.financeTitle}>
-          마이데이터 연동 준비 중
+          연결된 금융기관이 없어요
         </Text>
         <Text style={styles.financeDesc}>
-          현재 실제 계좌 잔액, 결제 내역 및 사용 실적은
-          연결되어 있지 않아요. 시연 단계에서는 개인정보와
-          실계좌 정보를 표시하지 않습니다.
+          현재 계좌 잔액과 실제 카드 이용 내역은 조회할 수 없어요.
         </Text>
       </View>
 
@@ -886,14 +892,21 @@ export default function MainScreen({
       </TouchableOpacity>
     </>;
   const renderCards = () => <>
+      <WalletDeck cards={walletCards} selected={currentCard} onSelect={onSelectCard} canPay={Boolean(realProductCard(currentCard))} onPay={() => selectTab("payment")}
+        highlight={findCatalog40Product(currentCard)?.benefits[0]?.name || WALLET_CARD_BENEFITS[currentCard.id]?.highlights[0]?.value}
+        status={currentCard.status} onDetails={() => {
+          const product = findCatalog40Product(currentCard);
+          if (product) setSelectedCatalog(product);
+          else if (WALLET_CARD_BENEFITS[currentCard.id]) setWalletBenefitDetailsOpen(true);
+        }} />
 
       <Text style={{
       fontSize: 18,
-      fontWeight: '900',
+      fontWeight: "800",
       color: '#203251',
       marginBottom: 8
     }}>
-        신한·국민 카드 상품 22종
+        카드 상품 {CARD_CATALOG_40.length}종
       </Text>
 
       <Text style={{
@@ -905,7 +918,7 @@ export default function MainScreen({
       </Text>
 
       <TextInput placeholder="카드 이름이나 혜택 검색" value={catalogQuery} onChangeText={setCatalogQuery} style={{
-      backgroundColor: '#FFFFFF',
+      backgroundColor: "#FFFFFF",
       borderWidth: 1,
       borderColor: '#E2E8F2',
       padding: 12,
@@ -913,8 +926,14 @@ export default function MainScreen({
       marginBottom: 12
     }} />
 
-      {CSV_CARD_CATALOG.filter(c => (c.name + ' ' + c.description + ' ' + c.tags.join(' ')).toLowerCase().includes(catalogQuery.trim().toLowerCase())).map(c => <TouchableOpacity key={c.code} onPress={() => setSelectedCatalog(c)} style={{
-      backgroundColor: '#FFFFFF',
+      <TouchableOpacity accessibilityRole="button" style={styles.homeLink} onPress={() => setCatalogCompareOpen(true)}>
+        <View style={styles.homeLinkIcon}><Ionicons name="git-compare-outline" size={21} color="#174BC5" /></View>
+        <Text style={styles.homeLinkTitle}>카드 상품 비교</Text>
+        <Ionicons name="chevron-forward" size={17} color="#66768D" />
+      </TouchableOpacity>
+
+      {CARD_CATALOG_40.filter(c => (c.name + ' ' + c.issuer + ' ' + c.description + ' ' + c.tags.join(' ') + ' ' + c.benefits.map(b => b.name).join(' ')).toLowerCase().includes(catalogQuery.trim().toLowerCase())).map(c => <TouchableOpacity key={c.code} onPress={() => setSelectedCatalog(c)} style={{
+      backgroundColor: "#FFFFFF",
       padding: 14,
       borderRadius: 14,
       marginBottom: 8,
@@ -928,15 +947,16 @@ export default function MainScreen({
       }}>
             {c.name}
           </Text>
+          {!!c.image && <Image source={c.image} resizeMode="contain" style={styles.catalogThumb} accessibilityLabel={c.name + ' 상품 이미지'}/>}
           <Text style={{
-        fontSize: 11,
+        fontSize: 12,
         color: '#687A96',
         marginTop: 5
       }}>
             {c.issuer} · {c.type} · 혜택 {c.benefits.length}건
           </Text>
           <Text numberOfLines={2} style={{
-        fontSize: 11,
+        fontSize: 12,
         color: '#687A96',
         marginTop: 6
       }}>
@@ -946,7 +966,7 @@ export default function MainScreen({
 
       <Text style={{
       fontSize: 18,
-      fontWeight: '900',
+      fontWeight: "800",
       marginTop: 20,
       marginBottom: 15,
       color: '#203251'
@@ -956,7 +976,7 @@ export default function MainScreen({
       <Text style={styles.pageEyebrow}>MY CARDS</Text>
       <Text style={styles.pageTitle}>카드 관리</Text>
       <Text style={styles.pageSubtitle}>
-        지갑에 표시되는 시연용 카드 {walletCards.length}종이에요.
+        지갑에 표시되는 카드 {walletCards.length}장이에요.
       </Text>
 
       {walletCards.map(card => <TouchableOpacity key={card.id} style={styles.cardListItem} onPress={() => {
@@ -1020,11 +1040,11 @@ export default function MainScreen({
         </SettingsGroup>
 
         <SettingsGroup title="편의 기능">
-          <SettingsItem icon="qr-code-outline" title="결제" subtitle="기존 QR·바코드 결제 시연 화면" onPress={() => goFromSettings('payment')} />
+          <SettingsItem icon="qr-code-outline" title="결제" subtitle="QR·바코드 및 예상 혜택 확인" onPress={() => goFromSettings('payment')} />
           <SettingsItem icon="pie-chart-outline" title="마이데이터" subtitle="금융 연결 상태와 소비 분석 안내" onPress={() => goFromSettings('finance')} />
-          <SettingsItem icon="card-outline" title="카드 관리" subtitle="등록된 시연용 카드 목록" onPress={() => goFromSettings('cards')} />
-          <SettingsToggle icon="phone-portrait-outline" title="버튼 진동" subtitle="앱 내 테스트 진동 사용" value={vibrationOn} disabled={settingsBusy} onChange={value => persistUISettings(appNotice, value)} />
-          <SettingsItem icon="pulse-outline" title="진동 테스트" subtitle="버튼 진동 설정이 켜져 있을 때만 작동" onPress={() => {
+          <SettingsItem icon="card-outline" title="카드 관리" subtitle="등록된 카드 목록" onPress={() => goFromSettings('cards')} />
+          <SettingsToggle icon="phone-portrait-outline" title="버튼 진동" value={vibrationOn} disabled={settingsBusy} onChange={value => persistUISettings(appNotice, value)} />
+          <SettingsItem icon="pulse-outline" title="진동 확인" subtitle="버튼 진동 설정이 켜져 있을 때만 작동" onPress={() => {
           if (vibrationOn) {
             if (Platform.OS !== 'web') {
               Vibration.vibrate(30);
@@ -1036,7 +1056,8 @@ export default function MainScreen({
         </SettingsGroup>
 
         <SettingsGroup title="서비스·이용 동의">
-          <SettingsItem icon="document-text-outline" title="마이데이터 활용 동의" subtitle="현재 기기에 저장된 데모 동의 기록" value={savedConsent ? '동의' : '기록 없음'} />
+          <SettingsItem icon="document-text-outline" title="카드·소비 데이터 활용" value={savedConsent?.termsAgreed ? savedConsent.myDataAgreed ? '동의' : '미동의' : '기록 없음'} />
+          <SettingsItem icon="notifications-outline" title="아침 일정 알림 선택" value={savedConsent ? savedConsent.morningNotificationAgreed ? '선택함' : '선택 안 함' : '기록 없음'} />
         </SettingsGroup>
 
         <SettingsGroup title="앱 정보">
@@ -1046,26 +1067,20 @@ export default function MainScreen({
           hour: '2-digit',
           minute: '2-digit'
         })} />
-          <SettingsItem icon="information-circle-outline" title="실행 환경" value="Expo 개발·시연용" />
           <SettingsItem icon="refresh-outline" title="화면 설정 초기화" subtitle="혜택 알림·진동만 기본값으로 복원" onPress={resetViewSettings} />
-          <SettingsItem icon="log-out-outline" title="로그아웃" subtitle="간편비밀번호는 유지돼요" danger onPress={onLogout} />
+          <SettingsItem icon="log-out-outline" title="잠금 및 로그아웃" subtitle="간편비밀번호 또는 이메일 로그인 선택" onPress={() => setExitOpen(true)} />
         </SettingsGroup>
 
         <AccountWithdrawal />
 
-        <Text style={styles.settingsFooter}>
-          실제 금융기관 연결·Face ID·공동인증서·
-          푸시 알림은 제공하지 않는 시연용 앱입니다.
-        </Text>
       </ScrollView>
     </>;
-  return <SafeAreaView style={styles.root}><RecommendationLaunchPopup enabled={tab === 'home' && !settingsOpen && !pinChangeOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
-      {!settingsOpen && tab !== 'payment' && <View style={styles.topBar}>
+  return <SafeAreaView style={styles.root}><RecommendationLaunchPopup includeMyData={includeMyData} allowAutomaticAds={allowAutomaticAds} onViewPromotions={() => selectTab('benefits')} promotions={activePromotions()} openRequest={adRequest} enabled={tab === 'home' && !settingsOpen && !exitOpen && !pinChangeOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
+      {catalogCompareOpen && <CardCatalogCompare cards={CARD_CATALOG_40} onClose={() => setCatalogCompareOpen(false)} />}
+      {!settingsOpen && tab !== 'payment' && <View style={[styles.topBar, tab === 'cards' && styles.walletTopBar]}>
           <View>
-            <Text style={styles.brand}>SOL·Pay</Text>
-            <Text style={styles.brandCaption}>
-              SMART SAVING AGENT
-            </Text>
+            <Text style={[styles.brand,{color:tab === 'cards' ? "#FFFFFF" : "#134CCA",fontSize:27}]}>SOL·Pay</Text>
+
           </View>
 
           <View style={styles.headerActions}>
@@ -1073,37 +1088,40 @@ export default function MainScreen({
               <Ionicons name="settings-outline" size={21} color="#244E9C" />
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.iconCircle} onPress={openChat}>
-              <Ionicons name="chatbubble-ellipses-outline" size={21} color="#244E9C" />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.iconCircle} onPress={onLogout}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="잠금 및 로그아웃" style={styles.iconCircle} onPress={() => setExitOpen(true)}>
               <Ionicons name="log-out-outline" size={21} color="#244E9C" />
             </TouchableOpacity>
           </View>
         </View>}
 
       <View style={styles.mainArea}>
-        {settingsOpen ? renderSettings() : tab === 'payment' ? <PaymentScreen card={currentCard} cards={walletCards} onSelectCard={onSelectCard} onClose={() => selectTab('home')} /> : <ScrollView key={tab} style={styles.mainScroll} contentContainerStyle={styles.pageContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        {settingsOpen ? renderSettings() : tab === 'payment' ? <PaymentScreen
+          key={schedulePayment ? 'schedule-payment' : 'standard-payment'}
+          card={schedulePayment?.sample ? SAMPLE_PAYMENT_CARDS[0] : currentCard}
+          cards={schedulePayment?.sample ? SAMPLE_PAYMENT_CARDS : walletCards}
+          schedule={schedulePayment}
+          onSelectCard={schedulePayment?.sample ? undefined : onSelectCard}
+          onClose={() => selectTab(schedulePayment?.returnTab || 'home')}
+        /> : <ScrollView key={tab} style={styles.mainScroll} contentContainerStyle={[styles.pageContent, !settingsOpen && tab !== 'payment' && styles.chatClearance]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {tab === 'home' && <>
-                <MyDataCardStatus card={currentCard} />
-                {renderHome()}
+                {renderHome()}{includeMyData && <MyDataCardStatus card={currentCard} />}
               </>}
             {tab === 'benefits' && renderBenefits()}
-            {tab === 'schedule' && <TodaySchedulePanel
-              disabled={scheduleDisabled}
-              onEditRoutine={onEditRoutine}
-              onViewBenefits={onViewBenefits}
-            />}
+            {tab === 'schedule' && renderSchedule()}
             {tab === 'finance' && renderFinance()}
             {tab === 'cards' && renderCards()}
           </ScrollView>}
+        {!settingsOpen && tab !== 'payment' && !chatVisible && <View pointerEvents="box-none" style={styles.chatDock}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="챗봇 열기" onPress={openChat} style={styles.chatFab}>
+            <Image source={require('../assets/chatbot-avatar.png')} resizeMode="contain" style={styles.chatAvatar} />
+          </TouchableOpacity>
+        </View>}
       </View>
 
       {!settingsOpen && <View style={styles.bottomNav}>
           {NAV.map(item => {
         const active = item.id === tab;
-        return <TouchableOpacity key={item.id} style={styles.navItem} onPress={() => selectTab(item.id)}>
+        return <TouchableOpacity key={item.id} accessibilityRole="tab" accessibilityState={{selected:active}} style={[styles.navItem,active && {borderTopWidth:3,borderTopColor:"#175BE3"}]} onPress={() => selectTab(item.id)}>
                 <Ionicons name={active ? item.active : item.icon} size={23} color={active ? '#245CEA' : '#98A2B4'} />
                 <Text style={[styles.navLabel, active && styles.navLabelActive]}>
                   {item.label}
@@ -1113,6 +1131,25 @@ export default function MainScreen({
         </View>}
 
       {__DEV__ && <View style={styles.devClearance} />}
+
+      <Modal visible={exitOpen} transparent animationType="fade" onRequestClose={() => setExitOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.exitSheet}>
+            <Text accessibilityRole="header" style={styles.exitTitle}>잠금 및 로그아웃</Text>
+            {canLock && <TouchableOpacity accessibilityRole="button" style={styles.exitOption} onPress={() => {setExitOpen(false); onLogout?.('lock');}}>
+              <Text style={styles.exitOptionTitle}>잠금</Text>
+              <Text style={styles.exitHint}>간편비밀번호로 다시 열기</Text>
+            </TouchableOpacity>}
+            <TouchableOpacity accessibilityRole="button" style={styles.exitOption} onPress={() => {setExitOpen(false); onLogout?.('logout');}}>
+              <Text style={[styles.exitOptionTitle,{color:'#B93842'}]}>완전 로그아웃</Text>
+              <Text style={styles.exitHint}>이메일과 비밀번호로 다시 로그인</Text>
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" style={styles.exitCancel} onPress={() => setExitOpen(false)}>
+              <Text style={styles.exitOptionTitle}>취소</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={pinChangeOpen} transparent animationType="slide" onRequestClose={closePinChange}>
         <KeyboardAvoidingView style={styles.pinModalDim} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -1204,8 +1241,7 @@ export default function MainScreen({
 
                   <Text style={styles.modalFineprint}>
                     {currentCard.source || '제공된 상품 안내서'} 참고.
-                    실제 고객의 전월 실적 및 남은 혜택 한도는
-                    연결되지 않은 시연 화면입니다.
+                    전월 실적과 남은 혜택 한도는 카드사에서 확인해주세요.
                   </Text>
                 </> : <Text style={styles.noticeText}>
                   정확한 카드 상품 안내서가 없어 혜택을
@@ -1260,8 +1296,7 @@ export default function MainScreen({
                     </Text>}
 
                   <Text style={styles.modalFineprint}>
-                    ※ 자료 기반 시연용 정보이며 실제 제공
-                    여부·개인별 대상·중복 적용은 확인되지 않았습니다.
+                    개인별 혜택 적용 및 중복 사용 여부는 카드사 안내를 확인해주세요.
                   </Text>
                 </>}
             </ScrollView>
@@ -1330,7 +1365,7 @@ export default function MainScreen({
         padding: 18
       }}>
           <View style={{
-          backgroundColor: '#FFFFFF',
+          backgroundColor: "#FFFFFF",
           borderRadius: 20,
           maxHeight: '85%'
         }}>
@@ -1340,7 +1375,7 @@ export default function MainScreen({
               {selectedCatalog && <>
                   <Text style={{
                 fontSize: 19,
-                fontWeight: '900',
+                fontWeight: "800",
                 color: '#1E3150'
               }}>
                     {selectedCatalog.name}
@@ -1354,12 +1389,20 @@ export default function MainScreen({
               }}>
                     {selectedCatalog.description}
                   </Text>
-                  <MyDataCardStatus card={selectedCatalog} expanded />
+                  {!!selectedCatalog.image && <Image source={selectedCatalog.image} resizeMode="contain" style={styles.catalogPlate} accessibilityLabel={selectedCatalog.name + ' 상품 이미지'}/>}
+                  {selectedCatalog.registryCardId != null && <Text style={styles.catalogFee}>
+                    국내 연회비 {money(selectedCatalog.annualFeeDomestic)} · 해외 연회비 {money(selectedCatalog.annualFeeOverseas)}
+                  </Text>}
+                  {selectedCatalog.code === 'DB40_21' && <TouchableOpacity accessibilityRole="link"
+                    style={styles.walletBenefitDetailButton} onPress={() => Linking.openURL(selectedCatalog.sourcePage).catch(() => Alert.alert('상품 안내', '브라우저에서 BC카드 상품 안내를 열어주세요.'))}>
+                    <Text style={styles.walletBenefitDetailButtonText}>BC카드 공식 상품 안내</Text>
+                  </TouchableOpacity>}
+                  {includeMyData && <MyDataCardStatus card={selectedCatalog} expanded />}
 
                   {selectedCatalog.benefits.map((b, i) => <View key={i} style={{
                 paddingVertical: 11,
                 borderBottomWidth: 1,
-                borderBottomColor: '#EDF1F7'
+                borderBottomColor: "#E3EAF4"
               }}>
                       <Text style={{
                   fontWeight: '700',
@@ -1369,25 +1412,25 @@ export default function MainScreen({
                       </Text>
 
                       <Text style={{
-                  color: '#245DEA',
+                  color: "#245DE5",
                   fontWeight: '800',
                   marginTop: 4
                 }}>
-                        {b.rate != null ? Math.round(b.rate * 10000) / 100 + '%' : b.fixedAmount != null ? b.fixedAmount.toLocaleString('ko-KR') + (b.type === 'POINT' ? 'P' : '원') : '부가 혜택'} · {b.type}
+                        {b.rate != null ? Math.round(b.rate * 10000) / 100 + '% · ' + b.type : b.fixedAmount != null ? b.fixedAmount.toLocaleString('ko-KR') + (b.type === 'POINT' ? 'P' : '원') + ' · ' + b.type : selectedCatalog.registryCardId ? b.type : '부가 혜택 · ' + b.type}
                       </Text>
 
-                      <Text style={{
+                      {!selectedCatalog.registryCardId && <Text style={{
                   color: '#6B7990',
-                  fontSize: 11,
+                  fontSize: 12,
                   marginTop: 5
                 }}>
                         {b.minPrevSpend == null ? '실적 조건 미기재' : b.minPrevSpend === 0 ? '전월 실적 없음' : '전월 ' + b.minPrevSpend.toLocaleString('ko-KR') + '원 이상'}
                         {b.monthlyCap != null ? ' · 월 한도 ' + b.monthlyCap.toLocaleString('ko-KR') : ''}
-                      </Text>
+                      </Text>}
 
                       {!!b.note && <Text style={{
                   color: '#8894A6',
-                  fontSize: 11,
+                  fontSize: 12,
                   marginTop: 4
                 }}>
                           {b.note}
@@ -1396,7 +1439,7 @@ export default function MainScreen({
 
                   {!!selectedCatalog.tiers.length && <Text style={{
                 fontSize: 16,
-                fontWeight: '900',
+                fontWeight: "800",
                 marginTop: 16
               }}>
                       실적별 한도
@@ -1417,24 +1460,23 @@ export default function MainScreen({
 
                   <Text style={{
                 color: '#96A1B1',
-                fontSize: 11,
+                fontSize: 12,
                 marginTop: 15
               }}>
-                    실제 실적·잔여 한도와 혜택 적용은
-                    확인되지 않은 시연용 화면입니다.
+                    혜택 적용 여부와 남은 한도는 카드사에서 확인해주세요.
                   </Text>
                 </>}
             </ScrollView>
 
             <TouchableOpacity onPress={() => setSelectedCatalog(null)} style={{
-            backgroundColor: '#245DEA',
+            backgroundColor: "#245DE5",
             padding: 14,
             alignItems: 'center',
             margin: 15,
             borderRadius: 12
           }}>
               <Text style={{
-              color: '#FFFFFF',
+              color: "#FFFFFF",
               fontWeight: '800'
             }}>
                 닫기
@@ -1447,31 +1489,62 @@ export default function MainScreen({
     </SafeAreaView>;
 }
 const styles = StyleSheet.create({
+  exitSheet:{width:'100%',maxWidth:400,alignSelf:'center',backgroundColor:'#FFFFFF',borderRadius:24,padding:20,gap:10},
+  exitTitle:{fontSize:21,fontWeight:'800',color:'#142D4E',marginBottom:2},
+  exitOption:{minHeight:62,backgroundColor:'#F0F5FE',borderRadius:14,padding:12,justifyContent:'center',gap:4},
+  exitOptionTitle:{fontSize:16,fontWeight:'700',color:'#142D4E'},
+  exitHint:{fontSize:13,color:'#526783'},
+  exitCancel:{minHeight:44,alignItems:'center',justifyContent:'center'},
+  catalogThumb:{width:104,height:70,marginTop:8},
+  catalogPlate:{width:'100%',maxWidth:300,height:180,alignSelf:'center'},
+  catalogFee:{fontSize:13,lineHeight:20,color:'#526783',marginVertical:8},
+  chatClearance:{paddingBottom:90},
+  chatDock:{position:'absolute',bottom:14,width:'100%',maxWidth:640,alignSelf:'center',alignItems:'flex-end',paddingRight:16,zIndex:2},
+  chatFab:{width:62,height:62,borderRadius:31,backgroundColor:'#FFFFFF',borderWidth:1,borderColor:'#DDE7F5',alignItems:'center',overflow:'hidden'},
+  chatAvatar:{position:'absolute',left:-20,top:1,width:100,height:56},
+  tileLogoArea:{height:64,justifyContent:'center',alignItems:'center',backgroundColor:'#FFFFFF'},
+  tileLogo:{width:'92%',maxWidth:132,height:48},
+  tileBrandLabel:{fontSize:12,color:'#536C88',textAlign:'center',marginTop:5},
+  tileCentered:{textAlign:'center',marginTop:6},
+  homeHeroHeading:{flexDirection:'row',alignItems:'center',gap:8,marginTop:10},
+  homeHeroCaption:{fontSize:13,color:'#586E8B',marginTop:4},
+  walletTopBar:{backgroundColor:'#0B1940'},
+  homeBenefitPill:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:8,padding:10,backgroundColor:'#EDF4FF',borderRadius:13},
+  homeBenefitPillText:{flexShrink:1,fontSize:14,fontWeight:'700',color:'#173769'},
+  unavailablePay:{backgroundColor:'#526782'},
+  homeLinks:{backgroundColor:'#FFFFFF'},
+  homeLinkIcon:{height:38,width:38,borderRadius:12,backgroundColor:'#EDF4FF',alignItems:'center',justifyContent:'center'},
+  homeLink:{flexDirection:'row',alignItems:'center',minHeight:60,gap:14,borderBottomWidth:1,borderBottomColor:'#E4E9F1'},
+  homeLinkTitle:{flex:1,fontSize:17,fontWeight:'700',color:'#13223B'},
   root: {
     flex: 1,
-    backgroundColor: '#F6F8FD'
+    backgroundColor: "#FFFFFF"
   },
   topBar: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 22,
     paddingTop: 14,
     paddingBottom: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderBottomColor: '#ECF0F7',
-    borderBottomWidth: 1
+    borderBottomColor: "#E3EAF4",
+    borderBottomWidth: 0,
+    width: "100%",
+    maxWidth: 640,
+    alignSelf: "center",
+    paddingVertical: 16
   },
   brand: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#193F88'
+    fontSize: 25,
+    fontWeight: "800",
+    color: "#142D4E"
   },
   brandCaption: {
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 1.2,
-    color: '#8EA2C1',
+    letterSpacing: 1,
+    color: "#5A6E89",
     marginTop: 2
   },
   headerActions: {
@@ -1479,10 +1552,10 @@ const styles = StyleSheet.create({
     gap: 8
   },
   iconCircle: {
-    width: 39,
-    height: 39,
-    borderRadius: 20,
-    backgroundColor: '#F0F5FF',
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "#EDF3FF",
     justifyContent: 'center',
     alignItems: 'center'
   },
@@ -1493,45 +1566,51 @@ const styles = StyleSheet.create({
     flex: 1
   },
   pageContent: {
+    paddingTop: 18,
+    paddingBottom: 40,
+    width: "100%",
+    maxWidth: 640,
+    alignSelf: "center",
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 30
+    gap: 14
   },
   hero: {
     borderRadius: 24,
-    backgroundColor: '#153C8D',
-    padding: 23,
-    marginBottom: 10
+    backgroundColor: "#245DE5",
+    padding: 24,
+    marginBottom: 0
   },
   heroEyebrow: {
     color: '#A9CAF9',
     fontWeight: '800',
-    letterSpacing: 1.2,
-    fontSize: 10,
-    marginBottom: 14
+    letterSpacing: 0.8,
+    fontSize: 12,
+    marginBottom: 14,
+    lineHeight: 19
   },
   heroTitle: {
-    color: '#FFFFFF',
-    fontSize: 25,
-    fontWeight: '900',
-    lineHeight: 34
+    color: "#FFFFFF",
+    fontSize: 28,
+    fontWeight: "800",
+    lineHeight: 39
   },
   heroSub: {
     color: '#D0E0FF',
-    fontSize: 13,
-    lineHeight: 20,
+    fontSize: 14,
+    lineHeight: 23,
     marginTop: 10
   },
   heroAction: {
     alignSelf: 'flex-start',
     marginTop: 20,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 16,
     paddingVertical: 11,
     borderRadius: 13,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8
+    gap: 8,
+    minHeight: 46
   },
   heroActionText: {
     color: '#173E89',
@@ -1542,13 +1621,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 26,
-    marginBottom: 14
+    marginTop: 12,
+    marginBottom: 0
   },
   sectionTitle: {
-    color: '#1D2B44',
-    fontSize: 20,
-    fontWeight: '900'
+    color: "#142D4E",
+    fontSize: 19,
+    fontWeight: "800",
+    lineHeight: 28
   },
   moreRow: {
     flexDirection: 'row',
@@ -1568,18 +1648,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4
   },
   walletHintText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#6980A3',
     flexShrink: 1,
-    lineHeight: 16
+    lineHeight: 17
   },
   walletBenefitBox: {
-    marginTop: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    marginTop: 0,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#E3EAF5',
-    padding: 18
+    borderColor: "#E3EAF4",
+    padding: 20
   },
   walletBenefitHeading: {
     flexDirection: 'row',
@@ -1595,8 +1675,9 @@ const styles = StyleSheet.create({
   },
   walletBenefitHeadingText: {
     color: '#1E2D48',
-    fontSize: 15,
-    fontWeight: '900'
+    fontSize: 16,
+    fontWeight: "800",
+    lineHeight: 24
   },
   walletBenefitDemoTag: {
     color: '#647FA9',
@@ -1605,7 +1686,7 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     paddingHorizontal: 8,
     paddingVertical: 5,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700'
   },
   walletBenefitCardName: {
@@ -1639,13 +1720,13 @@ const styles = StyleSheet.create({
   },
   walletBenefitChipLabel: {
     color: '#7485A2',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600'
   },
   walletBenefitChipValue: {
     color: '#2057D0',
     fontSize: 13,
-    fontWeight: '900'
+    fontWeight: "800"
   },
   walletBenefitMetaRow: {
     flexDirection: 'row',
@@ -1693,10 +1774,10 @@ const styles = StyleSheet.create({
     lineHeight: 19
   },
   walletBenefitFootnote: {
-    color: '#97A1B0',
-    fontSize: 10,
+    color: "#5A6E89",
+    fontSize: 12,
     marginTop: 14,
-    lineHeight: 16
+    lineHeight: 21
   },
   walletBenefitDetailIntro: {
     color: '#63728B',
@@ -1761,7 +1842,7 @@ const styles = StyleSheet.create({
   },
   dotActive: {
     width: 19,
-    backgroundColor: '#2360E7'
+    backgroundColor: "#245DE5"
   },
   previewScroll: {
     marginHorizontal: -1
@@ -1769,11 +1850,11 @@ const styles = StyleSheet.create({
   benefitTile: {
     width: '48%',
     minHeight: 176,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: '#E4EAF4',
-    borderRadius: 17,
-    padding: 14,
+    borderColor: "#E3EAF4",
+    borderRadius: 20,
+    padding: 18,
     marginBottom: 10,
     justifyContent: 'space-between'
   },
@@ -1796,8 +1877,8 @@ const styles = StyleSheet.create({
   },
   smallCategory: {
     color: '#5A7BC2',
-    backgroundColor: '#EDF3FF',
-    fontSize: 10,
+    backgroundColor: "#EDF3FF",
+    fontSize: 12,
     overflow: 'hidden',
     borderRadius: 6,
     paddingHorizontal: 6,
@@ -1807,13 +1888,13 @@ const styles = StyleSheet.create({
     color: '#2462E5',
     fontSize: 17,
     lineHeight: 23,
-    fontWeight: '900',
+    fontWeight: "800",
     marginTop: 11
   },
   tileCondition: {
     color: '#7C8799',
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 6
   },
   tileFooter: {
@@ -1826,14 +1907,14 @@ const styles = StyleSheet.create({
     marginTop: 10
   },
   tileStatus: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: '#74829A'
   },
   demoLabel: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#2860CE',
-    backgroundColor: '#EAF1FF',
+    backgroundColor: "#EDF3FF",
     borderRadius: 6,
     overflow: 'hidden',
     paddingHorizontal: 8,
@@ -1856,13 +1937,13 @@ const styles = StyleSheet.create({
   },
   botName: {
     color: '#2462DD',
-    fontWeight: '900',
+    fontWeight: "800",
     fontSize: 12,
     marginTop: 3
   },
   speechBubble: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: '#DFE6F1',
     borderRadius: 17,
@@ -1870,11 +1951,11 @@ const styles = StyleSheet.create({
   },
   speechCategory: {
     color: '#2462DD',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800'
   },
   speechName: {
-    color: '#1D2B44',
+    color: "#142D4E",
     fontSize: 15,
     fontWeight: '800',
     marginTop: 7
@@ -1903,9 +1984,9 @@ const styles = StyleSheet.create({
   ruleCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 17,
-    padding: 17,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 20,
     marginTop: 24,
     borderWidth: 1,
     borderColor: '#E4EAF4'
@@ -1921,41 +2002,41 @@ const styles = StyleSheet.create({
   },
   ruleDesc: {
     color: '#727D90',
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 6,
     lineHeight: 17
   },
   ruleHint: {
     color: '#9CA5B5',
-    fontSize: 10,
+    fontSize: 12,
     marginTop: 6
   },
   payShortcut: {
-    backgroundColor: '#215CEC',
-    paddingVertical: 18,
+    backgroundColor: '#1557E5',
+    paddingVertical: 15,
     paddingHorizontal: 20,
-    borderRadius: 17,
-    marginTop: 20,
+    borderRadius: 14,
+    minHeight: 52,
+    justifyContent: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12
   },
   payShortcutText: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontWeight: '900',
+    color: "#FFFFFF",
+    fontWeight: "800",
     fontSize: 15
   },
   pageEyebrow: {
     color: '#376ED2',
     letterSpacing: 1.1,
-    fontSize: 11,
-    fontWeight: '900'
+    fontSize: 12,
+    fontWeight: "800"
   },
   pageTitle: {
-    color: '#1D2B44',
+    color: "#142D4E",
     fontSize: 26,
-    fontWeight: '900',
+    fontWeight: "800",
     marginTop: 8
   },
   pageSubtitle: {
@@ -1968,7 +2049,7 @@ const styles = StyleSheet.create({
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: '#E4EAF4',
     borderRadius: 13,
@@ -1992,7 +2073,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 18,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: '#E4EAF4'
   },
@@ -2006,7 +2087,7 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   filterTextActive: {
-    color: '#FFFFFF'
+    color: "#FFFFFF"
   },
   filteredCount: {
     marginLeft: 'auto',
@@ -2025,14 +2106,14 @@ const styles = StyleSheet.create({
     padding: 25
   },
   disclaimer: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#8B95A5',
     lineHeight: 17,
     marginTop: 10
   },
   financeHero: {
     borderRadius: 18,
-    backgroundColor: '#EDF4FF',
+    backgroundColor: "#EDF3FF",
     padding: 22,
     marginTop: 2,
     marginBottom: 15
@@ -2040,7 +2121,7 @@ const styles = StyleSheet.create({
   financeTitle: {
     fontSize: 19,
     color: '#1B3E7D',
-    fontWeight: '900',
+    fontWeight: "800",
     marginTop: 15
   },
   financeDesc: {
@@ -2055,8 +2136,8 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: '#E4EAF4',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 15,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
     marginBottom: 10
   },
   financeIconCircle: {
@@ -2078,12 +2159,12 @@ const styles = StyleSheet.create({
   },
   financeRowDesc: {
     color: '#8590A3',
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 5
   },
   notConnected: {
     color: '#99A3B4',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700'
   },
   financeCTA: {
@@ -2095,17 +2176,17 @@ const styles = StyleSheet.create({
     marginTop: 12
   },
   financeCTAText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontWeight: '800',
     fontSize: 14
   },
   cardListItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 13,
-    borderRadius: 17,
+    padding: 16,
+    borderRadius: 18,
     marginBottom: 11,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: '#E4EAF4'
   },
@@ -2127,14 +2208,14 @@ const styles = StyleSheet.create({
   },
   cardListSub: {
     color: '#8B96A7',
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 6
   },
   cardHintBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 9,
-    backgroundColor: '#EDF4FF',
+    backgroundColor: "#EDF3FF",
     padding: 14,
     borderRadius: 13,
     marginTop: 8
@@ -2147,42 +2228,48 @@ const styles = StyleSheet.create({
   },
   outlineButton: {
     borderWidth: 1,
-    borderColor: '#255DE5',
+    borderColor: "#245DE5",
     borderRadius: 14,
     padding: 15,
     alignItems: 'center',
-    marginTop: 17
+    marginTop: 17,
+    minHeight: 44
   },
   outlineButtonText: {
     fontSize: 14,
-    color: '#255DE5',
+    color: "#245DE5",
     fontWeight: '800'
   },
   bottomNav: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
-    borderTopColor: '#E7ECF3',
+    borderTopColor: "#E3EAF4",
     flexDirection: 'row',
-    paddingTop: 11,
-    paddingBottom: 8
+    paddingTop: 10,
+    paddingBottom: 12,
+    width: "100%",
+    maxWidth: 640,
+    alignSelf: "center"
   },
   navItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5
+    gap: 5,
+    minHeight: 48
   },
   navLabel: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#9BA4B3'
+    color: "#5A6E89",
+    lineHeight: 18
   },
   navLabelActive: {
-    color: '#245CEA'
+    color: "#245DE5"
   },
   devClearance: {
     height: 65,
-    backgroundColor: '#FFFFFF'
+    backgroundColor: "#FFFFFF"
   },
   modalOverlay: {
     flex: 1,
@@ -2191,27 +2278,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20
   },
   modalPanel: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
     maxHeight: '83%',
-    overflow: 'hidden'
+    overflow: 'hidden',
+    width: "100%",
+    maxWidth: 620,
+    alignSelf: "center"
   },
   modalBody: {
-    padding: 21
+    padding: 24
   },
   modalEyebrow: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: '#2962D8'
   },
   modalTitle: {
-    color: '#1D2B44',
-    fontWeight: '900',
+    color: "#142D4E",
+    fontWeight: "800",
     fontSize: 23,
     marginTop: 8
   },
   modalHighlight: {
-    backgroundColor: '#EDF4FF',
+    backgroundColor: "#EDF3FF",
     borderRadius: 13,
     padding: 17,
     marginVertical: 18
@@ -2221,9 +2311,9 @@ const styles = StyleSheet.create({
     fontSize: 12
   },
   modalHighlightValue: {
-    color: '#245CEA',
+    color: "#245DE5",
     fontSize: 21,
-    fontWeight: '900',
+    fontWeight: "800",
     marginTop: 8
   },
   detailRow: {
@@ -2248,8 +2338,8 @@ const styles = StyleSheet.create({
   },
   noticeTitle: {
     fontSize: 14,
-    color: '#1D2B44',
-    fontWeight: '900',
+    color: "#142D4E",
+    fontWeight: "800",
     marginTop: 18
   },
   noticeText: {
@@ -2260,12 +2350,12 @@ const styles = StyleSheet.create({
   },
   modalFineprint: {
     marginTop: 15,
-    fontSize: 10,
+    fontSize: 12,
     lineHeight: 17,
     color: '#9AA4B4'
   },
   modalDone: {
-    backgroundColor: '#245CEA',
+    backgroundColor: "#245DE5",
     marginHorizontal: 20,
     marginBottom: 18,
     padding: 14,
@@ -2273,29 +2363,29 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   modalDoneText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontWeight: '800',
     fontSize: 15
   },
   chatRoot: {
     flex: 1,
-    backgroundColor: '#F6F8FD'
+    backgroundColor: "#F4F7FB"
   },
   chatHeader: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     padding: 17,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center'
   },
   chatTitle: {
-    color: '#1D2B44',
+    color: "#142D4E",
     fontSize: 18,
     fontWeight: '800'
   },
   chatInfo: {
     color: '#406BB1',
-    backgroundColor: '#EDF4FF',
+    backgroundColor: "#EDF3FF",
     fontSize: 12,
     padding: 12
   },
@@ -2306,13 +2396,13 @@ const styles = StyleSheet.create({
     maxWidth: '88%',
     alignSelf: 'flex-start',
     padding: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 15,
     marginBottom: 12
   },
   chatUserBubble: {
     alignSelf: 'flex-end',
-    backgroundColor: '#245CEA'
+    backgroundColor: "#245DE5"
   },
   chatBubbleText: {
     color: '#374459',
@@ -2320,7 +2410,7 @@ const styles = StyleSheet.create({
     lineHeight: 20
   },
   chatUserText: {
-    color: '#FFFFFF'
+    color: "#FFFFFF"
   },
   quickArea: {
     flexGrow: 0,
@@ -2340,7 +2430,7 @@ const styles = StyleSheet.create({
   chatInputRow: {
     flexDirection: 'row',
     gap: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     padding: 13,
     alignItems: 'center'
   },
@@ -2348,11 +2438,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F3F6FA',
     padding: 12,
-    borderRadius: 15,
-    fontSize: 14
+    borderRadius: 14,
+    fontSize: 14,
+    minHeight: 48
   },
   chatSend: {
-    backgroundColor: '#245CEA',
+    backgroundColor: "#245DE5",
     width: 42,
     height: 42,
     borderRadius: 13,
@@ -2361,13 +2452,16 @@ const styles = StyleSheet.create({
   },
   settingsHeader: {
     height: 66,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 17,
     borderBottomWidth: 1,
-    borderBottomColor: '#E9EDF4'
+    borderBottomColor: '#E9EDF4',
+    width: "100%",
+    maxWidth: 800,
+    alignSelf: "center"
   },
   settingsHeaderButton: {
     width: 40,
@@ -2377,20 +2471,27 @@ const styles = StyleSheet.create({
   },
   settingsHeaderTitle: {
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: "800",
     color: '#192844'
   },
   settingsScroll: {
     flex: 1,
-    backgroundColor: '#F4F6FB'
+    backgroundColor: "#F4F7FB"
   },
   settingsContent: {
-    paddingBottom: 30
+    paddingBottom: 28,
+    width: "100%",
+    maxWidth: 800,
+    alignSelf: "center",
+    paddingHorizontal: 16,
+    gap: 12
   },
   settingGroup: {
-    marginTop: 13,
-    backgroundColor: '#FFFFFF',
-    paddingTop: 18
+    marginTop: 0,
+    backgroundColor: "#FFFFFF",
+    paddingTop: 18,
+    borderRadius: 20,
+    overflow: "hidden"
   },
   settingGroupTitle: {
     fontSize: 14,
@@ -2400,17 +2501,17 @@ const styles = StyleSheet.create({
     marginBottom: 7
   },
   settingPanel: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     paddingBottom: 7
   },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingVertical: 17,
     minHeight: 69,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#EDF0F4'
+    borderBottomColor: "#E3EAF4"
   },
   settingIcon: {
     width: 33,
@@ -2431,27 +2532,19 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   settingSubtitle: {
-    fontSize: 11,
-    color: '#8996A8',
-    lineHeight: 17,
+    fontSize: 12,
+    color: "#5A6E89",
+    lineHeight: 21,
     marginTop: 4
   },
   settingValue: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#6F819D',
     marginRight: 7,
     maxWidth: 140
   },
   dangerText: {
-    color: '#C54444'
-  },
-  settingsFooter: {
-    marginTop: 20,
-    marginHorizontal: 22,
-    textAlign: 'center',
-    color: '#98A4B5',
-    fontSize: 11,
-    lineHeight: 18
+    color: "#C53D56"
   },
   noticeStrip: {
     flexDirection: 'row',
@@ -2459,7 +2552,7 @@ const styles = StyleSheet.create({
     gap: 9,
     paddingHorizontal: 13,
     paddingVertical: 11,
-    backgroundColor: '#EAF2FF',
+    backgroundColor: "#EDF3FF",
     borderRadius: 12,
     marginTop: 13
   },
@@ -2476,14 +2569,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22
   },
   pinModalCard: {
-    borderRadius: 22,
-    padding: 22,
-    backgroundColor: '#FFFFFF'
+    borderRadius: 24,
+    padding: 24,
+    backgroundColor: "#FFFFFF",
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center"
   },
   pinModalTitle: {
     fontSize: 20,
-    fontWeight: '900',
-    color: '#1D2B44'
+    fontWeight: "800",
+    color: "#142D4E"
   },
   pinModalDesc: {
     fontSize: 12,
@@ -2529,7 +2625,7 @@ const styles = StyleSheet.create({
   },
   pinSave: {
     flex: 1,
-    backgroundColor: '#245CEA',
+    backgroundColor: "#245DE5",
     borderRadius: 12,
     alignItems: 'center',
     paddingVertical: 14
@@ -2537,6 +2633,6 @@ const styles = StyleSheet.create({
   pinSaveText: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#FFFFFF'
+    color: "#FFFFFF"
   }
 });

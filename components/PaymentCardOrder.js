@@ -1,281 +1,145 @@
-import React, {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-
-import {
-  ActivityIndicator,
-  Image,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as Store from '../utils/demoStore';
-
 export const CARD_ORDER_KEY = 'solpay_payment_card_order_v1';
-
 export function validateCardOrder(raw) {
   if (raw === null) return [];
-
   const value = JSON.parse(raw);
-
-  if (
-    value?.version !== 1 ||
-    !Array.isArray(value.ids) ||
-    value.ids.length > 200 ||
-    value.ids.some(
-      id => typeof id !== 'string' || id.length > 100
-    )
-  ) {
+  if (value?.version !== 1 || !Array.isArray(value.ids) || value.ids.length > 200 || value.ids.some(id => typeof id !== 'string' || id.length > 100)) {
     throw Error('저장된 카드 순서 형식을 확인해주세요.');
   }
-
   return [...new Set(value.ids)];
 }
-
 export function orderCards(cards, ids) {
-  const rank = new Map(
-    ids.map((id, index) => [String(id), index])
-  );
-
-  return cards
-    .map((card, index) => ({ card, index }))
-    .sort(
-      (a, b) =>
-        (rank.get(String(a.card.id)) ?? Infinity) -
-          (rank.get(String(b.card.id)) ?? Infinity) ||
-        a.index - b.index
-    )
-    .map(row => row.card);
+  const rank = new Map(ids.map((id, index) => [String(id), index]));
+  return cards.map((card, index) => ({
+    card,
+    index
+  })).sort((a, b) => (rank.get(String(a.card.id)) ?? Infinity) - (rank.get(String(b.card.id)) ?? Infinity) || a.index - b.index).map(row => row.card);
 }
-
 export function moveCard(ids, index, direction) {
   const next = [...ids];
   const destination = index + direction;
-
   if (destination < 0 || destination >= next.length) {
     return next;
   }
-
-  [next[index], next[destination]] = [
-    next[destination],
-    next[index],
-  ];
-
+  [next[index], next[destination]] = [next[destination], next[index]];
   return next;
 }
-
 export async function persistCardOrder(ids) {
   const value = {
     version: 1,
-    ids: [...new Set(ids.map(String))],
+    ids: [...new Set(ids.map(String))]
   };
-
   validateCardOrder(JSON.stringify(value));
-
-  await Store.setItemAsync(
-    CARD_ORDER_KEY,
-    JSON.stringify(value)
-  );
-
+  await Store.setItemAsync(CARD_ORDER_KEY, JSON.stringify(value));
   return value.ids;
 }
-
-function CardThumb({ card }) {
+function CardThumb({
+  card
+}) {
   const [failed, setFailed] = useState(false);
-
   useEffect(() => {
     setFailed(false);
   }, [card.id, card.image]);
-
-  return (
-    <View style={s.thumb}>
-      {card.image && !failed ? (
-        <Image
-          source={
-            typeof card.image === 'string'
-              ? { uri: card.image }
-              : card.image
-          }
-          style={s.image}
-          resizeMode="contain"
-          accessibilityLabel={card.name + ' 카드 이미지'}
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <Text style={s.hint}>이미지 확인 필요</Text>
-      )}
-    </View>
-  );
+  return <View style={s.thumb}>
+      {card.image && !failed ? <Image source={typeof card.image === 'string' ? {
+      uri: card.image
+    } : card.image} style={s.image} resizeMode="contain" accessibilityLabel={card.name + ' 카드 이미지'} onError={() => setFailed(true)} /> : <Text style={s.hint}>이미지 확인 필요</Text>}
+    </View>;
 }
-
 export default function PaymentCardOrder({
   cards = [],
   selectedId,
-  onSelect,
+  onSelect
 }) {
   const [savedIds, setSavedIds] = useState([]);
   const [draftIds, setDraftIds] = useState([]);
-
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-
   const [readError, setReadError] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-
   const mounted = useRef(true);
   const lock = useRef(false);
   const revision = useRef(0);
-
-  const ordered = useMemo(
-    () => orderCards(cards, savedIds),
-    [cards, savedIds]
-  );
-
-  const draft = useMemo(
-    () => orderCards(cards, draftIds),
-    [cards, draftIds]
-  );
-
+  const ordered = useMemo(() => orderCards(cards, savedIds), [cards, savedIds]);
+  const draft = useMemo(() => orderCards(cards, draftIds), [cards, draftIds]);
   const load = async () => {
     const ticket = ++revision.current;
-
     setLoading(true);
     setReadError('');
-
     try {
-      const ids = validateCardOrder(
-        await Store.getItemAsync(CARD_ORDER_KEY)
-      );
-
-      if (
-        mounted.current &&
-        ticket === revision.current
-      ) {
+      const ids = validateCardOrder(await Store.getItemAsync(CARD_ORDER_KEY));
+      if (mounted.current && ticket === revision.current) {
         setSavedIds(ids);
       }
     } catch (problem) {
-      if (
-        mounted.current &&
-        ticket === revision.current
-      ) {
-        setReadError(
-          problem.message || '순서를 읽지 못했습니다.'
-        );
+      if (mounted.current && ticket === revision.current) {
+        setReadError(problem.message || '순서를 읽지 못했습니다.');
       }
     } finally {
-      if (
-        mounted.current &&
-        ticket === revision.current
-      ) {
+      if (mounted.current && ticket === revision.current) {
         setLoading(false);
       }
     }
   };
-
   useEffect(() => {
     mounted.current = true;
     load();
-
     return () => {
       mounted.current = false;
       revision.current++;
     };
   }, []);
-
   const begin = () => {
     if (loading || readError || lock.current) return;
-
-    setDraftIds(
-      ordered.map(card => String(card.id))
-    );
-
+    setDraftIds(ordered.map(card => String(card.id)));
     setError('');
     setNotice('');
     setEditing(true);
   };
-
   const cancel = () => {
     if (lock.current) return;
-
     setEditing(false);
     setDraftIds([]);
     setError('');
   };
-
   const move = (index, direction) => {
     if (lock.current) return;
-
-    setDraftIds(
-      moveCard(
-        draft.map(card => String(card.id)),
-        index,
-        direction
-      )
-    );
-
+    setDraftIds(moveCard(draft.map(card => String(card.id)), index, direction));
     setError('');
   };
-
   const save = async () => {
     if (lock.current) return;
-
     lock.current = true;
     setSaving(true);
     setError('');
-
     try {
-      const ids = await persistCardOrder(
-        draft.map(card => String(card.id))
-      );
-
+      const ids = await persistCardOrder(draft.map(card => String(card.id)));
       if (!mounted.current) return;
-
       setSavedIds(ids);
       setEditing(false);
-
-      setNotice(
-        '카드 순서를 저장했습니다. 결제 카드는 그대로 유지됩니다.'
-      );
+      setNotice('카드 순서를 저장했습니다. 결제 카드는 그대로 유지됩니다.');
     } catch (problem) {
       if (mounted.current) {
-        setError(
-          problem.message ||
-            '순서를 저장하지 못했습니다. 다시 시도해주세요.'
-        );
+        setError(problem.message || '순서를 저장하지 못했습니다. 다시 시도해주세요.');
       }
     } finally {
       lock.current = false;
-
       if (mounted.current) {
         setSaving(false);
       }
     }
   };
-
-  return (
-    <View style={s.box}>
+  return <View style={s.box}>
       <View style={s.header}>
         <Text style={s.heading}>
           내 카드 · {cards.length}장
         </Text>
 
-        <TouchableOpacity
-          accessibilityRole="button"
-          disabled={
-            loading || !!readError || !cards.length
-          }
-          style={s.edit}
-          onPress={begin}
-        >
+        <TouchableOpacity accessibilityRole="button" disabled={loading || !!readError || !cards.length} style={s.edit} onPress={begin}>
           <Text style={s.link}>수정</Text>
         </TouchableOpacity>
       </View>
@@ -284,44 +148,21 @@ export default function PaymentCardOrder({
         카드를 누르면 결제 카드가 바뀝니다. 수정에서 표시 순서를 바꿀 수 있습니다.
       </Text>
 
-      {loading && (
-        <ActivityIndicator color="#245DE5" />
-      )}
+      {loading && <ActivityIndicator color="#245DE5" />}
 
-      {!!readError && (
-        <View>
+      {!!readError && <View>
           <Text style={s.error}>{readError}</Text>
 
-          <TouchableOpacity
-            style={s.edit}
-            onPress={load}
-          >
+          <TouchableOpacity style={s.edit} onPress={load}>
             <Text style={s.link}>
               순서 다시 불러오기
             </Text>
           </TouchableOpacity>
-        </View>
-      )}
+        </View>}
 
-      {ordered.map((card, index) => (
-        <TouchableOpacity
-          key={card.id}
-          accessibilityRole="button"
-          accessibilityLabel={
-            index + 1 +
-            '번 ' +
-            card.name +
-            (card.id === selectedId ? ' 선택됨' : '')
-          }
-          accessibilityState={{
-            selected: card.id === selectedId,
-          }}
-          onPress={() => onSelect?.(card)}
-          style={[
-            s.item,
-            card.id === selectedId && s.selected,
-          ]}
-        >
+      {ordered.map((card, index) => <TouchableOpacity key={card.id} accessibilityRole="button" accessibilityLabel={index + 1 + '번 ' + card.name + (card.id === selectedId ? ' 선택됨' : '')} accessibilityState={{
+      selected: card.id === selectedId
+    }} onPress={() => onSelect?.(card)} style={[s.item, card.id === selectedId && s.selected]}>
           <Text style={s.number}>{index + 1}</Text>
 
           <CardThumb card={card} />
@@ -330,30 +171,17 @@ export default function PaymentCardOrder({
             <Text style={s.name}>{card.name}</Text>
             <Text style={s.hint}>{card.issuer}</Text>
 
-            {card.id === selectedId && (
-              <Text style={s.link}>
+            {card.id === selectedId && <Text style={s.link}>
                 ✓ 현재 결제 카드
-              </Text>
-            )}
+              </Text>}
           </View>
-        </TouchableOpacity>
-      ))}
+        </TouchableOpacity>)}
 
-      {!!notice && (
-        <Text
-          style={s.hint}
-          accessibilityLiveRegion="polite"
-        >
+      {!!notice && <Text style={s.hint} accessibilityLiveRegion="polite">
           {notice}
-        </Text>
-      )}
+        </Text>}
 
-      <Modal
-        visible={editing}
-        transparent
-        animationType="slide"
-        onRequestClose={cancel}
-      >
+      <Modal visible={editing} transparent animationType="slide" onRequestClose={cancel}>
         <View style={s.overlay}>
           <View style={s.sheet}>
             <View style={s.modalHeader}>
@@ -366,16 +194,8 @@ export default function PaymentCardOrder({
               </Text>
             </View>
 
-            <ScrollView
-              style={s.scroll}
-              contentContainerStyle={s.list}
-              keyboardShouldPersistTaps="handled"
-            >
-              {draft.map((card, index) => (
-                <View
-                  key={card.id}
-                  style={s.draftItem}
-                >
+            <ScrollView style={s.scroll} contentContainerStyle={s.list} keyboardShouldPersistTaps="handled">
+              {draft.map((card, index) => <View key={card.id} style={s.draftItem}>
                   <View style={s.row}>
                     <Text style={s.number}>
                       {index + 1}
@@ -388,266 +208,215 @@ export default function PaymentCardOrder({
                         {card.name}
                       </Text>
 
-                      {card.id === selectedId && (
-                        <Text style={s.link}>
+                      {card.id === selectedId && <Text style={s.link}>
                           현재 결제 카드
-                        </Text>
-                      )}
+                        </Text>}
                     </View>
                   </View>
 
                   <View style={s.actions}>
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        card.name + ' 위로 이동'
-                      }
-                      disabled={saving || index === 0}
-                      onPress={() => move(index, -1)}
-                      style={[
-                        s.arrow,
-                        (saving || index === 0) &&
-                          s.disabled,
-                      ]}
-                    >
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={card.name + ' 위로 이동'} disabled={saving || index === 0} onPress={() => move(index, -1)} style={[s.arrow, (saving || index === 0) && s.disabled]}>
                       <Text style={s.link}>↑ 위로</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        card.name + ' 아래로 이동'
-                      }
-                      disabled={
-                        saving ||
-                        index === draft.length - 1
-                      }
-                      onPress={() => move(index, 1)}
-                      style={[
-                        s.arrow,
-                        (saving ||
-                          index === draft.length - 1) &&
-                          s.disabled,
-                      ]}
-                    >
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={card.name + ' 아래로 이동'} disabled={saving || index === draft.length - 1} onPress={() => move(index, 1)} style={[s.arrow, (saving || index === draft.length - 1) && s.disabled]}>
                       <Text style={s.link}>
                         ↓ 아래로
                       </Text>
                     </TouchableOpacity>
                   </View>
-                </View>
-              ))}
+                </View>)}
             </ScrollView>
 
             <View style={s.footer}>
-              {!!error && (
-                <Text
-                  style={s.error}
-                  accessibilityRole="alert"
-                >
+              {!!error && <Text style={s.error} accessibilityRole="alert">
                   {error}
-                </Text>
-              )}
+                </Text>}
 
               <View style={s.footerRow}>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  disabled={saving}
-                  onPress={cancel}
-                  style={[
-                    s.cancel,
-                    saving && s.disabled,
-                  ]}
-                >
+                <TouchableOpacity accessibilityRole="button" disabled={saving} onPress={cancel} style={[s.cancel, saving && s.disabled]}>
                   <Text style={s.link}>취소</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  disabled={saving}
-                  onPress={save}
-                  style={[
-                    s.save,
-                    saving && s.disabled,
-                  ]}
-                >
-                  {saving ? (
-                    <ActivityIndicator color="#FFF" />
-                  ) : (
-                    <Text style={s.white}>
+                <TouchableOpacity accessibilityRole="button" disabled={saving} onPress={save} style={[s.save, saving && s.disabled]}>
+                  {saving ? <ActivityIndicator color="#FFF" /> : <Text style={s.white}>
                       순서 저장
-                    </Text>
-                  )}
+                    </Text>}
                 </TouchableOpacity>
               </View>
             </View>
           </View>
         </View>
       </Modal>
-    </View>
-  );
+    </View>;
 }
-
 const s = StyleSheet.create({
   box: {
-    backgroundColor: '#FFF',
-    borderRadius: 20,
-    padding: 18,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    padding: 20,
     gap: 12,
     borderWidth: 1,
-    borderColor: '#E7EDF7',
+    borderColor: "#E3EAF4"
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'center'
   },
   heading: {
     fontSize: 17,
     fontWeight: '800',
-    color: '#233E63',
+    color: "#142D4E"
   },
   edit: {
     paddingVertical: 10,
     paddingHorizontal: 14,
-    backgroundColor: '#EDF3FF',
+    backgroundColor: "#EDF3FF",
     borderRadius: 10,
+    minHeight: 44
   },
   link: {
-    color: '#245DE5',
-    fontSize: 12,
-    fontWeight: '700',
+    color: "#245DE5",
+    fontSize: 13,
+    fontWeight: "700"
   },
   hint: {
-    fontSize: 12,
-    lineHeight: 20,
-    color: '#8391A7',
+    fontSize: 13,
+    lineHeight: 22,
+    color: "#5A6E89"
   },
   item: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    padding: 12,
+    padding: 14,
     borderWidth: 1,
-    borderColor: '#E6EDF7',
-    borderRadius: 14,
+    borderColor: "#E3EAF4",
+    borderRadius: 16
   },
   selected: {
-    borderColor: '#245DE5',
-    backgroundColor: '#F0F5FF',
+    borderColor: "#245DE5",
+    backgroundColor: "#EDF3FF"
   },
   number: {
     width: 20,
     fontSize: 13,
     fontWeight: '800',
-    color: '#91A0B8',
+    color: '#91A0B8'
   },
   thumb: {
     width: 72,
     height: 60,
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'center'
   },
   image: {
     width: '100%',
-    height: '100%',
+    height: '100%'
   },
   copy: {
     flex: 1,
     minWidth: 0,
-    gap: 5,
+    gap: 5
   },
   name: {
     fontSize: 14,
     lineHeight: 22,
     fontWeight: '700',
-    color: '#2C466D',
+    color: '#2C466D'
   },
   overlay: {
     flex: 1,
     backgroundColor: '#0007',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-end'
   },
   sheet: {
     height: '86%',
-    backgroundColor: '#F5F7FC',
+    backgroundColor: "#F4F7FB",
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
-    overflow: 'hidden',
+    overflow: 'hidden'
   },
   modalHeader: {
-    padding: 20,
+    padding: 22,
     gap: 8,
-    backgroundColor: '#FFF',
+    backgroundColor: "#FFFFFF"
   },
   scroll: {
     flex: 1,
-    minHeight: 0,
+    minHeight: 0
   },
   list: {
-    padding: 16,
-    gap: 12,
+    padding: 18,
+    gap: 14
   },
   draftItem: {
-    backgroundColor: '#FFF',
-    borderRadius: 14,
-    padding: 14,
-    gap: 12,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 16,
+    gap: 12
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 10
   },
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 10,
+    gap: 10
   },
   arrow: {
     paddingVertical: 12,
     paddingHorizontal: 18,
-    backgroundColor: '#EDF3FF',
+    backgroundColor: "#EDF3FF",
     borderRadius: 10,
+    minHeight: 44
   },
   footer: {
     flexShrink: 0,
     padding: 18,
-    paddingBottom: 32,
-    backgroundColor: '#FFF',
+    paddingBottom: 30,
+    backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
-    borderColor: '#DEE6F1',
-    gap: 10,
+    borderColor: "#E3EAF4",
+    gap: 10
   },
   footerRow: {
     flexDirection: 'row',
     gap: 10,
+    width: "100%",
+    maxWidth: 680,
+    alignSelf: "center"
   },
   cancel: {
     flex: 1,
     padding: 16,
-    backgroundColor: '#EDF3FF',
+    backgroundColor: "#EDF3FF",
     alignItems: 'center',
     borderRadius: 12,
+    minHeight: 44
   },
   save: {
     flex: 2,
     padding: 16,
-    backgroundColor: '#245DE5',
+    backgroundColor: "#245DE5",
     alignItems: 'center',
     borderRadius: 12,
+    minHeight: 44
   },
   white: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '800',
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700"
   },
   error: {
-    color: '#B93751',
+    color: "#C53D56",
     fontSize: 13,
-    lineHeight: 22,
+    lineHeight: 22
   },
   disabled: {
-    opacity: 0.35,
-  },
+    opacity: 0.35
+  }
 });

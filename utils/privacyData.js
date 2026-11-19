@@ -2,11 +2,15 @@
 import {clearMyDataMemory, waitForMyDataWrites} from './myDataService';
 import { Platform } from 'react-native';
 import * as Store from './demoStore';
+import { waitForEventWrites } from './routineData';
 
 export const RESET_KEY = 'solpay_demo_reset_pending_v1';
 
 const PERSONAL = [
   ['solpay_recommendation_hide_until_v1', '추천 팝업 숨김 설정'],
+  ['solpay_recommendation_last_shown_v1', '추천 팝업 표시 기록'],
+  ['solpay_promotion_hide_until_v1', '프로모션 팝업 숨김 설정'],
+  ['solpay_promotion_last_shown_v1', '프로모션 팝업 표시 기록'],
   ['solpay_payment_card_order_v1', '결제 카드 표시 순서'],
   ['solpay_mydata_import_v1', '마이데이터 불러오기'],
   ['solpay_routine_profile_v1', '평소 일과'],
@@ -18,8 +22,10 @@ const PERSONAL = [
 ];
 
 const ACCOUNT = [
+  ['solpay_demo_account_v1', '가입 정보'],
   ['solpay_demo_session_v1', '로그인 상태'],
-  ['solpay_demo_consent_v1', '서비스 동의'],
+  ['solpay_demo_full_logout_v1', '로그아웃 상태'],
+  ['solpay_demo_consent_v1', '서비스 안내 및 알림 선택'],
   ['solpay_demo_onboarding_v1', '가입 진행 상태'],
   ['solpay_demo_pin_v1', '간편비밀번호'],
   ['solpay_demo_pin_attempts_v1', 'PIN 시도 기록'],
@@ -63,6 +69,7 @@ export async function deleteDemoData(scope) {
 
   const failed = [];
   await waitForMyDataWrites();
+  await waitForEventWrites();
   const targets =
     scope === 'account' ? [...PERSONAL, ...ACCOUNT] : PERSONAL;
 
