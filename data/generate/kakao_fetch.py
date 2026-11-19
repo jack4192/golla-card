@@ -1,6 +1,7 @@
 """카카오 로컬 API로 구역별 실제 가맹점 위치를 받아 캐시에 저장한다.
 
-실행:  uv run python -m generate.kakao_fetch
+실행:  uv run python -m generate.kakao_fetch                 (전부 새로 받기)
+       uv run python -m generate.kakao_fetch --kinds SALAD,DEPT  (이 종류만 다시 받아 캐시에 합치기)
 필요:  data/.env 에 KAKAO_REST_API_KEY=...  (Kakao Developers에서 직접 발급, 깃에 올리지 않음)
 결과:  data/cache/kakao_places.csv
        카카오 이용약관에서 저장·재배포 조건을 확인하기 전까지 깃에 올리지 않는다.
@@ -9,6 +10,7 @@
 merchants 단계가 시드 고정 난수로 한다. 반경을 넓힌 검색은 한 가게가 여러 동네 후보에 들어갈 수 있다.
 """
 
+import argparse
 import csv
 import json
 import os
@@ -47,7 +49,7 @@ def _get(path: str, params: dict, key: str) -> dict:
 def _search(source: dict, zone: dict, key: str) -> list[dict]:
     base = {
         "x": zone["lng"], "y": zone["lat"], "radius": source.get("radius_m", zone["radius_m"]),
-        "size": PAGE_SIZE, "sort": "distance",
+        "size": PAGE_SIZE, "sort": source.get("sort", "distance"),
     }
     if "group" in source:
         path, base["category_group_code"] = "category", source["group"]
@@ -76,6 +78,9 @@ def _keep(doc: dict, source: dict) -> bool:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--kinds", help="쉼표로 구분한 종류만 받아 기존 캐시에 합친다")
+    args = parser.parse_args()
     load_env()
     key = os.environ.get("KAKAO_REST_API_KEY")
     if not key:
@@ -83,6 +88,17 @@ def main() -> None:
 
     zones = load_config("zones")["zones"]
     sources = load_config("places")["kakao_sources"]
+    out = CACHE_DIR / "kakao_places.csv"
+    kept = []
+    if args.kinds:
+        only = set(args.kinds.split(","))
+        unknown = only - set(sources)
+        if unknown:
+            sys.exit(f"places.yml 에 없는 종류: {sorted(unknown)}")
+        sources = {k: v for k, v in sources.items() if k in only}
+        if out.exists():
+            with open(out, encoding="utf-8") as f:
+                kept = [r for r in csv.DictReader(f) if r["category_code"] not in only]
 
     rows, seen = [], set()
     for zone in zones:
@@ -110,12 +126,11 @@ def main() -> None:
             print(f"{zone['code']:<14} {category_code:<9} {len(rows) - n_before:>3}건")
 
     CACHE_DIR.mkdir(exist_ok=True)
-    out = CACHE_DIR / "kakao_places.csv"
     with open(out, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=FIELDS)
         w.writeheader()
-        w.writerows(rows)
-    print(f"\n{len(rows)}건 저장 → {out}")
+        w.writerows(kept + rows)
+    print(f"\n새로 받은 {len(rows)}건 + 기존 {len(kept)}건 저장 → {out}")
 
 
 if __name__ == "__main__":

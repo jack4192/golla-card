@@ -2,32 +2,122 @@
 # 오프라인 가맹점은 카카오 로컬 API로 구역마다 실제 위치를 받아 오고(generate/kakao_fetch.py),
 # 온라인·교통·자동이체 가맹점은 아래 online 목록으로 만든다.
 # 평점은 카카오가 주지 않으므로 생성기가 가상으로 붙인다.
+#
+# 종류(kind)와 업종(category)
+#   생성기는 '종류' 단위로 가맹점을 모으고 결제 시간대·금액을 정한다 (카페와 제과는 금액 분포가 달라서 종류를 나눈다).
+#   결제에 찍히는 업종은 실제 53개 업종 코드다 (config/categories.yml). 종류 → 업종은 kinds 표로 정한다.
+#   브랜드가 brand_category 에 있으면 그 업종을 쓴다 (패스트푸드로 모은 써브웨이 → GREEN_FOOD).
 
-# 구역마다 업종별로 뽑을 수 (합계 60)
+kinds:
+  # 업종은 최종 카드 DB의 58개 코드 (2026-11-15)
+  CAFE:       CAFE
+  BAKERY:     BAKERY
+  CVS:        CONVENIENCE
+  REST:       RESTAURANT
+  FASTFOOD:   FAST_FOOD
+  SALAD:      HEALTHY_FOOD
+  MART:       MART
+  SUPER:      SUPERMARKET
+  FUEL:       FUEL
+  MOVIE:      MOVIE
+  BOOK:       BOOKSTORE
+  HNB:        HNB              # 다이소는 새 DB 브랜드 업종(GENERAL_GOODS)을 따른다
+  MEDICAL:    HOSPITAL         # 카카오 분류에 '약국'이 있으면 PHARMACY (category_by_kakao)
+  EDU:        EDUCATION
+  DEPT:       DEPARTMENT_STORE
+  OUTLET:     OUTLET
+  STUDY:      STUDY_ROOM
+  STATIONERY: STATIONERY
+  PHOTO:      PHOTO_BOOTH
+  HAIR:       BEAUTY_SALON
+  FITNESS:    FITNESS
+  PARKING:    PARKING
+  OPTICAL:    EYEWEAR
+  THEMEPARK:  AMUSEMENT_PARK
+  VET:        PET
+  GOLFRANGE:  GOLF
+  GOLFCLUB:   GOLF
+  CARFIX:     OTHER            # 새 DB에 차량 정비 업종이 없어 기타로 둔다
+  # 위치가 없는 종류
+  DELIVERY:   DELIVERY
+  ONLINE:     ONLINE_SHOPPING
+  HOMESHOP:   HOME_SHOPPING
+  EBOOK:      BOOKSTORE
+  APPSTORE:   APP_STORE
+  TAXI:       TAXI
+  TRANSIT:    TRANSIT
+  TELECOM:    TELECOM
+  UTILITY:    UTILITY
+  OTT:        DIGITAL_SUBSCRIPTION
+  MEMBERSHIP: MEMBERSHIP
+  MUSIC:      DIGITAL_SUBSCRIPTION
+  EVCHARGE:   EV_CHARGING
+  INTERCITY:  INTERCITY_TRANSIT
+  EASYPAY:    MOBILE_PAY
+  TICKET:     CULTURE_TICKET
+  EBOOKAPP:   BOOKSTORE
+  FRESH:      ONLINE_GROCERY
+
+# 카카오 분류 이름으로 업종을 나눈다 (종류 → {분류에 들어 있는 말: 업종})
+category_by_kakao:
+  MEDICAL: { 약국: PHARMACY }
+
+# 이름이 브랜드 표기로 시작하지만 그 브랜드가 아닌 가게 (홈플러스 익스프레스는 홈플러스 대형마트 혜택 대상이 아님)
+brand_exclude: [홈플러스 익스프레스]
+# 이름에 브랜드가 들어 있어도 업종을 바꾸지 않는 종류 (현대백화점 주차장은 백화점 결제가 아니다)
+keep_category_kinds: [PARKING]
+
+# 구역마다 종류별로 뽑을 수
 per_zone_quota:
   CAFE: 12
+  BAKERY: 3
   CVS: 8
   REST: 13
   FASTFOOD: 4
-  BAKERY: 3
+  SALAD: 1
   MART: 2
   SUPER: 3
   FUEL: 2
   MOVIE: 1
   BOOK: 1
-  BEAUTY: 2
-  APPAREL: 2
+  HNB: 3
   MEDICAL: 5
   EDU: 2
+  DEPT: 1
+  OUTLET: 1
+  STUDY: 2
+  STATIONERY: 1
+  PHOTO: 1
+  HAIR: 2
+  FITNESS: 2
+  PARKING: 2
+  OPTICAL: 1
+  THEMEPARK: 1
+  VET: 2
+  GOLFRANGE: 1
+  GOLFCLUB: 1
+  CARFIX: 1
+
+# 최종 카드 DB 혜택 대상인데 기존 수집에 없던 브랜드 (2026-11-15). 구역마다 이만큼 더 뽑아 원래 종류에 합친다.
+extra_zone_quota:
+  XCAFE: 2
+  XBAKERY: 1
+  XFASTFOOD: 1
+  XFUEL: 1
+  XMART: 1
+  XREST: 1
+  XDEPT: 1
+kind_fold: { XCAFE: CAFE, XBAKERY: BAKERY, XFASTFOOD: FASTFOOD, XFUEL: FUEL, XMART: MART, XREST: REST, XDEPT: DEPT }
 
 # 카카오 검색 방법
 #   group    카테고리 그룹 코드로 검색 (CE7 카페, CS2 편의점, FD6 음식점, MT1 대형마트,
-#            OL7 주유소, HP8 병원, PM9 약국, AC5 학원)
+#            OL7 주유소, HP8 병원, PM9 약국, AC5 학원, PK6 주차장)
 #   keyword  키워드로 검색. 결과의 place_name에 키워드가 들어 있는 것만 남긴다.
 #   include / exclude  category_name에 이 문자열이 있으면 남기거나 뺀다.
+#   sort      accuracy 면 정확도순 (기본은 거리순). 안쪽 매장이 많은 백화점·아울렛·테마파크에 쓴다.
 #   radius_m  이 검색만 반경을 따로 쓴다. 대형마트·주유·영화처럼 일부러 찾아가는 업종은 넓게 잡는다.
 # 음식점 카테고리 검색은 가까운 45곳까지만 주고 대부분 한식이라, 패스트푸드·제과는 브랜드 이름으로 따로 찾는다.
-# 한 가게가 여러 업종 검색에 잡히면 위에 먼저 적힌 업종으로 본다.
+# 한 가게가 여러 종류 검색에 잡히면 위에 먼저 적힌 종류로 본다.
 kakao_sources:
   CAFE:     [ { group: CE7, exclude: ["제과,베이커리", "테마카페"] } ]
   CVS:      [ { group: CS2 } ]
@@ -39,6 +129,9 @@ kakao_sources:
     - { keyword: 맘스터치 }
     - { keyword: KFC }
     - { keyword: 서브웨이 }
+  SALAD:
+    - { keyword: 샐러디, radius_m: 1000 }
+    - { keyword: 포케올데이, radius_m: 1000 }
   BAKERY:
     - { group: FD6, include: ["제과,베이커리"] }
     - { keyword: 파리바게뜨 }
@@ -53,40 +146,138 @@ kakao_sources:
     - { keyword: 홈플러스 익스프레스, radius_m: 1000 }
     - { keyword: 식자재마트, radius_m: 1000 }
   FUEL:     [ { group: OL7, include: ["주유소"], radius_m: 2000 } ]
-  MOVIE:    [ { keyword: CGV, radius_m: 2000 }, { keyword: 메가박스, radius_m: 2000 }, { keyword: 롯데시네마, radius_m: 2000 } ]
-  BOOK:     [ { keyword: 교보문고, radius_m: 2000 }, { keyword: 영풍문고, radius_m: 2000 }, { keyword: 알라딘, radius_m: 2000 } ]
-  BEAUTY:   [ { keyword: 올리브영, radius_m: 2000 } ]
-  APPAREL:
-    - { keyword: 유니클로, radius_m: 2000 }
-    - { keyword: 탑텐, radius_m: 2000 }
-    - { keyword: 스파오, radius_m: 2000 }
-    - { keyword: 무신사 스탠다드, radius_m: 2000 }
+  MOVIE:
+    - { keyword: CGV, include: ["영화관"], radius_m: 2000 }
+    - { keyword: 메가박스, include: ["영화관"], radius_m: 2000 }
+    - { keyword: 롯데시네마, include: ["영화관"], radius_m: 2000 }
+  BOOK:
+    - { keyword: 교보문고, include: ["서점"], radius_m: 2000 }
+    - { keyword: 영풍문고, include: ["서점"], radius_m: 2000 }
+    - { keyword: 알라딘, include: ["서점"], radius_m: 2000 }
+  HNB:      [ { keyword: 올리브영, radius_m: 2000 }, { keyword: 다이소, radius_m: 2000 } ]
   MEDICAL:  [ { group: HP8 }, { group: PM9 } ]
   EDU:      [ { group: AC5 } ]
+  # 백화점·아울렛은 브랜드명으로 찾으면 안쪽 매장이 45건 한도를 채워서 지점명으로 찾는다
+  DEPT:
+    - { keyword: 현대백화점 판교점, include: ["백화점"], radius_m: 5000, sort: accuracy }
+    - { keyword: 현대백화점 신촌점, include: ["백화점"], radius_m: 5000, sort: accuracy }
+    - { keyword: 현대백화점 압구정본점, include: ["백화점"], radius_m: 5000, sort: accuracy }
+    - { keyword: 현대백화점 무역센터점, include: ["백화점"], radius_m: 5000, sort: accuracy }
+    - { keyword: 현대백화점 디큐브시티, include: ["백화점"], radius_m: 5000, sort: accuracy }
+    - { keyword: 롯데백화점 강남점, include: ["백화점"], radius_m: 5000, sort: accuracy }
+    - { keyword: 롯데백화점 관악점, include: ["백화점"], radius_m: 5000, sort: accuracy }
+    - { keyword: 롯데백화점 잠실점, include: ["백화점"], radius_m: 5000, sort: accuracy }
+    - { keyword: 신세계백화점 강남점, include: ["백화점"], radius_m: 5000, sort: accuracy }
+    - { keyword: 신세계백화점 타임스퀘어점, include: ["백화점"], radius_m: 5000, sort: accuracy }
+    - { keyword: 갤러리아 명품관, include: ["백화점"], radius_m: 5000, sort: accuracy }
+  OUTLET:
+    - { keyword: 마리오아울렛, include: ["상설할인매장", "아울렛"], radius_m: 6000, sort: accuracy }
+    - { keyword: 현대시티아울렛, include: ["상설할인매장", "아울렛"], radius_m: 6000, sort: accuracy }
+    - { keyword: W몰, include: ["상설할인매장", "아울렛"], radius_m: 6000, sort: accuracy }
+    - { keyword: 뉴코아아울렛, include: ["상설할인매장", "아울렛"], radius_m: 6000, sort: accuracy }
+    - { keyword: 2001아울렛, include: ["상설할인매장", "아울렛"], radius_m: 6000, sort: accuracy }
+    - { keyword: 롯데아울렛, include: ["상설할인매장", "아울렛"], radius_m: 6000, sort: accuracy }
+  STUDY:
+    - { keyword: 스터디카페 }
+    - { keyword: 독서실 }
+  STATIONERY:
+    - { keyword: 문구, include: ["문구"] }
+    - { keyword: 모닝글로리, include: ["문구"] }
+  PHOTO:
+    - { keyword: 인생네컷 }
+    - { keyword: 포토이즘 }
+    - { keyword: 하루필름 }
+    - { keyword: 포토그레이 }
+  HAIR:     [ { keyword: 미용실, include: ["미용"] }, { keyword: 헤어, include: ["미용"] } ]
+  FITNESS:
+    - { keyword: 헬스, include: ["스포츠"] }
+    - { keyword: 피트니스, include: ["스포츠"] }
+    - { keyword: 필라테스, include: ["스포츠"] }
+  PARKING:  [ { group: PK6 } ]
+  OPTICAL:  [ { keyword: 안경, include: ["안경"] } ]
+  THEMEPARK:
+    - { keyword: 롯데월드 어드벤처, include: ["테마파크"], exclude: ["테마파크시설"], radius_m: 20000, sort: accuracy }
+    - { keyword: 서울랜드, include: ["테마파크"], exclude: ["테마파크시설"], radius_m: 20000, sort: accuracy }
+    - { keyword: 에버랜드, include: ["테마파크"], exclude: ["테마파크시설"], radius_m: 20000, sort: accuracy }
+
+  VET:
+    - { keyword: 동물병원, include: ["동물병원"] }
+  GOLFRANGE:
+    - { keyword: 골프연습장, include: ["골프"], radius_m: 2000 }
+    - { keyword: 스크린골프, include: ["골프"] }
+  GOLFCLUB:
+    - { keyword: 컨트리클럽, include: ["골프장"], radius_m: 20000, sort: accuracy }
+    - { keyword: CC, include: ["골프장"], radius_m: 20000, sort: accuracy }
+  CARFIX:
+    - { keyword: 스피드메이트, include: ["정비"], radius_m: 3000 }
+    - { keyword: 자동차정비, include: ["정비"], radius_m: 2000 }
+  # 최종 카드 DB 혜택 대상 브랜드 추가 수집 (2026-11-15)
+  XCAFE:
+    - { keyword: 폴바셋, radius_m: 3000 }
+    - { keyword: 탐앤탐스, radius_m: 3000 }
+    - { keyword: 엔제리너스, radius_m: 3000 }
+    - { keyword: 카페베네, radius_m: 3000 }
+  XBAKERY:
+    - { keyword: 던킨, radius_m: 3000 }
+    - { keyword: 배스킨라빈스, radius_m: 2000 }
+    - { keyword: 파리크라상, radius_m: 5000 }
+  XFASTFOOD:
+    - { keyword: 쉐이크쉑, radius_m: 6000 }
+    - { keyword: 파이브가이즈, radius_m: 8000 }
+  XFUEL:
+    - { keyword: S-OIL, include: ["주유소"], radius_m: 3000 }
+    - { keyword: 알뜰주유소, include: ["주유소"], radius_m: 4000 }
+  XMART:
+    - { keyword: 트레이더스, include: ["대형마트", "창고형"], radius_m: 10000, sort: accuracy }
+  XREST:
+    - { keyword: 빕스, radius_m: 5000 }
+    - { keyword: TGIF, radius_m: 8000 }
+  XDEPT:
+    - { keyword: AK플라자, include: ["백화점"], radius_m: 15000, sort: accuracy }
 
 # 이름 앞부분이 이 목록과 맞으면 브랜드와 지점을 나눈다. (스타벅스 강남R점 → 스타벅스 / 강남R점)
-# 목록에 없는 가게는 이름 전체를 브랜드로 본다.
+# 목록에 없는 가게는 이름 전체를 브랜드로 본다. 혜택 계산용 브랜드 코드는 따로 실제 브랜드 별칭 표로 붙인다.
 known_brands:
-  CAFE: [스타벅스, 투썸플레이스, 이디야커피, 메가MGC커피, 컴포즈커피, 빽다방, 할리스, 폴바셋, 커피빈]
+  CAFE: [스타벅스, 투썸플레이스, 이디야커피, 메가MGC커피, 컴포즈커피, 빽다방, 할리스, 폴바셋, 커피빈, 탐앤탐스, 엔제리너스, 카페베네, 매머드익스프레스, 매머드커피]
   CVS: [CU, GS25, 세븐일레븐, 이마트24]
-  FASTFOOD: [맥도날드, 버거킹, 롯데리아, 맘스터치, KFC, 서브웨이]
-  BAKERY: [파리바게뜨, 뚜레쥬르]
-  MART: [이마트, 홈플러스, 롯데마트]
+  FASTFOOD: [맥도날드, 버거킹, 롯데리아, 맘스터치, KFC, 서브웨이, 쉐이크쉑, 파이브가이즈]
+  SALAD: [샐러디, 포케올데이]
+  BAKERY: [파리바게뜨, 뚜레쥬르, 던킨, 배스킨라빈스, 파리크라상]
+  MART: [이마트 트레이더스, 트레이더스 홀세일 클럽, 이마트, 홈플러스, 롯데마트]
   SUPER: [GS더프레시, 롯데슈퍼, 이마트에브리데이, 홈플러스 익스프레스, 홈플러스익스프레스]
   MOVIE: [CGV, 메가박스, 롯데시네마]
   BOOK: [교보문고, 영풍문고, 알라딘]
-  BEAUTY: [올리브영]
-  APPAREL: [유니클로, 탑텐, 스파오, 무신사 스탠다드]
+  HNB: [올리브영, 다이소]
+  DEPT: [현대백화점, 신세계백화점, 롯데백화점, 갤러리아, AK플라자]
+  OUTLET: [마리오아울렛, 현대시티아울렛, W몰, 뉴코아아울렛, 2001아울렛, 롯데아울렛]
+  PHOTO: [인생네컷, 포토이즘, 하루필름, 포토그레이]
+  THEMEPARK: [롯데월드, 서울랜드, 에버랜드]
 
-# 위치가 없는 가맹점
+# 위치가 없는 가맹점 (종류별)
 online:
-  DELIVERY: [배달의민족, 쿠팡이츠, 요기요]
-  ONLINE:   [쿠팡, 네이버쇼핑, 11번가, G마켓, SSG닷컴, GS샵, CJ온스타일]
-  TAXI:     [일반 택시, 카카오T]
-  TRANSIT:  [수도권 지하철, 서울 시내버스, 경기 버스]
-  TELECOM:  [SKT, KT, LG U+]
-  SUBSCR:   [넷플릭스, 유튜브 프리미엄, 티빙, 쿠팡 와우]
-  UTILITY:  [한국전력공사, 도시가스, 아파트 관리비]
+  DELIVERY:   [배달의민족, 쿠팡이츠, 요기요, 땡겨요]
+  ONLINE:     [쿠팡, 네이버플러스스토어, 11번가, G마켓, SSG닷컴, 무신사, 29CM, 롯데ON, 에이블리, 옥션, 지그재그]
+  HOMESHOP:   [GS샵, CJ온스타일, 롯데홈쇼핑, 현대홈쇼핑, NS홈쇼핑]
+  EBOOK:      [YES24, 알라딘 인터넷서점, 교보문고 인터넷서점]
+  APPSTORE:   [구글플레이, 애플 앱스토어]
+  TAXI:       [일반 택시, 카카오T 택시, UT]
+  TRANSIT:    [수도권 지하철, 서울 시내버스, 경기 버스]
+  TELECOM:    [SKT, KT, LG U+, Liiv M]
+  OTT:        [넷플릭스, 유튜브프리미엄, 티빙, 디즈니+, 웨이브, ChatGPT, Claude]
+  MEMBERSHIP: [쿠팡와우, 네이버플러스 멤버십, 배민클럽]
+  MUSIC:      [멜론, 밀리의서재, 스포티파이, FLO]
+  UTILITY:    [한국전력공사, 도시가스, 아파트 관리비]
+  EVCHARGE:   [환경부 전기차 충전소, 차지비, 에버온, SK일렉링크]
+  INTERCITY:  [코레일 KTX, SRT, 고속버스 티머니]
+  EASYPAY:    [네이버페이, 카카오페이, 쿠페이, SSG페이]
+  TICKET:     [인터파크티켓, 멜론티켓]
+  EBOOKAPP:   [리디북스, 교보eBook]
+  FRESH:      [컬리, 오아시스마켓]
+
+# 배달앱·쇼핑몰 점유율 (%, 공개 보도 기반 대략치·가정값, 2026-11-16 결정). 여기 없는 종류는 균등하게 고른다.
+online_share:
+  DELIVERY: { 배달의민족: 58, 쿠팡이츠: 30, 요기요: 9, 땡겨요: 3 }
+  ONLINE:   { 쿠팡: 37, 네이버플러스스토어: 30, 11번가: 7, G마켓: 6, 무신사: 5, SSG닷컴: 4, 옥션: 3, 에이블리: 3, 지그재그: 2, 29CM: 2, 롯데ON: 1 }
 
 # 홈쇼핑 가맹점. 일반 온라인 결제에서는 뽑지 않고, 유형의 home_shopping_share 만큼만 쓴다.
-home_shopping: [GS샵, CJ온스타일]
+home_shopping: [GS샵, CJ온스타일, 롯데홈쇼핑, 현대홈쇼핑, NS홈쇼핑]

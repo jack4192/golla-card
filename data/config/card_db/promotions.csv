@@ -1,0 +1,6 @@
+﻿promotion_id,card_id,issuer,merchant_id,promo_name,category,merchant_name,value_type,value,max_amount,start_date,end_date
+1,,신한,,신한카드 스타벅스 11월 10% 추가 할인,CAFE,스타벅스,RATE,10,2000,2026-11-01,2026-11-30
+2,,KB국민,,KB국민 편의점 11월 500원 즉시할인,CONVENIENCE,,FIXED,500,,2026-11-01,2026-11-30
+3,39,,,LOCA LIKIT 영화 신규 2천원,MOVIE,,FIXED,2000,,2026-11-01,2026-12-31
+4,,,,배달 첫 주문 3천원 (전 카드),DELIVERY,,FIXED,3000,,2026-11-10,2026-11-16
+5,,BC,,BC 주유 11월 이벤트 (종료),FUEL,,RATE,3,3000,2026-09-01,2026-10-31

@@ -1,0 +1,284 @@
+﻿benefit_id,card_id,group_id,benefit_name,benefit_kind,value_type,limit_basis,pay_type,min_pay_amount,time_from,time_to,days,daily_count,description
+1,1,1,DAY 카페 10% 할인,DISCOUNT,RATE,BENEFIT,,,07:00,15:00,,1,
+2,1,1,DAY 음식점 10% 할인,DISCOUNT,RATE,BENEFIT,,,07:00,15:00,,1,
+3,1,1,NIGHT 편의점 10% 할인,DISCOUNT,RATE,BENEFIT,,,18:00,22:00,,1,
+4,1,1,NIGHT 배달앱 10% 할인,DISCOUNT,RATE,BENEFIT,,,18:00,22:00,,1,
+5,1,2,쇼핑 10% 할인 (마트),DISCOUNT,RATE,BENEFIT,,,,,,1,
+6,1,2,쇼핑 10% 할인 (온라인쇼핑),DISCOUNT,RATE,BENEFIT,,,,,,1,
+7,1,2,쇼핑 10% 할인 (잡화),DISCOUNT,RATE,BENEFIT,,,,,,1,
+8,1,2,이동 5% 할인 (주유),DISCOUNT,RATE,BENEFIT,,,,,,1,
+9,1,2,이동 5% 할인 (카쉐어링),DISCOUNT,RATE,BENEFIT,,,,,,1,
+10,1,2,이동 5% 할인 (택시),DISCOUNT,RATE,BENEFIT,,,,,,1,
+11,1,2,생활 5% 할인 (해외),DISCOUNT,RATE,BENEFIT,,,,,,1,
+12,1,2,생활 5% 할인 (병원/약국),DISCOUNT,RATE,BENEFIT,,,,,,1,
+13,1,2,생활 5% 할인 (미용실),DISCOUNT,RATE,BENEFIT,,,,,,1,
+14,1,2,생활 5% 할인 (온라인서점),DISCOUNT,RATE,BENEFIT,,,,,,1,
+15,1,3,정기결제 공과금 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+16,1,3,정기결제 디지털구독/멤버십 20% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+17,1,,영화 예매 5천원 할인,DISCOUNT,FIXED,BENEFIT,,12000,,,,,
+18,2,4,DAY 카페 10% 할인,DISCOUNT,RATE,BENEFIT,,,07:00,15:00,,1,
+19,2,4,DAY 음식점 10% 할인,DISCOUNT,RATE,BENEFIT,,,07:00,15:00,,1,
+20,2,4,NIGHT 편의점 10% 할인,DISCOUNT,RATE,BENEFIT,,,18:00,22:00,,1,
+21,2,4,NIGHT 배달앱 10% 할인,DISCOUNT,RATE,BENEFIT,,,18:00,22:00,,1,
+22,2,5,쇼핑 10% 할인 (마트),DISCOUNT,RATE,BENEFIT,,,,,,1,
+23,2,5,쇼핑 10% 할인 (온라인쇼핑),DISCOUNT,RATE,BENEFIT,,,,,,1,
+24,2,5,쇼핑 10% 할인 (아울렛),DISCOUNT,RATE,BENEFIT,,,,,,1,
+25,2,5,쇼핑 10% 할인 (잡화),DISCOUNT,RATE,BENEFIT,,,,,,1,
+26,2,5,이동 5% 할인 (주유),DISCOUNT,RATE,BENEFIT,,,,,,1,
+27,2,5,이동 5% 할인 (카쉐어링),DISCOUNT,RATE,BENEFIT,,,,,,1,
+28,2,5,이동 5% 할인 (택시),DISCOUNT,RATE,BENEFIT,,,,,,1,
+29,2,5,이동 5% 할인 (주차),DISCOUNT,RATE,BENEFIT,,,,,,1,
+30,2,5,생활 5% 할인 (해외),DISCOUNT,RATE,BENEFIT,,,,,,1,
+31,2,5,생활 5% 할인 (병원/약국),DISCOUNT,RATE,BENEFIT,,,,,,1,
+32,2,5,생활 5% 할인 (미용실),DISCOUNT,RATE,BENEFIT,,,,,,1,
+33,2,5,생활 5% 할인 (온라인서점),DISCOUNT,RATE,BENEFIT,,,,,,1,
+34,2,6,정기결제 공과금 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+35,2,6,정기결제 디지털구독/멤버십 20% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+36,2,6,정기결제 피트니스 5% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+37,2,,영화 예매 5천원 할인,DISCOUNT,FIXED,BENEFIT,,12000,,,,,
+38,3,,국내 1% 결제일 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+39,3,,해외 2% 결제일 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+40,4,,국내 1.5% 결제일 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+41,4,,해외 2% 결제일 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+42,5,,ECO 기부 포인트 0.2% 적립,POINT,RATE,BENEFIT,,,,,,,
+43,5,,매주 월요일 버스/지하철 1천원 캐시백,CASHBACK,FIXED,BENEFIT,,,,,MON,1,
+44,5,7,ECO Life 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+45,5,8,Healthy Plan 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+46,5,9,Daily Vibe 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+47,6,,전기차 충전 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,
+48,6,10,디지털 구독 20% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,
+49,6,10,이동통신 5% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,
+50,6,10,편의점 5% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,
+51,6,10,베이커리/커피전문점 5% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,
+52,6,,주차앱 5천원 캐시백,CASHBACK,FIXED,BENEFIT,,5000,,,,1,
+53,7,,대중교통 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+54,7,,간편결제 5% 할인 (SOL페이/삼성페이/네이버페이/카카오페이/쿠페이),DISCOUNT,RATE,BENEFIT,PAY,20000,,,,1,
+55,7,,배달앱 5% 할인,DISCOUNT,RATE,BENEFIT,,20000,,,,1,
+56,7,,편의점 5% 할인,DISCOUNT,RATE,BENEFIT,,20000,,,,1,
+57,7,,커피전문점 5% 할인,DISCOUNT,RATE,BENEFIT,,20000,,,,1,
+58,7,,올리브영 5% 할인,DISCOUNT,RATE,BENEFIT,,20000,,,,1,
+59,7,,병원/약국 5% 할인,DISCOUNT,RATE,BENEFIT,,20000,,,,1,
+60,7,,OTT 5% 할인,DISCOUNT,RATE,BENEFIT,,10000,,,,1,
+61,7,,이동통신요금 자동납부 5% 할인,DISCOUNT,RATE,BENEFIT,,20000,,,,1,
+62,8,,병원/약국/산후조리원 5% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+63,8,,온라인몰 5% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+64,8,,교육 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+65,8,,밀딜리버리 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+66,8,,OTT 50% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+67,8,,온라인 월회비 3천원 할인,DISCOUNT,FIXED,BENEFIT,,,,,,,
+68,9,,병원/약국/산후조리원 5% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+69,9,,온라인몰 5% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+70,9,,교육 5% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+71,9,,밀딜리버리 5% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+72,9,,OTT 50% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+73,9,,온라인 월회비 3천원 할인,DISCOUNT,FIXED,BENEFIT,,,,,,,
+74,10,,스터디 5% 적립,POINT,RATE,BENEFIT,,3000,,,,,
+75,10,,오늘도 5% 적립 (편의점),POINT,RATE,BENEFIT,,3000,,,,,
+76,10,,오늘도 5% 적립 (푸드),POINT,RATE,BENEFIT,,3000,,,,,
+77,10,,오늘도 5% 적립 (카페),POINT,RATE,BENEFIT,,3000,,,,,
+78,10,,"방과후 7% 적립 (편의점/푸드/카페, 기본 5%+추가 2%)",POINT,RATE,BENEFIT,,3000,16:00,20:00,,,
+79,10,,"사진 1,000포인트 적립",POINT,FIXED,BENEFIT,,5000,,,,,
+80,10,,"쇼핑 3,000포인트 적립",POINT,FIXED,BENEFIT,,10000,,,,,
+81,11,,대중교통 20% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,
+82,11,,광역교통 10% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,
+83,11,,카카오T 택시 10% 캐시백 (간편결제 제외),CASHBACK,RATE,BENEFIT,NOPAY,,,,,,
+84,11,,편의점 20% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,1,
+85,11,,커피 5% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,1,
+86,11,,이동통신요금 자동납부 5% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,
+87,11,,도서 5% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,
+88,11,,스포츠/레저 5% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,
+89,11,,배달의민족 5% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,1,
+90,11,,OTT 10% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,
+91,11,,무신사/29CM 10% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,
+92,11,,해외이용 1% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,
+93,12,,국내 4대 편의점 5% 할인,DISCOUNT,RATE,BENEFIT,,,,,,1,
+94,12,,국내 대중교통 1% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+95,12,,해외 대중교통 컨택리스 1% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+96,13,,기본 적립 (국내외 이용금액),POINT,RATE,BENEFIT,,,,,,,
+97,13,,특별 적립 (병원/마트/카페),POINT,RATE,BENEFIT,,,,,,,
+98,14,11,건당 2만원 미만 0.2% 적립,POINT,RATE,BENEFIT,,,,,,,
+99,14,11,건당 2만원 이상 0.4% 적립,POINT,RATE,BENEFIT,,20000,,,,,
+100,14,11,건당 10만원 이상 0.8% 적립,POINT,RATE,BENEFIT,,100000,,,,,
+101,14,11,건당 50만원 이상 1% 적립,POINT,RATE,BENEFIT,,500000,,,,,
+102,14,11,해외 1% 적립,POINT,RATE,BENEFIT,,,,,,,
+103,14,,주말 배달앱 1천 포인트 적립,POINT,FIXED,BENEFIT,NOPAY,20000,,,"SAT,SUN",1,
+104,14,,편의점 5% 적립,POINT,RATE,BENEFIT,,,,,,1,
+105,15,,주유 리터당 60원 청구할인,DISCOUNT,PER_LITER,USAGE,,,,,,,
+106,15,,통신 10% 청구할인,DISCOUNT,RATE,USAGE,,,,,,,
+107,15,,대중교통 10% 청구할인,DISCOUNT,RATE,USAGE,,,,,,,
+108,15,,음식/커피/편의점/약국 10% 청구할인,DISCOUNT,RATE,USAGE,,,,,,,
+109,15,,학원/피트니스 10% 청구할인,DISCOUNT,RATE,USAGE,,,,,,,
+110,16,,국내 가맹점 기본 적립,POINT,RATE,BENEFIT,,,,,,,
+111,16,,Life 영역 적립 (백화점/면세점/주유/골프),POINT,RATE,BENEFIT,,,,,,,
+112,16,,Biz 제약/의료기기 적립,POINT,RATE,BENEFIT,,,,,,,
+113,16,,Biz 4대 보험 10% 적립,POINT,RATE,BENEFIT,,,,,,,
+114,16,,해외 가맹점 1.4% 적립,POINT,RATE,BENEFIT,,,,,,,
+115,17,,국내 가맹점 1% 청구할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+116,17,,해외 가맹점 2% 청구할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+117,17,12,쇼핑 멤버십 50% 청구할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+118,17,12,OTT 10% 청구할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+119,17,12,이동통신요금 5% 청구할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+120,18,,CU 편의점 환급할인,CASHBACK,FIXED,BENEFIT,,10000,,,,,
+121,18,,스타벅스 환급할인,CASHBACK,FIXED,BENEFIT,,10000,,,,,
+122,18,,CGV 환급할인,CASHBACK,FIXED,BENEFIT,,10000,,,,,
+123,18,,텐바이텐 환급할인,CASHBACK,FIXED,BENEFIT,,10000,,,,,
+124,18,,간편결제(네이버/카카오/SSG페이 온라인) 환급할인,CASHBACK,FIXED,BENEFIT,,20000,,,,,
+125,18,,올리브영/안경점 환급할인,CASHBACK,FIXED,BENEFIT,,20000,,,,,
+126,18,,온라인서점(YES24/교보문고) 환급할인,CASHBACK,FIXED,BENEFIT,,20000,,,,,
+127,18,,인터파크티켓 환급할인,CASHBACK,FIXED,BENEFIT,,20000,,,,,
+128,18,,대중교통(버스/지하철) 환급할인,CASHBACK,FIXED,BENEFIT,,30000,,,,,
+129,19,,커피 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+130,19,,모바일 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+131,19,,문화 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+132,19,,뷰티 5% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+133,19,,편의점 5% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+134,19,,"구독 1,000원 할인",DISCOUNT,FIXED,BENEFIT,,10000,,,,,
+135,19,,"배달 1,000원 할인",DISCOUNT,FIXED,BENEFIT,,10000,,,,,
+136,19,,"이동통신 2,500원 할인",DISCOUNT,FIXED,BENEFIT,,50000,,,,,
+137,19,,"영화 4,000원 할인",DISCOUNT,FIXED,BENEFIT,,10000,,,,,
+138,19,,"놀이공원 15,000원 할인",DISCOUNT,FIXED,BENEFIT,,30000,,,,,
+139,20,,주유 3% 환급할인,CASHBACK,RATE,BENEFIT,,,,,,,
+140,20,,커피/음료전문점 3% 환급할인,CASHBACK,RATE,BENEFIT,,,,,,,
+141,20,,패스트푸드 3% 환급할인,CASHBACK,RATE,BENEFIT,,,,,,,
+142,20,,"이동통신 Liiv M 3,000원 환급할인",CASHBACK,FIXED,BENEFIT,,30000,,,,,
+143,20,,"이동통신 SKT/KT/LG U+ 2,000원 환급할인",CASHBACK,FIXED,BENEFIT,,50000,,,,,
+144,21,,GS칼텍스 주유 일요일/공휴일 리터당 150원 할인,DISCOUNT,PER_LITER,USAGE,,,,,SUN,1,
+145,21,,GS칼텍스 주유 리터당 120원 할인,DISCOUNT,PER_LITER,USAGE,,,,,,1,
+146,21,13,온라인쇼핑 10% 할인,DISCOUNT,RATE,BENEFIT,,30000,,,,1,
+147,21,13,백화점 5% 할인,DISCOUNT,RATE,BENEFIT,,50000,,,,1,
+148,21,13,대형마트 5% 할인,DISCOUNT,RATE,BENEFIT,,30000,,,,1,
+149,21,13,외식 20% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+150,21,13,커피 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,1,
+151,21,13,대중교통 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+152,22,,편의점 5% 할인,DISCOUNT,RATE,BENEFIT,,,,,,1,
+153,22,,SK주유소 리터당 40원 할인,DISCOUNT,PER_LITER,BENEFIT,,,,,,1,
+154,22,,"이동통신요금 1,500원 할인",DISCOUNT,FIXED,BENEFIT,,,,,,1,
+155,22,,베이커리 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,1,
+156,22,,교통요금 건당 100원 할인,DISCOUNT,FIXED,BENEFIT,,,,,,10,
+157,22,,커피전문점 20% 할인,DISCOUNT,RATE,BENEFIT,,,,,,1,
+158,23,14,Social 이동통신요금 7% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+159,23,14,Social 대중교통/카카오T 7% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+160,23,14,Social 골프 7% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+161,23,14,Social 편의점 7% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+162,23,15,Personal 배달앱 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+163,23,15,Personal 주유소 7% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+164,23,15,Personal 운동 7% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+165,23,15,Personal 넷플릭스/유튜브 프리미엄 7% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+166,23,16,Always 스타벅스 사이렌오더 50% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+167,23,16,Always 온라인몰 7% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+168,24,,kt 이동통신요금 할인 (플라스틱카드 기준),DISCOUNT,FIXED,BENEFIT,,,,,,,
+169,24,,모바일 결제 5% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+170,24,,GS칼텍스 주유 리터당 60원 할인,DISCOUNT,PER_LITER,USAGE,,,,,,,
+171,24,,편의점 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+172,24,,"영화 인터넷 예매 1,500원 할인",DISCOUNT,FIXED,BENEFIT,,,,,,,
+173,24,,외식 10% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+174,25,,국내 가맹점 1% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+175,25,,해외 가맹점 1% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+176,25,,생활 편의 업종 1.5% 할인 (1% + 추가 0.5%),DISCOUNT,RATE,BENEFIT,,10000,,,,,
+177,25,,KT 알파쇼핑 5% 청구할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+178,26,,구독 10% 적립,POINT,RATE,BENEFIT,,,,,,,
+179,26,,건강 5% 적립 (헬스/골프연습장),POINT,RATE,BENEFIT,,,,,,,오프라인 결제건만 적립. 공립 스포츠센터·수영장은 제외
+180,26,,생활비 5% 적립 (통신요금/관리비),POINT,RATE,BENEFIT,,,,,,,통신요금은 SKT·KT·LG U+ 자동이체 건만 적립. 알뜰폰·약정대납 제외
+181,26,,대형마트 5% 적립,POINT,RATE,BENEFIT,,,,,,,오프라인 결제건만 적립. 창고형 할인매장과 상설·임대매장은 제외
+182,26,,슈퍼마켓 5% 적립,POINT,RATE,BENEFIT,,,,,,,오프라인 결제건만 적립
+183,26,,백화점 5% 적립,POINT,RATE,BENEFIT,,,,,,,"오프라인 결제건만 적립. 상설·임대매장, 상품권 구입 제외"
+184,26,,병원 2% 적립,POINT,RATE,BENEFIT,,,,,,,오프라인 결제건만 적립
+185,26,,국내 가맹점 0.2% 적립,POINT,RATE,BENEFIT,,,,,,,
+186,26,,해외 가맹점 0.2% 적립,POINT,RATE,BENEFIT,,,,,,,
+187,27,,당구장 50% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,오프라인 결제건만. 온라인 예약·결제 제외
+188,27,,음식점 5% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,오프라인 결제건만. 배달앱·식당 예약앱 및 미리 결제하는 방식은 제외
+189,27,,편의점 5% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,오프라인 결제건만
+190,27,,택시 5% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,카카오T는 공식 앱에 카드를 등록해 결제한 건만. 대리운전·퀵·주차·기차 제외
+191,27,,주유/LPG충전 5% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,오프라인 주유·LPG 충전 건만
+192,27,,병원/약국 5% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,오프라인 결제건만. 보건소·동물병원 제외
+193,28,17,삼성페이 해외 오프라인 10% 적립,POINT,RATE,BENEFIT,SAMSUNGPAY,,,,,,컨택리스 결제 단말기로 결제한 건만. 본인 명의 삼성월렛 이용 시에만 적립
+194,28,17,삼성페이 국내 0.5% 적립,POINT,RATE,BENEFIT,SAMSUNGPAY,,,,,,삼성월렛에 카드를 등록해 결제한 건만. 월 한도 소진 후에는 국내 가맹점 0.3% 적용
+195,28,,국내 가맹점 0.3% 적립,POINT,RATE,BENEFIT,,,,,,,
+196,29,,국내 가맹점 0.5% 적립,POINT,RATE,BENEFIT,,,,,,,3일 연속 이용 시 적립률 2배 (영역별 한도 내)
+197,29,,해외 가맹점 0.5% 적립,POINT,RATE,BENEFIT,,,,,,,3일 연속 이용 시 적립률 2배 (영역별 한도 내)
+198,29,,온라인 간편결제 1.0% 적립,POINT,RATE,BENEFIT,PAY,,,,,,하나페이·삼성페이·네이버페이·카카오페이·페이코. 모바일 단말 오프라인 결제는 제외. 3일 연속 이용 시 적립률 2배 (영역별 한도 내)
+199,29,18,ALLDAY 온라인쇼핑 2.0% 적립,POINT,RATE,BENEFIT,,,,,,,공식 홈페이지·앱 결제건만
+200,29,18,ALLDAY 온라인식품 2.0% 적립,POINT,RATE,BENEFIT,,,,,,,공식 홈페이지·앱 결제건만 (오아시스마켓은 오프라인도 적립)
+201,29,18,ALLDAY 마트 2.0% 적립,POINT,RATE,BENEFIT,,,,,,,오프라인 결제건만. 상설·임대매장 제외
+202,29,18,ALLDAY 슈퍼마켓 2.0% 적립,POINT,RATE,BENEFIT,,,,,,,오프라인 결제건만
+203,29,18,ALLDAY 백화점 2.0% 적립,POINT,RATE,BENEFIT,,,,,,,오프라인 결제건만. 상설·임대매장 제외
+204,29,18,ALLDAY 딜리버리 2.0% 적립,POINT,RATE,BENEFIT,,,,,,,공식 홈페이지·앱 결제건만. 음식점 직접 결제 제외
+205,29,18,ALLDAY 대중교통 3.0% 적립,POINT,RATE,BENEFIT,,,,,,,버스·지하철. 시외버스·고속버스·철도 제외
+206,29,18,ALLDAY 택시 3.0% 적립,POINT,RATE,BENEFIT,,,,,,,카카오T·UT는 공식 앱에 카드를 등록해 결제한 건만
+207,30,,국내 가맹점 0.5% 적립,POINT,RATE,BENEFIT,,,,,,,3일 연속 이용 시 적립률 2배 (영역별 한도 내)
+208,30,,해외 가맹점 0.5% 적립,POINT,RATE,BENEFIT,,,,,,,3일 연속 이용 시 적립률 2배 (영역별 한도 내)
+209,30,,온라인 간편결제 1.5% 적립,POINT,RATE,BENEFIT,PAY,,,,,,하나페이·삼성페이·네이버페이·카카오페이·페이코. 모바일 단말 오프라인 결제는 제외. 3일 연속 이용 시 적립률 2배 (영역별 한도 내)
+210,30,,ONLINE AI 구독 50% 적립,POINT,RATE,BENEFIT,,,,,,,영문 가맹점명 결제건만. 개발자용 API 종량제 요금 제외
+211,30,,ONLINE 디지털구독 50% 적립,POINT,RATE,BENEFIT,,,,,,,"월 자동납부 건만. 포인트·캐시 충전, 개별 결제, 인앱결제 제외"
+212,30,,ONLINE 택시 50% 적립,POINT,RATE,BENEFIT,,,,,,,카카오T·UT는 공식 앱에 카드를 등록해 결제한 건만
+213,30,,ONLINE 푸드 50% 적립 (커피/패스트푸드),POINT,RATE,BENEFIT,,,,,,,오프라인 매장 결제 또는 공식 앱·홈페이지 주문 결제만
+214,31,,GLOBAL 해외 가맹점 2.0% 적립,POINT,RATE,BENEFIT,,,,,,,해외 가맹점 매출로 분류된 건만
+215,31,19,국내 온라인 간편결제 1.0% 적립,POINT,RATE,BENEFIT,PAY,,,,,,모바일 단말 오프라인 결제는 제외. 3일 연속 이용 시 적립률 2배 (영역별 한도 내)
+216,31,19,국내 온라인쇼핑 1.0% 적립,POINT,RATE,BENEFIT,,,,,,,공식 홈페이지·앱 결제건만
+217,31,19,국내 마트 1.0% 적립,POINT,RATE,BENEFIT,,,,,,,오프라인 결제건만
+218,31,19,국내 슈퍼마켓 1.0% 적립,POINT,RATE,BENEFIT,,,,,,,오프라인 결제건만
+219,31,19,국내 편의점 1.0% 적립,POINT,RATE,BENEFIT,,,,,,,오프라인 결제건만
+220,31,19,국내 주유 1.0% 적립,POINT,RATE,BENEFIT,,,,,,,오프라인 주유·LPG 충전 건만
+221,31,19,국내 항공 1.0% 적립,POINT,RATE,BENEFIT,,,,,,,항공사 공식 홈페이지·앱·오프라인 결제건만. 여행사·구매대행 제외
+222,31,19,국내 여행사 1.0% 적립,POINT,RATE,BENEFIT,,,,,,,공식 홈페이지·앱 결제건만 (하나투어는 오프라인도 적립)
+223,31,19,국내 면세점 1.0% 적립,POINT,RATE,BENEFIT,,,,,,,
+224,32,20,국내 가맹점 1% 청구할인,DISCOUNT,RATE,BENEFIT,,,,,,,일 최대 1만원. 생활할인과 중복 적용되지 않고 혜택이 큰 쪽이 적용됨
+225,32,20,NH페이 온라인 결제 2% 청구할인,DISCOUNT,RATE,BENEFIT,NHPAY,,,,,,국내 온라인 결제건만. NH페이 오프라인 결제는 국내 가맹점 1% 적용
+226,32,20,해외 가맹점 2% 청구할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+227,32,21,생활할인 공과금 10%,DISCOUNT,RATE,BENEFIT,,,,,,,아파트관리비·전기요금(주택용)·도시가스 월 자동납부 건만. 이 영역 이용금액은 전월실적에서 제외
+228,32,21,생활할인 이동통신 10%,DISCOUNT,RATE,BENEFIT,,,,,,,SKT·KT·LG U+ 자동납부만. 알뜰폰·TV·인터넷 요금 제외
+229,32,21,생활할인 새벽배송 10%,DISCOUNT,RATE,BENEFIT,,,,,,,멤버십 및 결제요금 모두 포함
+230,32,21,생활할인 대형마트 10%,DISCOUNT,RATE,BENEFIT,,,,,,,대형마트 오프라인 매장 내 직접 결제건만
+231,32,21,생활할인 보험 10%,DISCOUNT,RATE,BENEFIT,,,,,,,생명보험·손해보험 업종. 보험료 카드납부 가능 여부는 보험사에 문의
+232,32,21,생활할인 반려동물 10%,DISCOUNT,RATE,BENEFIT,,,,,,,동물병원·애완동물 업종
+233,32,21,생활할인 디지털 구독 30%,DISCOUNT,RATE,BENEFIT,,,,,,,공식 홈페이지·앱에서 이용권 정기결제(자동납부)한 건만. 인앱결제 제외
+234,33,22,생활소비 백화점 5%,DISCOUNT,RATE,BENEFIT,,,,,,,오프라인 직접 결제건만
+235,33,22,생활소비 대형마트 5%,DISCOUNT,RATE,BENEFIT,,,,,,,오프라인 직접 결제건만. 기업형 슈퍼마켓 제외
+236,33,22,생활소비 홈쇼핑 5%,DISCOUNT,RATE,BENEFIT,,,,,,,TV·전화 이용 건 포함
+237,33,22,생활소비 주유소/충전소 5%,DISCOUNT,RATE,BENEFIT,,,,,,,전기차는 환경부 공공급속충전기 현장결제 및 멤버십카드 간편결제 건만
+238,33,22,생활소비 이동통신요금 3%,DISCOUNT,RATE,BENEFIT,,,,,,,SKT·KT·LG U+ 자동납부 시 월 1회. 알뜰폰·TV·인터넷 요금 제외
+239,33,22,생활소비 아파트관리비 3%,DISCOUNT,RATE,BENEFIT,,,,,,,월 1회 아파트관리비 자동납부 건만. 이용금액은 전월실적에서 제외
+240,33,23,건강/자기관리 병원/약국 10%,DISCOUNT,RATE,BENEFIT,,,,,,,오프라인 직접 결제건만. 동물병원 제외
+241,33,23,건강/자기관리 미용실/피부미용원 10%,DISCOUNT,RATE,BENEFIT,,,,,,,오프라인 직접 결제건만
+242,33,23,건강/자기관리 스포츠센터 5%,DISCOUNT,RATE,BENEFIT,,,,,,,종합스포츠센터·헬스장·골프연습장·요가·필라테스. 오프라인 직접 결제건만
+243,33,23,건강/자기관리 안경점 5%,DISCOUNT,RATE,BENEFIT,,,,,,,오프라인 직접 결제건만
+244,33,24,교통 버스/지하철 15%,DISCOUNT,RATE,BENEFIT,,,,,,,후불교통 이용 시 적용
+245,33,24,교통 KTX/SRT/고속버스/택시 5%,DISCOUNT,RATE,BENEFIT,,,,,,,
+246,33,24,교통 카카오T대리 5%,DISCOUNT,RATE,BENEFIT,,,,,,,카카오T대리 자동결제서비스에 등록 후 이용한 건만
+247,33,25,여가 디지털구독 30%,DISCOUNT,RATE,BENEFIT,,,,,,,공식 홈페이지·앱에서 이용권 정기결제한 건만. 인앱결제 제외
+248,33,25,여가 영화관 10%,DISCOUNT,RATE,BENEFIT,,,,,,,영화 예매/결제만. 상품권 구매·매점 이용 제외
+249,33,25,여가 카페 10%,DISCOUNT,RATE,BENEFIT,,,,,,,앱 주문·상품권 구매 제외 (스타벅스 사이렌오더는 제공)
+250,33,25,여가 베이커리 5%,DISCOUNT,RATE,BENEFIT,,,,,,,앱 주문·상품권 구매 제외
+251,34,26,국내 가맹점 1.0% NH포인트 적립,POINT,RATE,BENEFIT,,,,,,,일 최대 1만 포인트
+252,34,26,해외 가맹점 1.0% NH포인트 적립,POINT,RATE,BENEFIT,,,,,,,일 최대 1만 포인트
+253,35,,살거리 5% 청구할인,DISCOUNT,RATE,BENEFIT,,,,,,,슈퍼마켓·하나로마트·편의점은 오프라인 결제건만
+254,35,,먹거리 5% 청구할인,DISCOUNT,RATE,BENEFIT,,,,,,,배달앱 이용 및 백화점·대형마트·면세점·공항 등 입점매장 이용건 제외
+255,35,,건강관리 5% 청구할인,DISCOUNT,RATE,BENEFIT,,,,,,,
+256,35,,이동수단 5% 청구할인,DISCOUNT,RATE,BENEFIT,,,,,,,지하철·시내버스 후불교통 기능 이용 건만
+257,35,,볼거리 10% 청구할인,DISCOUNT,RATE,BENEFIT,,,,,,,자동납부되는 월 정기결제 건만
+258,35,,이동통신 10% 청구할인,DISCOUNT,RATE,BENEFIT,,,,,,,SKT·KT·LG U+ 자동납부만. 알뜰폰·선불폰·결합상품 제외
+259,35,,글로벌 2% 청구할인,DISCOUNT,RATE,BENEFIT,,,,,,,해외 온라인·오프라인 가맹점
+260,36,27,온라인결제 3% 할인,DISCOUNT,RATE,BENEFIT,PAY,10000,,,,,NH pay·카카오페이·삼성페이 온라인 결제 한정. 오프라인 제외
+261,36,27,카페 4% 할인,DISCOUNT,RATE,BENEFIT,,10000,,,,,오프라인 매장 결제만(앱 주문 제외). 상품권·선불카드 구매 제외
+262,36,27,H&B 4% 할인,DISCOUNT,RATE,BENEFIT,,10000,,,,,오프라인 매장 결제만. 상품권·선불카드 구매 제외
+263,36,,디지털컨텐츠 5% 할인,DISCOUNT,RATE,BENEFIT,,,,,,,해당 카드를 결제수단으로 등록해 이용한 건만 (YouTube·NETFLIX·APPLE·GOOGLE 매출)
+264,37,,국내 가맹점 0.2% 캐시백,CASHBACK,RATE,BENEFIT,,,,,,,온·오프라인 국내 가맹점. 실적·한도 제한 없음
+265,37,,주말·공휴일 0.4% 캐시백 (기본 0.2% + 추가 0.2%),CASHBACK,RATE,BENEFIT,,,,,"SAT,SUN",,지난달 30만원 이상 이용 시 주말·공휴일 0.2% 추가 (공휴일은 요일로 표현하지 못해 토·일만 반영)
+266,38,,커피 1천원 캐시백,CASHBACK,FIXED,BENEFIT,,5000,,,,,현장 결제(사이렌오더 포함)만. 백화점·마트 입점 매장은 제외될 수 있음
+267,38,,영화 2천원 캐시백,CASHBACK,FIXED,BENEFIT,,2000,,,,,현장 결제·공식 홈페이지/앱 예매만. 기프티콘·상품권 구매 제외
+268,38,,편의점 1천원 캐시백,CASHBACK,FIXED,BENEFIT,,5000,,,,,
+269,38,,이동통신 2천원 캐시백,CASHBACK,FIXED,BENEFIT,,,,,,,이동통신요금 자동이체 건 월 1회. 결합상품·알뜰폰 제외
+270,39,28,스타벅스 50% 결제일할인,DISCOUNT,RATE,BENEFIT,,,,,,,현장 결제건만. 카드 발급 첫 달은 제공되지 않음
+271,39,28,스타벅스 간편결제 60% 결제일할인,DISCOUNT,RATE,BENEFIT,PAY,,,,,,삼성페이 등 간편결제(Pay)로 결제 시 60%
+272,39,,영화 50% 결제일할인,DISCOUNT,RATE,BENEFIT,,10000,,,,,현장 결제·공식 홈페이지/앱 예매만. 기프티콘·상품권 구매 제외
+273,39,,대중교통 10% 결제일할인,DISCOUNT,RATE,BENEFIT,,,,,,,시내버스·지하철
+274,39,,이동통신 10% 결제일할인,DISCOUNT,RATE,BENEFIT,,,,,,,이동통신요금 자동이체 연결 건만. 결합상품·알뜰폰·선불폰 제외
+275,39,,배달앱 5% 결제일할인,DISCOUNT,RATE,BENEFIT,,,,,,,공식 홈페이지·앱 결제건만. 배달원·가맹점 직접 결제 제외
+276,40,29,국내외 결제일 할인 0.5% (건당 10만원 미만),DISCOUNT,RATE,BENEFIT,,,,,,,실적 조건 없음. 건당 결제 금액에 따라 할인율 차등
+277,40,29,국내외 결제일 할인 1.0% (건당 10만원 이상),DISCOUNT,RATE,BENEFIT,,100000,,,,,
+278,40,29,국내외 결제일 할인 1.5% (건당 30만원 이상),DISCOUNT,RATE,BENEFIT,,300000,,,,,
+279,40,29,국내외 결제일 할인 2.0% (건당 50만원 이상),DISCOUNT,RATE,BENEFIT,,500000,,,,,
+280,40,29,해외 결제일 할인 0.5% (건당 10만원 미만),DISCOUNT,RATE,BENEFIT,,,,,,,
+281,40,29,해외 결제일 할인 1.0% (건당 10만원 이상),DISCOUNT,RATE,BENEFIT,,100000,,,,,
+282,40,29,해외 결제일 할인 1.5% (건당 30만원 이상),DISCOUNT,RATE,BENEFIT,,300000,,,,,
+283,40,29,해외 결제일 할인 2.0% (건당 50만원 이상),DISCOUNT,RATE,BENEFIT,,500000,,,,,

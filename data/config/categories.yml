@@ -1,30 +1,64 @@
-# 업종 코드 21개
-# channel: 이 업종의 주된 결제 경로
-#   offline_qr  결제화면에서 QR·바코드
-#   online      온라인 결제
-#   transit_nfc 개찰구·단말기 NFC 태그
-#   auto_debit  자동이체 (결제화면을 거치지 않음)
-# placement_target: 결제화면 카드 배치 대상인지. 자동이체는 실적에만 들어간다.
-
+# 업종 코드: 최종 카드 DB(config/card_db/categories.csv)의 58개를 그대로 쓴다 (2026-11-15 결정).
+# channel: 결제 방식 기본값 (offline_qr 현장 / online 온라인 / auto_debit 자동이체 / transit_nfc 교통카드 / none 해외)
+# placement_target: SOL페이 결제화면에서 카드를 고르는 업종 (현장 결제 + 앱을 열고 찍는 교통, 2026-11-13 결정 유지)
+# generated: 가상 결제를 만드는 업종 (항공·면세·해외 등 생활 소비가 아닌 업종은 만들지 않음)
+# OTHER(기타)는 차량 정비처럼 새 DB에 따로 없는 현장 결제에 쓴다.
 categories:
-  - { code: CAFE,     name: 카페,             channel: offline_qr,  placement_target: true }
-  - { code: CVS,      name: 편의점,           channel: offline_qr,  placement_target: true }
-  - { code: REST,     name: 일반음식점,       channel: offline_qr,  placement_target: true }
-  - { code: FASTFOOD, name: 패스트푸드,       channel: offline_qr,  placement_target: true }
-  - { code: BAKERY,   name: 제과,             channel: offline_qr,  placement_target: true }
-  - { code: DELIVERY, name: 배달앱,           channel: online,      placement_target: true }
-  - { code: MART,     name: 대형마트,         channel: offline_qr,  placement_target: true }
-  - { code: SUPER,    name: 슈퍼·식자재,      channel: offline_qr,  placement_target: true }
-  - { code: ONLINE,   name: 온라인쇼핑,       channel: online,      placement_target: true }
-  - { code: FUEL,     name: 주유,             channel: offline_qr,  placement_target: true }
-  - { code: MOVIE,    name: 영화,             channel: offline_qr,  placement_target: true }
-  - { code: BOOK,     name: 도서·공연,        channel: offline_qr,  placement_target: true }
-  - { code: BEAUTY,   name: 뷰티·드럭스토어,  channel: offline_qr,  placement_target: true }
-  - { code: APPAREL,  name: 의류,             channel: offline_qr,  placement_target: true }
-  - { code: MEDICAL,  name: 병원·약국,        channel: offline_qr,  placement_target: true }
-  - { code: EDU,      name: 학원,             channel: offline_qr,  placement_target: true }
-  - { code: TRANSIT,  name: 버스·지하철,      channel: transit_nfc, placement_target: true }
-  - { code: TAXI,     name: 택시,             channel: offline_qr,  placement_target: true }
-  - { code: TELECOM,  name: 통신,             channel: auto_debit,  placement_target: false }
-  - { code: SUBSCR,   name: 구독,             channel: auto_debit,  placement_target: false }
-  - { code: UTILITY,  name: 공과금,           channel: auto_debit,  placement_target: false }
+  - { code: AIRLINE, name: "항공", channel: online, placement_target: false, real_placement_flag: false, generated: false }
+  - { code: AMUSEMENT_PARK, name: "놀이공원", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: APP_STORE, name: "앱스토어", channel: online, placement_target: false, real_placement_flag: false, generated: true }
+  - { code: BAKERY, name: "베이커리", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: BEAUTY_SALON, name: "미용실", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: BILLIARDS, name: "당구장", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: false }
+  - { code: BOOKSTORE, name: "서점/도서", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: CAFE, name: "카페/커피전문점", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: CAR_SHARING, name: "카쉐어링", channel: online, placement_target: false, real_placement_flag: false, generated: false }
+  - { code: CHILDCARE, name: "어린이집/유치원", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: false }
+  - { code: CONVENIENCE, name: "편의점", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: CULTURE_TICKET, name: "공연/문화 티켓", channel: online, placement_target: false, real_placement_flag: false, generated: true }
+  - { code: DELIVERY, name: "배달앱", channel: online, placement_target: false, real_placement_flag: false, generated: true }
+  - { code: DEPARTMENT_STORE, name: "백화점", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: DIGITAL_SUBSCRIPTION, name: "디지털구독/OTT", channel: auto_debit, placement_target: false, real_placement_flag: false, generated: true }
+  - { code: DUTY_FREE, name: "면세점", channel: online, placement_target: false, real_placement_flag: false, generated: false }
+  - { code: EDUCATION, name: "학원/교육", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: EV_CHARGING, name: "전기차 충전", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: EYEWEAR, name: "안경점", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: FAST_FOOD, name: "패스트푸드", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: FITNESS, name: "피트니스/스포츠센터", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: FUEL, name: "주유", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: GENERAL_GOODS, name: "잡화(다이소 등)", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: GOLF, name: "골프", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: HEALTHY_FOOD, name: "그린푸드(샐러드 등)", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: HNB, name: "헬스앤뷰티(올리브영 등)", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: HOME_SHOPPING, name: "홈쇼핑", channel: online, placement_target: false, real_placement_flag: false, generated: true }
+  - { code: HOSPITAL, name: "병원", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: INSURANCE, name: "보험", channel: auto_debit, placement_target: false, real_placement_flag: false, generated: false }
+  - { code: INTERCITY_TRANSIT, name: "광역교통(고속버스/철도)", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: MART, name: "대형마트", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: MEDICAL_SUPPLY, name: "제약/의료기기", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: false }
+  - { code: MEMBERSHIP, name: "쇼핑 멤버십", channel: auto_debit, placement_target: false, real_placement_flag: false, generated: true }
+  - { code: MOBILE_PAY, name: "간편결제", channel: online, placement_target: false, real_placement_flag: false, generated: true }
+  - { code: MOVIE, name: "영화", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: ONLINE_GROCERY, name: "신선식품몰", channel: online, placement_target: false, real_placement_flag: false, generated: true }
+  - { code: ONLINE_SHOPPING, name: "온라인쇼핑", channel: online, placement_target: false, real_placement_flag: false, generated: true }
+  - { code: OTHER, name: "기타", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: OUTLET, name: "아울렛", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: OVERSEAS, name: "해외", channel: none, placement_target: false, real_placement_flag: false, generated: false }
+  - { code: OVERSEAS_TRANSIT, name: "해외 대중교통", channel: none, placement_target: false, real_placement_flag: false, generated: false }
+  - { code: PARKING, name: "주차", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: PET, name: "반려동물", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: PHARMACY, name: "약국", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: PHOTO_BOOTH, name: "사진관(포토부스)", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: RECYCLING, name: "리사이클링", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: false }
+  - { code: RESTAURANT, name: "음식점", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: SHARED_MOBILITY, name: "공유 모빌리티(따릉이 등)", channel: online, placement_target: false, real_placement_flag: false, generated: false }
+  - { code: SOCIAL_INSURANCE, name: "4대 보험", channel: auto_debit, placement_target: false, real_placement_flag: false, generated: false }
+  - { code: SPORTSWEAR, name: "스포츠웨어", channel: online, placement_target: false, real_placement_flag: false, generated: false }
+  - { code: STATIONERY, name: "문구", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: STUDY_ROOM, name: "독서실", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: SUPERMARKET, name: "슈퍼마켓", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: TAXI, name: "택시", channel: offline_qr, placement_target: true, real_placement_flag: true, generated: true }
+  - { code: TELECOM, name: "통신요금", channel: auto_debit, placement_target: false, real_placement_flag: false, generated: true }
+  - { code: TRANSIT, name: "대중교통(버스/지하철)", channel: transit_nfc, placement_target: true, real_placement_flag: false, generated: true }
+  - { code: TRAVEL_AGENCY, name: "여행사/숙박", channel: online, placement_target: false, real_placement_flag: false, generated: false }
+  - { code: UTILITY, name: "공과금", channel: auto_debit, placement_target: false, real_placement_flag: false, generated: true }

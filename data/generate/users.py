@@ -13,6 +13,8 @@ from .benefit import Card
 from .common import load_config
 
 BACKGROUND_ID_START = 1001
+# 데모 사용자에게 나중에 더한 카드(personas.yml added_cards)의 난수. 공통 난수를 쓰면 뒤 사용자 값이 모두 밀린다
+ADDED_CARD_SEED = 20261118
 
 
 @dataclass
@@ -20,6 +22,7 @@ class UserCard:
     user_card_id: int
     card: Card
     display_order: int
+    added: bool = False         # personas.yml added_cards 로 나중에 더한 카드
 
 
 @dataclass
@@ -34,11 +37,11 @@ class User:
     kpass_tier: str
     cards: list[UserCard]                       # 기본 순서대로
     habit: dict
-    loc_consent: bool
     kpass_card: int | None = None               # user_card_id
     transit_default: int | None = None          # user_card_id
     bill_card: int | None = None                # 자동이체·고정 결제에 쓰는 카드
     telecom: tuple[str, int] | None = None      # (통신사, 금액)
+    fixed_day: dict[str, int] = field(default_factory=dict)  # 납부일 (TELECOM, EDU 등)
     subscriptions: list[tuple[str, int, int]] = field(default_factory=list)  # (서비스, 금액, 결제일)
     utilities: list[tuple[str, int]] = field(default_factory=list)           # (공과금 항목, 납부일)
     choice_model: str = "main_card"
@@ -46,6 +49,8 @@ class User:
     count_level: float = 1.0                    # 일반 결제 건수 배율
     amount_level: float = 1.0                   # 일반 결제 금액 배율
     favorite_prob: float = 0.7                  # 단골 3곳 중에서 고를 확률
+    specials: frozenset = frozenset()           # 특수 고액 결제 묶음 (pet, golf, car, ev, intercity). 생성기 전용, 엔진은 모른다
+    fixed_amount: dict = field(default_factory=dict)    # 고정 결제(학원비) 금액. 사용자마다 한 번 정한다
 
     def card(self, user_card_id: int) -> UserCard:
         return next(uc for uc in self.cards if uc.user_card_id == user_card_id)
@@ -69,17 +74,38 @@ def _spend_levels(rng, rule: dict, n: int) -> list[tuple[float, float]]:
     return [(level(rule["count"], c), level(rule["amount"], m)) for c, m in zip(z_count, z_amount)]
 
 
-def _pick_background_cards(rng, cards: list[Card], archetype: str, rules: dict) -> list[Card]:
-    w = np.array([rules["credit_weight"][archetype] if c.card_type == "credit" else 1.0 for c in cards])
-    for _ in range(200):
+def _pick_background_cards(rng, cards: list[Card], archetype: str, rules: dict, eligibility: dict,
+                           want_other: bool, exclusive: list[list[str]] = ()) -> list[Card]:
+    """신한 1장 이상, 타사 카드는 other_issuer_share 비율의 사용자만, 체크 1장 이상. 발급 자격 카드는 해당 유형만.
+    한 카드의 모드·팩(MOVING 3모드, 올원더풀 2팩)은 묶음마다 하나만 가진다."""
+    pool = [c for c in cards if archetype in eligibility.get(c.code, [archetype])]
+    w = np.array([rules["credit_weight"][archetype] if c.card_type == "credit" else 1.0 for c in pool])
+    for _ in range(500):
         n = int(rng.integers(rules["count"]["min"], rules["count"]["max"] + 1))
-        idx = rng.choice(len(cards), size=n, replace=False, p=w / w.sum())
-        picked = [cards[i] for i in idx]
+        idx = rng.choice(len(pool), size=n, replace=False, p=w / w.sum())
+        picked = [pool[i] for i in idx]
+        codes = {c.code for c in picked}
         if (any(c.issuer == rules["must_have_issuer"] for c in picked)
-                and len({c.issuer for c in picked}) >= rules["min_issuers"]
-                and any(c.card_type == "check" for c in picked)):
+                and any(c.issuer != rules["must_have_issuer"] for c in picked) == want_other
+                and sum(c.card_type == "check" for c in picked) >= rules["min_check"]
+                and all(len(codes & set(group)) <= 1 for group in exclusive)):
             return picked
     raise RuntimeError(f"{archetype} 보유 카드 조건을 만족하는 조합을 못 찾음")
+
+
+def _pick_specials(rng, special: dict, archetype: str) -> frozenset:
+    """특수 고액 결제 묶음을 사용자마다 한 번 정한다. 같은 묶음(golf)의 종류들은 함께 정해진다.
+    requires 가 있으면 그 묶음을 가진 사용자 중에서만 뽑는다 (전기차 충전은 차량 보유자 중에서)."""
+    groups = {}
+    for kind, spec in special.items():
+        groups.setdefault(spec.get("group", kind.lower() if kind != "VET" else "pet"), spec)
+    picked = set()
+    for g, spec in groups.items():
+        owners = spec["owners"]
+        hit = rng.random() < owners.get(archetype, owners.get("all", 0.0))
+        if hit and spec.get("requires", g) in picked | {g}:
+            picked.add(g)
+    return frozenset(picked)
 
 
 def _set_choice(rng, u: User, spec: dict, categories: list[str]) -> None:
@@ -112,6 +138,11 @@ def _finish(rng, u: User, dists: dict, kpass_code: str | None, transit_code: str
     rec = dists["recurring"]
     lo, hi = rec["TELECOM"]["amount_range"]
     u.telecom = (str(rng.choice(places["TELECOM"])), int(rng.integers(lo, hi + 1) // 100 * 100))
+    # 납부일: 통신비는 정해진 날 중 하나, 학원비 같은 고정 결제는 범위 안에서 사용자마다 한 번 정한다 (2026-11-16)
+    u.fixed_day["TELECOM"] = int(rng.choice(rec["TELECOM"]["days"]))
+    for fx in dists["archetypes"][u.archetype].get("monthly_fixed", []):
+        lo_d, hi_d = fx["day_range"]
+        u.fixed_day[fx["category"]] = int(rng.integers(lo_d, hi_d + 1))
     n_sub = int(rng.integers(rec["SUBSCR"]["count_range"][0], rec["SUBSCR"]["count_range"][1] + 1))
     names = list(rec["SUBSCR"]["prices"])
     for name in rng.choice(names, size=n_sub, replace=False):
@@ -127,7 +158,9 @@ def _finish(rng, u: User, dists: dict, kpass_code: str | None, transit_code: str
 def build_users(rng: np.random.Generator, cards: list[Card], dists: dict, n_background: int) -> list[User]:
     personas = load_config("personas")
     pop = load_config("population")
-    categories = [c["code"] for c in load_config("categories")["categories"]]
+    card_map = load_config("card_db_map")
+    eligibility, exclusive = card_map["eligibility"], card_map["exclusive_groups"]
+    categories = [c["code"] for c in load_config("categories")["categories"] if c["generated"]]
     by_code = {c.code: c for c in cards}
     users: list[User] = []
     next_uc = 1
@@ -145,11 +178,12 @@ def build_users(rng: np.random.Generator, cards: list[Card], dists: dict, n_back
             user_id=p["id"], user_type="demo", display_name=p["display_name"], archetype=p["archetype"],
             age_band=p["age_band"], gender=p["gender"], zones=dict(p["zones"]), kpass_tier=p["kpass_tier"],
             cards=make_cards([by_code[c] for c in p["cards"]]),
-            habit=dict(personas["archetypes"][p["archetype"]]["habit"]), loc_consent=True,
+            habit=dict(personas["archetypes"][p["archetype"]]["habit"]),
             amount_level=p["amount_level"], favorite_prob=dists["favorite_prob"],
         )
         _finish(rng, u, dists, p["kpass_card"], p["transit_default"])
         _set_choice(rng, u, personas["archetypes"][p["archetype"]], categories)
+        u.specials = frozenset(p.get("special", []))
         users.append(u)
 
     archetypes = list(pop["archetype_share"])
@@ -158,31 +192,65 @@ def build_users(rng: np.random.Generator, cards: list[Card], dists: dict, n_back
     assigned = rng.permutation(np.searchsorted(np.cumsum(share / share.sum()), (np.arange(n_background) + 0.5) / n_background))
     levels = _spend_levels(rng, pop["spend_level"], n_background)
     favorite = rng.permutation(np.linspace(*pop["favorite_prob_range"], n_background))
-    for i in range(n_background):
+    # KB 보유자도 설정 비율대로 정확히 나눈 뒤 순서만 섞는다
+    n_other = round(pop["cards"]["other_issuer_share"] * n_background)
+    want_other = rng.permutation([True] * n_other + [False] * (n_background - n_other))
+    def add_background(i: int, a: str, age: str | None, level: tuple[float, float], fav: float, other: bool) -> None:
         uid = BACKGROUND_ID_START + i
-        a = archetypes[assigned[i]]
-        age = str(rng.choice(pop["age_band"][a]))
-        picked = _pick_background_cards(rng, cards, a, pop["cards"])
+        age = age or str(rng.choice(pop["age_band"][a]))
+        picked = _pick_background_cards(rng, cards, a, pop["cards"], eligibility, other, exclusive)
         rng.shuffle(picked)
         habit = {k: max(0.02, v + rng.normal(0, pop["habit_jitter_sd"]))
                  for k, v in personas["archetypes"][a]["habit"].items()}
-        count_level, amount_level = levels[i]
+        count_level, amount_level = level
         u = User(
             user_id=uid, user_type="background", display_name=f"배경 사용자 {uid}", archetype=a,
             age_band=age, gender=str(rng.choice(["M", "F"])),
             zones={
                 "home": str(rng.choice(pop["zones"]["home"])),
-                "work": None if a == "REMOTE" else str(rng.choice(pop["zones"]["work"])),
+                "work": None if a in pop["no_work_zone"] else str(rng.choice(pop["zones"]["work"])),
                 "weekend": str(rng.choice(pop["zones"]["weekend"])),
             },
             kpass_tier="youth" if age == "20s" and rng.random() < pop["youth_kpass_share_20s"] else "general",
-            cards=make_cards(picked), habit=_normalize(habit), loc_consent=bool(rng.random() < 0.6),
-            count_level=count_level, amount_level=amount_level, favorite_prob=float(favorite[i]),
+            cards=make_cards(picked), habit=_normalize(habit),
+            count_level=count_level, amount_level=amount_level, favorite_prob=fav,
         )
         kpass = next((uc.card.code for uc in u.cards if "kpass" in uc.card.tags), None)
         _finish(rng, u, dists, kpass, kpass or u.cards[0].card.code)
         _set_choice(rng, u, personas["archetypes"][a], categories)
+        u.specials = _pick_specials(rng, dists.get("special", {}), a)
         users.append(u)
+
+    for i in range(n_background):
+        add_background(i, archetypes[assigned[i]], None, levels[i], float(favorite[i]), bool(want_other[i]))
+
+    # 추가 인원 (2026-11-14 결정: 기존 300명은 그대로 두고 50대 60명을 더한다)
+    extra = [(g["archetype"], g["age_band"]) for g in pop.get("extra_users", []) for _ in range(g["n"])]
+    if extra:
+        n = len(extra)
+        order = rng.permutation(n)
+        levels2 = _spend_levels(rng, pop["spend_level"], n)
+        favorite2 = rng.permutation(np.linspace(*pop["favorite_prob_range"], n))
+        n_other2 = round(pop["cards"]["other_issuer_share"] * n)
+        want_other2 = rng.permutation([True] * n_other2 + [False] * (n - n_other2))
+        for j, k in enumerate(order):
+            a, age = extra[k]
+            add_background(n_background + j, a, age, levels2[j], float(favorite2[j]), bool(want_other2[j]))
+
+    # 데모 사용자에게 나중에 더한 카드 (2026-11-18: 모든 사용자가 신한카드를 갖는다).
+    # 다른 사용자의 카드 번호와 공통 난수를 바꾸지 않도록 맨 뒤 번호를 쓰고, 업종별 습관은 별도 난수로 다시 정한다
+    by_id = {u.user_id: u for u in users}
+    for p in personas["demo_users"]:
+        added = p.get("added_cards") or []
+        if not added:
+            continue
+        u = by_id[p["id"]]
+        for code in added:
+            u.cards.append(UserCard(next_uc, by_code[code], len(u.cards) + 1, added=True))
+            next_uc += 1
+        u.category_habit = {}
+        _set_choice(np.random.default_rng([ADDED_CARD_SEED, u.user_id]), u, personas["archetypes"][p["archetype"]],
+                    categories)
     return users
 
 
@@ -194,15 +262,16 @@ def users_frames(rng: np.random.Generator, users: list[User], created: date) -> 
             "persona_code": u.archetype, "age_band": u.age_band, "gender": u.gender,
             "home_zone": u.zones["home"], "work_zone": u.zones["work"], "weekend_zone": u.zones["weekend"],
             "kpass_tier": u.kpass_tier if u.kpass_card else None,
-            "loc_consent": u.loc_consent, "loc_feature_on": u.loc_consent,
             "habit_habit": u.habit["habit"], "habit_random": u.habit["random"],
             "choice_model": u.choice_model,
+            "special_groups": ",".join(sorted(u.specials)),     # 생성기 전용
             "created_at": pd.Timestamp(created, tz="Asia/Seoul"),
         })
         for cat, uc_id in u.category_habit.items():
             hrows.append({"user_id": u.user_id, "category_code": cat, "user_card_id": uc_id})
         for uc in u.cards:
             c = uc.card
+            r = np.random.default_rng([ADDED_CARD_SEED, uc.user_card_id]) if uc.added else rng   # 공통 난수를 밀지 않는다
             crows.append({
                 "user_card_id": uc.user_card_id, "user_id": u.user_id, "card_id": c.card_id,
                 "card_code": c.code, "issuer_code": c.issuer,
@@ -212,8 +281,9 @@ def users_frames(rng: np.random.Generator, users: list[User], created: date) -> 
                 "is_transit_default": uc.user_card_id == u.transit_default,
                 "is_bill_card": uc.user_card_id == u.bill_card,
                 "nickname": None,
-                "masked_number": f"****-****-****-{int(rng.integers(0, 10000)):04d}",
-                "issued_at": date(2021, 1, 1) + timedelta(days=int(rng.integers(0, 1980))),
+                "masked_number": f"****-****-****-{int(r.integers(0, 10000)):04d}",
+                # 데이터 시작 전에 발급한 카드만 둔다 (2026-11-14: 시작을 2025-11 로 당기면서 발급 전 결제가 생겼던 문제)
+                "issued_at": date(2021, 1, 1) + timedelta(days=int(r.integers(0, (created - date(2021, 1, 1)).days))),
             })
     return {
         "users": pd.DataFrame(urows),
