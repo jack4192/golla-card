@@ -97,7 +97,8 @@ export default function RoutineRecommendationScreen({
     const when = scheduleDate && scheduleDate !== dateKey(now) ? new Date(scheduleDate + 'T12:00:00') : now;
     return buildRecommendations(input.profile, input.events, input.saved, includeMyData ? data : null, when);
   }, [input, data, now, includeMyData, scheduleDate]);
-  const promotionTab = index === 1;
+  const cardAd = presentation === 'card-ad';
+  const promotionTab = !cardAd && index === 1;
   const selected = recommendations?.card;
   const card = promotionTab ? null : selected?.card;
   const match = selected ? [...selected.matches].sort((a, b) => b.weight - a.weight)[0] : null;
@@ -138,15 +139,15 @@ export default function RoutineRecommendationScreen({
   </> : <View style={s.empty}>
     <Text style={s.reason}>{error || '진행 중인 프로모션이 없어요.'}</Text>
   </View>;
-  if (presentation === 'popup') {
+  if (presentation === 'popup' || cardAd) {
     return <ScrollView style={s.screen} contentContainerStyle={{padding:18,gap:16}}>
-      <View style={{flexDirection:'row',gap:8}}>
+      {!cardAd && <View style={{flexDirection:'row',gap:8}}>
         {RECOMMENDATION_LABELS.map((label,i) => <TouchableOpacity key={label} accessibilityRole="tab"
           accessibilityState={{selected:index===i}} onPress={() => {setIndex(i);setError('');}}
           style={{flex:1,minHeight:44,alignItems:'center',justifyContent:'center',borderRadius:14,backgroundColor:index===i?'#123EAC':'#E3EBFD'}}>
           <Text style={{color:index===i?'white':'#294674',fontWeight:'700'}}>{label}</Text>
         </TouchableOpacity>)}
-      </View>
+      </View>}
       {loading ? <ActivityIndicator/> : promotionTab ? promotionContent() : card ? <View style={[s.hero,{gap:12}]}>
         <CardReveal key={card.code} card={card} reduced={reduced} replay={0}/>
         <Text style={s.cardName}>{card.name}</Text>

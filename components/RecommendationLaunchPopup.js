@@ -3,19 +3,19 @@ import { ActivityIndicator, AppState, Modal, ScrollView, StyleSheet, Text, Touch
 import { selectDailyPromotion } from '../data/promotionBrands';
 import PromotionOffer from './PromotionOffer';
 import RoutineRecommendationScreen from '../screens/RoutineRecommendationScreen';
-import { hideAdForSevenDays, readAdDue, recordAdShown } from '../utils/recommendationPopup';
+import { hideAdForSevenDays, takeAutomaticAd } from '../utils/recommendationPopup';
 
 export default function RecommendationLaunchPopup({
   enabled, allowAutomaticAds, includeMyData, openRequest, promotions, onViewPromotions
 }) {
-  const [kind, setKind] = useState(null);
+  const [ad, setAd] = useState(null);
   const [foreground, setForeground] = useState(!AppState.currentState || AppState.currentState === 'active');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const lastRequest = useRef(openRequest);
-  const lastShown = useRef({});
   const lock = useRef(false);
   const hasPromotion = promotions.length > 0;
+  const kind = ad?.kind;
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => setForeground(state === 'active'));
     return () => subscription.remove();
@@ -24,37 +24,28 @@ export default function RecommendationLaunchPopup({
   useEffect(() => {
     let current = true;
     if (!enabled || !foreground || kind || saving) return;
-    if (lastRequest.current !== openRequest) {
+    if (openRequest && lastRequest.current !== openRequest) {
       lastRequest.current = openRequest;
-      setKind(openRequest.kind);
+      setAd({ kind: openRequest.kind, automatic: false });
       return;
     }
     if (!allowAutomaticAds) return;
-    const now = Date.now();
-    const order = hasPromotion ? ['recommendation', 'promotion'] : ['recommendation'];
-    Promise.all(order.map(item => readAdDue(item, now).catch(() => false))).then(results => {
-      if (!current) return;
-      const ready = order.find((item, i) => results[i] && !lastShown.current[item]);
-      if (ready) {
-        lastShown.current[ready] = true;
-        setKind(ready);
-        Promise.resolve().then(() => recordAdShown(ready, now)).catch(() => {});
-      }
-    });
+    takeAutomaticAd(hasPromotion, () => current).then(ready => {
+      if (current && ready) setAd({ kind: ready, automatic: true });
+    }).catch(() => {});
     return () => { current = false; };
   }, [enabled, allowAutomaticAds, hasPromotion, foreground, kind, saving, openRequest]);
 
   useEffect(() => {
-    if (!foreground) lastShown.current = {};
     if (!enabled || !foreground) {
-      setKind(null);
+      setAd(null);
       setError('');
     }
   }, [enabled, foreground]);
 
   const close = () => {
     if (lock.current) return;
-    setKind(null);
+    setAd(null);
     setError('');
   };
   const hide = async () => {
@@ -64,7 +55,7 @@ export default function RecommendationLaunchPopup({
     setError('');
     try {
       await hideAdForSevenDays(kind);
-      setKind(null);
+      setAd(null);
     } catch {
       setError('숨김을 저장하지 못했어요. 다시 시도해주세요.');
     } finally {
@@ -94,7 +85,11 @@ export default function RecommendationLaunchPopup({
                 <TouchableOpacity accessibilityRole="button" onPress={() => {close();onViewPromotions();}} style={s.hide}>
                   <Text style={s.link}>혜택 둘러보기</Text>
                 </TouchableOpacity>
-              </ScrollView> : <RoutineRecommendationScreen presentation="popup" onNext={close} includeMyData={includeMyData} />}
+              </ScrollView> : <RoutineRecommendationScreen
+                presentation={ad.automatic ? 'card-ad' : 'popup'}
+                onNext={close}
+                includeMyData={includeMyData}
+              />}
             </View>
 
             <View style={s.footer}>
