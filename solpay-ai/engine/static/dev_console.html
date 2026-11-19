@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOL페이 AI 테스트</title>
+<style>
+  :root {
+    --bg: #f4f6fb; --panel: #ffffff; --line: #dfe4ef; --text: #1b2333; --muted: #6b7489;
+    --brand: #1f5eff; --brand-soft: #e8efff; --ok: #12805c; --warn: #b25e00; --err: #c62828; --chip: #eef1f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11151d; --panel: #1a2030; --line: #2c3548; --text: #e7ebf3; --muted: #9aa3b6;
+            --brand: #6f9bff; --brand-soft: #22305a; --ok: #4cc79a; --warn: #f0a24a; --err: #ff7b7b; --chip: #242c3d; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px 16px; }
+  header h1 { font-size: 16px; margin: 0 0 8px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  label { color: var(--muted); font-size: 12px; display: flex; gap: 4px; align-items: center; }
+  input, select, button, textarea { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  button.ghost { background: transparent; }
+  button:disabled { opacity: .5; cursor: wait; }
+  nav { display: flex; gap: 4px; padding: 8px 16px 0; max-width: 1100px; margin: 0 auto; }
+  nav button { border-radius: 8px 8px 0 0; border-bottom: none; }
+  nav button.on { background: var(--brand-soft); border-color: var(--brand); color: var(--brand); font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 0 16px 40px; }
+  section.tab { display: none; background: var(--panel); border: 1px solid var(--line); border-radius: 0 12px 12px 12px; padding: 16px; }
+  section.tab.on { display: block; }
+  h2 { font-size: 15px; margin: 18px 0 8px; } h2:first-child { margin-top: 0; }
+  .muted { color: var(--muted); } .small { font-size: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--chip); font-size: 12px; margin-right: 4px; }
+  .badge.ok { color: var(--ok); } .badge.warn { color: var(--warn); } .badge.brand { color: var(--brand); }
+  .err { color: var(--err); white-space: pre-wrap; margin: 8px 0; }
+  details { margin-top: 8px; } summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  pre { background: var(--chip); border-radius: 8px; padding: 8px; overflow: auto; max-height: 360px; font-size: 12px; }
+  .rank1 { background: var(--brand-soft); }
+  /* 챗봇 */
+  #chatLog { height: 380px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: var(--bg); }
+  .msg { max-width: 80%; margin: 6px 0; padding: 8px 10px; border-radius: 12px; white-space: pre-wrap; }
+  .msg.user { margin-left: auto; background: var(--brand); color: #fff; }
+  .msg.bot { background: var(--panel); border: 1px solid var(--line); }
+  .meta { font-size: 11px; color: var(--muted); margin-top: 4px; white-space: normal; }
+  .chips { margin: 8px 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button { background: var(--chip); border: none; border-radius: 999px; }
+  /* 추천 페이지 */
+  .sched td input, .sched td select { width: 100%; }
+  .phone { max-width: 420px; margin: 12px 0; border: 1px solid var(--line); border-radius: 18px; padding: 16px; background: var(--bg); }
+  .phone .tabs { display: flex; background: var(--brand-soft); border-radius: 10px; padding: 3px; margin: 10px 0; }
+  .phone .tabs button { flex: 1; border: none; background: transparent; color: var(--brand); border-radius: 8px; }
+  .phone .tabs button.on { background: var(--brand); color: #fff; }
+  .phone h3 { margin: 4px 0; font-size: 18px; text-align: center; }
+  .phone .sub { text-align: center; color: var(--muted); font-size: 13px; }
+  .phone .cardbox { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-top: 10px; }
+  .phone .big { text-align: center; font-size: 24px; font-weight: 700; color: var(--brand); }
+  .phone .label { text-align: center; font-size: 12px; color: var(--muted); }
+  .phone ul { padding-left: 18px; margin: 8px 0 0; }
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  .pagegrid { grid-template-columns: 440px minmax(0, 1fr); }
+  .pagegrid > div:last-child { overflow-x: auto; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+  @media (max-width: 1000px) { .pagegrid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>SOL페이 AI 테스트 <span class="muted small">카드 배치 · 챗봇 · 카드 추천 (개발용)</span></h1>
+  <div class="row">
+    <label>사용자 <select id="user">
+      <option value="1">test1</option><option value="2">test2</option><option value="3">test3</option>
+      <option value="4">test4</option><option value="5">test5</option><option value="other">직접 입력</option>
+    </select></label>
+    <input id="userOther" type="number" min="1" placeholder="user_id" style="width:90px;display:none">
+    <label>날짜 <input id="day" type="date" value="2026-11-05"></label>
+    <label>시각 <input id="time" type="time" value="08:00"></label>
+    <span class="muted small">가상 데이터는 2026-11-05 까지라 그 근처 날짜로 시험하세요. 날짜를 바꾸면 카드날이 바뀝니다.</span>
+  </div>
+  <details><summary>설정 (내부 토큰 · 초기화)</summary>
+    <div class="row" style="margin-top:6px">
+      <label>내부 토큰 <input id="token" type="password" placeholder="SOLPAY_INTERNAL_TOKEN 을 켰을 때만" style="width:240px"></label>
+      <button id="resetBtn" class="ghost">기록 초기화</button>
+      <span class="muted small">일정·규칙·추천 기록·시연 결제를 지웁니다 (개인 DB 면 app 표).</span>
+    </div>
+  </details>
+</header>
+<nav>
+  <button data-tab="rank" class="on">1. 카드 배치</button>
+  <button data-tab="chat">2. 챗봇</button>
+  <button data-tab="page">3. 카드 추천</button>
+</nav>
+<main>
+  <!-- 1. 카드 배치 -->
+  <section class="tab on" id="tab-rank">
+    <div class="row">
+      <button class="primary" id="rankBtn">결제 화면 열기 (카드 순서)</button>
+      <span class="muted small">빠른 시각:</span>
+      <button class="ghost" data-time="08:30">08:30</button><button class="ghost" data-time="12:30">12:30</button>
+      <button class="ghost" data-time="15:00">15:00</button><button class="ghost" data-time="19:30">19:30</button>
+    </div>
+    <div id="rankErr" class="err"></div>
+    <div class="grid2">
+      <div><h2>카드 순서</h2><div id="rankOut" class="muted">결제 화면 열기를 누르세요.</div></div>
+      <div><h2>이번 달 실적 · 혜택</h2><div id="cardsOut" class="muted">-</div>
+           <h2>이번 달 실적 채우기 방식</h2><div id="strategyOut" class="muted">-</div></div>
+    </div>
+  </section>
+
+  <!-- 2. 챗봇 -->
+  <section class="tab" id="tab-chat">
+    <div class="row"><span class="muted small" id="chatCtx">결제 화면 문맥 없음 (1번 탭에서 결제 화면을 열면 '왜 1순위야?'가 그 추천을 설명합니다)</span>
+      <button class="ghost" id="chatClear">대화 지우기</button></div>
+    <div class="chips" id="chips"></div>
+    <div id="chatLog"></div>
+    <div class="row" style="margin-top:8px">
+      <input id="chatInput" style="flex:1" placeholder="예: 주말엔 KB 카드 먼저 보여줘 / 스타벅스 6천 원 결제할 건데 뭐 써?">
+      <button class="primary" id="chatSend">보내기</button>
+    </div>
+    <div id="chatErr" class="err"></div>
+  </section>
+
+  <!-- 3. 카드 추천 -->
+  <section class="tab" id="tab-page">
+    <h2>오늘 일정 <span class="muted small">(최대 10줄, 시작·끝·업종·예상 금액)</span></h2>
+    <table class="sched"><thead><tr><th>시작</th><th>끝</th><th>업종</th><th class="num">예상 금액(원)</th><th></th></tr></thead>
+      <tbody id="schedRows"></tbody></table>
+    <div class="row" style="margin-top:8px">
+      <button class="ghost" id="addRow">+ 줄 추가</button>
+      <button class="primary" id="pageWithSched">일정 저장 → 추천 페이지</button>
+      <button id="pageSkip">일정 없음 · 건너뛰기 → 추천 페이지</button>
+      <button class="ghost" id="pageAgain">같은 날 다시 열기</button>
+    </div>
+    <div id="pageErr" class="err"></div>
+    <div id="pageOut"></div>
+  </section>
+</main>
+
+<script>
+const CATEGORIES = /*CATEGORIES*/{};
+const CHIPS = /*CHIPS*/[];
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const won = (n) => (n == null ? "-" : Number(n).toLocaleString("ko-KR") + "원");
+const catName = (code) => CATEGORIES[code] || code;
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+                set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+
+// ---------- 공통 ----------
+function userId() { return $("user").value === "other" ? Number($("userOther").value || 0) : Number($("user").value); }
+function at() { return `${$("day").value}T${$("time").value}:00+09:00`; }
+async function api(method, path, body) {
+  const headers = { "Content-Type": "application/json" };
+  const token = $("token").value.trim();
+  if (token) headers["X-Internal-Token"] = token;
+  const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const text = await res.text();
+  let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!res.ok) throw new Error(`${res.status} ${typeof data === "object" && data?.detail ? JSON.stringify(data.detail) : text}`);
+  return data;
+}
+async function busy(btn, errBox, fn) {
+  btn.disabled = true; $(errBox).textContent = "";
+  try { await fn(); } catch (e) { $(errBox).textContent = e.message; } finally { btn.disabled = false; }
+}
+const pre = (obj) => `<pre>${esc(JSON.stringify(obj, null, 2))}</pre>`;
+
+$("user").addEventListener("change", () => { $("userOther").style.display = $("user").value === "other" ? "" : "none"; });
+$("token").value = store.get("solpayToken") || "";
+$("token").addEventListener("change", () => store.set("solpayToken", $("token").value));
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll("section.tab").forEach((s) => s.classList.toggle("on", s.id === "tab-" + b.dataset.tab));
+}));
+$("resetBtn").addEventListener("click", () => busy($("resetBtn"), "rankErr", async () => {
+  if (!confirm("일정·규칙·추천 기록·시연 결제를 지울까요? (개인 DB 를 쓰면 app 표를 비웁니다)")) return;
+  await api("POST", "/internal/dev/reset");
+  lastRec = null; renderCtx(); alert("초기화했어요.");
+}));
+
+// ---------- 1. 카드 배치 ----------
+let lastRec = null;          // {recommendation_id, top}
+let cardNames = {};
+async function loadCards() {
+  const cards = await api("GET", `/internal/users/${userId()}/cards?at=${encodeURIComponent(at())}`);
+  cardNames = Object.fromEntries(cards.map((c) => [c.user_card_id, c.name]));
+  $("cardsOut").innerHTML = `<table><tr><th>카드</th><th class="num">전월 실적</th><th class="num">이번 달 실적</th>
+    <th class="num">다음 구간까지</th><th class="num">이번 달 혜택</th></tr>` + cards.map((c) => `<tr>
+    <td>${esc(c.name)}${c.excluded ? ' <span class="badge warn">삭제</span>' : ""}<div class="muted small">${esc(c.issuer)}</div></td>
+    <td class="num">${won(c.prev_perf)}</td><td class="num">${won(c.perf)}</td>
+    <td class="num">${c.next_tier ? won(c.remaining) : "최고 구간"}</td><td class="num">${won(c.benefit_this_month)}</td></tr>`).join("") + "</table>";
+}
+async function loadStrategy() {
+  const s = await api("GET", `/internal/users/${userId()}/strategy?at=${encodeURIComponent(at())}`);
+  $("strategyOut").innerHTML = `<span class="badge brand">${esc(s.strategy_name || s.strategy || "-")}</span>` +
+    (s.reason ? `<div class="small">${esc(s.reason)}</div>` : "") + `<details><summary>자세히</summary>${pre(s)}</details>`;
+}
+async function rank() {
+  await loadCards();
+  const r = await api("POST", "/internal/rank", { user_id: userId(), at: at(), explain: true });
+  lastRec = { recommendation_id: r.recommendation_id, top: cardNames[r.cards[0]?.user_card_id] };
+  renderCtx();
+  $("rankOut").innerHTML = `<div class="small" style="margin-bottom:6px">
+      <span class="badge">추천 ID ${r.recommendation_id}</span><span class="badge">${esc(r.reason_code)}</span>
+      <span class="badge">${esc(r.scenario_mode)}</span><span class="badge">보여 줄 카드 ${r.display_count}장</span>
+      <span class="badge">${esc(r.version)}</span>${r.rule_applied ? '<span class="badge warn">규칙 적용</span>' : ""}</div>
+    <table><tr><th>순위</th><th>카드</th><th class="num">점수</th><th>안내 문구</th></tr>` + r.cards.map((c) => `
+    <tr class="${c.rank === 1 ? "rank1" : ""}"><td>${c.rank}</td><td>${esc(cardNames[c.user_card_id] || c.user_card_id)}</td>
+    <td class="num">${won(c.score_won)}</td><td>${esc(c.message || "")}</td></tr>`).join("") + "</table>" +
+    `<details><summary>판단 근거 (explain)</summary>${pre(r.explanation)}</details>`;
+  await loadStrategy().catch((e) => { $("strategyOut").textContent = e.message; });
+}
+$("rankBtn").addEventListener("click", () => busy($("rankBtn"), "rankErr", rank));
+document.querySelectorAll("[data-time]").forEach((b) => b.addEventListener("click", () => {
+  $("time").value = b.dataset.time; busy(b, "rankErr", rank);
+}));
+
+// ---------- 2. 챗봇 ----------
+let history = [];
+const sessionId = "dev-" + Math.random().toString(36).slice(2, 10);
+function renderCtx() {
+  $("chatCtx").textContent = lastRec
+    ? `결제 화면 문맥: 추천 ID ${lastRec.recommendation_id} (1순위 ${lastRec.top || "-"}) — '왜 이 카드가 1순위야?'가 이 추천을 설명합니다`
+    : "결제 화면 문맥 없음 (1번 탭에서 결제 화면을 열면 '왜 1순위야?'가 그 추천을 설명합니다)";
+}
+function addMsg(role, html) {
+  const div = document.createElement("div");
+  div.className = "msg " + role; div.innerHTML = html;
+  $("chatLog").appendChild(div); $("chatLog").scrollTop = $("chatLog").scrollHeight;
+  return div;
+}
+function renderBlock(b) {
+  const rows = b.rows || b.cards || b.items;
+  let body = "";
+  if (Array.isArray(rows) && rows.length && typeof rows[0] === "object") {
+    const keys = Object.keys(rows[0]).slice(0, 7);
+    body = `<table><tr>${keys.map((k) => `<th>${esc(k)}</th>`).join("")}</tr>` +
+      rows.map((r) => `<tr>${keys.map((k) => `<td>${esc(typeof r[k] === "object" ? JSON.stringify(r[k]) : r[k])}</td>`).join("")}</tr>`).join("") + "</table>";
+  }
+  return `<div style="margin-top:6px"><span class="badge brand">${esc(b.type)}</span>${body}<details><summary>원본</summary>${pre(b)}</details></div>`;
+}
+async function sendChat(text) {
+  if (!text.trim()) return;
+  addMsg("user", esc(text));
+  const body = { user_id: userId(), session_id: sessionId, message: text, at: at(), history: history.slice(-40) };
+  if (lastRec) body.screen = { name: "pay", recommendation_id: lastRec.recommendation_id };
+  const wait = addMsg("bot", '<span class="muted">답변 쓰는 중…</span>');
+  try {
+    const r = await api("POST", "/internal/chat", body);
+    history.push({ role: "user", text }, { role: "assistant", text: r.reply });
+    const log = r.log || {};
+    let html = esc(r.reply) + (r.blocks || []).map(renderBlock).join("");
+    if (r.rule_draft) {
+      html += `<div style="margin-top:6px"><span class="badge warn">규칙 초안</span> ${esc(r.rule_draft.summary || "")}
+        ${r.rule_draft.draft_id ? `<div class="row" style="margin-top:4px"><button data-draft="${r.rule_draft.draft_id}" data-act="confirm" class="primary">저장</button>
+        <button data-draft="${r.rule_draft.draft_id}" data-act="cancel">취소</button></div>` : '<div class="small muted">이 저장소는 초안을 저장하지 않습니다 (개인 DB 에서만 저장 버튼)</div>'}</div>`;
+    }
+    html += `<div class="meta">${r.fallback ? '<span class="badge warn">예비 답변</span>' : ""}도구: ${esc((log.tools || []).join(", ") || "없음")}
+      · ${log.ms ?? "-"}ms · ${esc(log.model || "")} ${log.fallback_reason ? "· " + esc(log.fallback_reason) : ""}</div>`;
+    wait.innerHTML = html;
+  } catch (e) { wait.innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+$("chatLog").addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("[data-draft]"); if (!btn) return;
+  try {
+    const r = await api("POST", `/internal/rules/drafts/${btn.dataset.draft}/${btn.dataset.act}`, { user_id: userId() });
+    btn.parentElement.innerHTML = `<span class="badge ok">${btn.dataset.act === "confirm" ? "저장했어요" : "취소했어요"}</span> <span class="small muted">${esc(JSON.stringify(r))}</span>`;
+  } catch (e) { btn.parentElement.insertAdjacentHTML("beforeend", `<div class="err">${esc(e.message)}</div>`); }
+});
+CHIPS.forEach((c) => { const b = document.createElement("button"); b.textContent = c; b.onclick = () => sendChat(c); $("chips").appendChild(b); });
+$("chatSend").addEventListener("click", () => { const t = $("chatInput").value; $("chatInput").value = ""; sendChat(t); });
+$("chatInput").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) $("chatSend").click(); });
+$("chatClear").addEventListener("click", () => { history = []; $("chatLog").innerHTML = ""; });
+$("user").addEventListener("change", () => { history = []; $("chatLog").innerHTML = ""; lastRec = null; renderCtx(); });
+
+// ---------- 3. 카드 추천 ----------
+const catOptions = Object.entries(CATEGORIES).sort((a, b) => a[1].localeCompare(b[1], "ko"));
+function addRow(r = { start: "12:00", end: "13:00", category: "RESTAURANT", amount: 13000 }) {
+  if ($("schedRows").children.length >= 10) return;
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td><input type="time" value="${esc(r.start)}"></td><td><input type="time" value="${esc(r.end)}"></td>
+    <td><select>${catOptions.map(([k, v]) => `<option value="${esc(k)}" ${k === r.category ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></td>
+    <td><input type="number" min="100" step="100" value="${r.amount}" style="text-align:right"></td>
+    <td><button class="ghost" title="지우기">✕</button></td>`;
+  tr.querySelector("button").onclick = () => tr.remove();
+  $("schedRows").appendChild(tr);
+}
+addRow(); addRow({ start: "15:00", end: "16:00", category: "CAFE", amount: 5000 });
+$("addRow").addEventListener("click", () => addRow({ start: "18:00", end: "19:00", category: "CONVENIENCE", amount: 5000 }));
+function schedItems() {
+  return [...$("schedRows").children].map((tr) => {
+    const [s, e, a] = tr.querySelectorAll("input"); const c = tr.querySelector("select");   // 시작·끝·금액 (업종은 select)
+    return { start: s.value, end: e.value, category: c.value, amount: Number(a.value) };
+  });
+}
+async function openPage() {
+  const t0 = performance.now();
+  const p = await api("POST", `/internal/users/${userId()}/recommendation-page`, { at: at() });
+  renderPage(p, Math.round(performance.now() - t0));
+}
+const dayPath = () => `/internal/users/${userId()}/schedules/${$("day").value}`;
+$("pageWithSched").addEventListener("click", () => busy($("pageWithSched"), "pageErr", async () => {
+  await api("PUT", `${dayPath()}?at=${encodeURIComponent(at())}`, { items: schedItems() });
+  await openPage();
+}));
+$("pageSkip").addEventListener("click", () => busy($("pageSkip"), "pageErr", async () => {
+  await api("DELETE", dayPath()); await openPage();
+}));
+$("pageAgain").addEventListener("click", () => busy($("pageAgain"), "pageErr", openPage));
+
+function renderPage(p, ms) {
+  const badges = `<div class="small" style="margin:10px 0">
+    <span class="badge ${p.card_day ? "brand" : ""}">카드날 ${p.card_day ? "예" : "아니요"}</span>
+    <span class="badge">기준 ${p.source === "schedule" ? "오늘 일정" : "평소 소비(최근 30일)"}</span>
+    <span class="badge ${p.copy_source === "llm" ? "ok" : "warn"}">문구 ${esc(p.copy_source)}</span>
+    ${p.cached ? '<span class="badge warn">같은 날 저장분</span>' : ""}
+    <span class="badge">응답 ${ms}ms${p.copy_log?.ms != null ? ` (문구 ${p.copy_log.ms}ms${p.copy_log.retries ? ", 다시 씀" : ""})` : ""}</span>
+    ${p.copy_log?.reason ? `<span class="badge warn">${esc(p.copy_log.reason)}</span>` : ""}</div>`;
+  if (!p.tabs.length) {
+    $("pageOut").innerHTML = badges + `<div class="phone"><div class="sub">보여 줄 추천이 없어 이 페이지를 건너뛰고 메인으로 갑니다.</div></div>` +
+      `<details><summary>원본 응답</summary>${pre(p)}</details>`;
+    return;
+  }
+  const names = { card: "1. 카드사 추천", merchant: "2. 가맹점 추천" };
+  $("pageOut").innerHTML = badges + `<div class="grid2 pagegrid"><div class="phone">
+      <div class="tabs">${p.tabs.map((t, i) => `<button data-ptab="${t}" class="${i === 0 ? "on" : ""}">${names[t]}</button>`).join("")}</div>
+      <div id="ptab-card" style="${p.tabs[0] === "card" ? "" : "display:none"}">${p.card ? cardTab(p.card) : ""}</div>
+      <div id="ptab-merchant" style="${p.tabs[0] === "merchant" ? "" : "display:none"}">${p.merchant ? merchantTab(p.merchant) : ""}</div>
+    </div><div><h2>엔진 계산 근거</h2>${evidence(p)}<details><summary>원본 응답</summary>${pre(p)}</details></div></div>`;
+  document.querySelectorAll("[data-ptab]").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("[data-ptab]").forEach((x) => x.classList.toggle("on", x === b));
+    $("ptab-card").style.display = b.dataset.ptab === "card" ? "" : "none";
+    $("ptab-merchant").style.display = b.dataset.ptab === "merchant" ? "" : "none";
+  }));
+}
+function cardTab(c) {
+  const copy = c.copy || {};
+  return `<h3>${esc(copy.title)}</h3><div class="sub">${esc(copy.summary)}</div>
+    <div class="cardbox"><div style="text-align:center;font-weight:700">${esc(c.card_name)}</div>
+      <div class="sub">신한카드 · 연회비 ${won(c.annual_fee)}</div>
+      ${c.show_amount === false
+        ? `<div class="big" style="margin-top:10px;font-size:18px">${esc(copy.amount_label)}</div><div class="label">받을 수 있는 혜택 (오늘 더 받는 금액이 작아 금액은 숨김)</div>`
+        : `<div class="big" style="margin-top:10px">${won(c.gain)}</div><div class="label">${esc(copy.amount_label)}</div>`}
+      <ul>${(copy.reasons || []).map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div>
+    <div class="row" style="justify-content:center;margin-top:10px"><button class="primary" style="width:100%">카드 신청 (시연)</button></div>`;
+}
+function merchantTab(m) {
+  const copy = m.copy || {};
+  return `<h3>${esc(copy.title)}</h3><div class="sub">${esc(copy.summary)}</div>` + m.offers.map((o) => `
+    <div class="cardbox"><div style="text-align:center;font-weight:700">${esc(o.brand)}</div>
+      <div class="sub">${esc(o.title)} · ${esc(o.kind === "myshop" ? "마이샵" : "이벤트")}</div>
+      <div class="big" style="margin-top:10px">${won(o.total)}</div><div class="label">${esc(o.copy?.amount_label)}</div>
+      <ul>${(o.copy?.reasons || []).map((r) => `<li>${esc(r)}</li>`).join("")}</ul>
+      <div class="small muted" style="margin-top:6px">결제 카드: ${esc(o.card_name)} · ${esc(o.start.slice(11, 16))}~${esc(o.end.slice(11, 16))}</div></div>`).join("");
+}
+function evidence(p) {
+  let html = "";
+  if (p.card) {
+    const c = p.card;
+    html += `<div class="small"><b>${esc(c.card_name)}</b> · 오늘 더 받는 금액 ${won(c.gain)} · 지난 30일 월 이득(연회비 반영) ${won(c.monthly_gain)}
+      ${c.first_month_note ? `<div class="muted">${esc(c.first_month_note)}</div>` : ""}</div>
+      <table><tr><th>시각</th><th>업종</th><th>브랜드</th><th>혜택</th><th class="num">새 카드</th><th class="num">지금 카드</th><th class="num">더 받음</th></tr>` +
+      c.items.map((i) => `<tr><td>${esc(i.start.slice(11, 16))}~${esc(i.end.slice(11, 16))}</td><td>${esc(i.category_name)}</td>
+        <td>${esc(i.brand || "-")}</td><td>${esc(i.benefit)}<div class="muted small">${esc(i.benefit_type)}${i.min_prev ? ` · 전월 ${won(i.min_prev)} 이상` : ""}</div></td>
+        <td class="num">${won(i.value)}</td><td class="num">${won(i.owned_value)}</td><td class="num">${won(i.gain)}</td></tr>`).join("") + "</table>";
+  }
+  if (p.merchant) {
+    html += `<table style="margin-top:10px"><tr><th>시각</th><th>업종</th><th>행사</th><th>결제 카드</th><th class="num">행사</th><th class="num">카드</th><th class="num">합계</th></tr>` +
+      p.merchant.offers.map((o) => `<tr><td>${esc(o.start.slice(11, 16))}</td><td>${esc(o.category_name)}</td><td>${esc(o.brand)}<div class="muted small">${esc(o.title)}</div></td>
+        <td>${esc(o.card_name)}</td><td class="num">${won(o.promo_value)}</td><td class="num">${won(o.card_value)}</td><td class="num">${won(o.total)}</td></tr>`).join("") + "</table>";
+  }
+  return html || '<div class="muted">-</div>';
+}
+renderCtx();
+</script>
+</body>
+</html>
