@@ -5,9 +5,10 @@ from datetime import datetime
 
 from engine.benefit_calc import DAYS
 from engine.domain import UserCard
-from engine.params import BASE_ORDER_FIRST_TIER, BASE_ORDER_TOP_TIER, Params
+from engine.params import BASE_ORDER_TOP_TIER, SELECTABLE, Params
 
-RULE_TYPES = ("force", "exclude", "preference", "order")
+# no_fill: 실적을 채우지 않을 카드 (2026-11-19 결정). 기본 카드 후보에서 빼고 건당 혜택으로만 경쟁한다.
+RULE_TYPES = ("force", "exclude", "preference", "order", "no_fill")
 
 
 class RuleError(ValueError):
@@ -76,10 +77,11 @@ def parse_rule(data: dict, rule_id: int = 0, created_seq: int = 0) -> Rule:
     settings = data.get("settings") or {}
     user_card_ids = tuple(target.get("user_card_ids") or ())
     issuer = target.get("issuer")
-    if rule_type in ("force", "exclude") and not (issuer or user_card_ids):
+    if rule_type in ("force", "exclude", "no_fill") and not (issuer or user_card_ids):
         raise RuleError(f"{rule_type} 규칙에는 대상 카드가 필요합니다")
     base_order = settings.get("base_order")
-    if rule_type == "order" and base_order not in (BASE_ORDER_FIRST_TIER, BASE_ORDER_TOP_TIER):
+    # 실적 채우기 방식: 첫 구간 우선 / 주력 카드 우선 / 가치 최대 / 실적 안 채움 (+ 1번 카드 최고 구간)
+    if rule_type == "order" and base_order not in (*SELECTABLE, BASE_ORDER_TOP_TIER):
         raise RuleError(f"알 수 없는 기본 카드 순서: {base_order}")
     return Rule(
         rule_id=data.get("rule_id", rule_id), rule_type=rule_type,
@@ -97,27 +99,33 @@ class RuleOutcome:
     forced_rule: Rule | None
     excluded: set[int]
     params: Params
+    no_fill: set[int] = None                 # 실적을 채우지 않을 카드 (기본 카드 후보에서 뺀다)
+    order_rule: Rule | None = None           # 지금 적용된 실적 채우기 방식 규칙
 
 
 def resolve(rules: list[Rule], cards: list[UserCard], at: datetime, params: Params) -> RuleOutcome:
     """지금 시각에 맞는 규칙을 적용한다. 조건이 구체적인 규칙이 먼저이고, 같으면 최근 규칙이다."""
     matched = sorted((r for r in rules if r.matches(at)),
                      key=lambda r: (r.specificity, r.priority, r.created_seq), reverse=True)
-    forced, forced_rule, excluded = [], None, set()
+    forced, forced_rule, excluded, no_fill, order_rule = [], None, set(), set(), None
     changes: dict = {}
     for rule in matched:
         if rule.rule_type == "exclude":
             excluded |= {c.user_card_id for c in rule.targets(cards)}
+        elif rule.rule_type == "no_fill":
+            no_fill |= {c.user_card_id for c in rule.targets(cards)}
         elif rule.rule_type == "preference" and "w1" not in changes:
             for name, value in (("w1", rule.w1), ("w2", rule.w2)):
                 if value is not None:
                     changes[name] = min(max(value, params.weight_min), params.weight_max)
         elif rule.rule_type == "order" and "base_order" not in changes:
             changes["base_order"] = rule.base_order
+            order_rule = rule
     for rule in matched:
         if rule.rule_type == "force":
             usable = [c for c in rule.targets(cards) if c.user_card_id not in excluded]
             if usable:                       # 지정 카드를 더 이상 보유하지 않으면 건너뛴다
                 forced, forced_rule = usable, rule
                 break
-    return RuleOutcome(forced, forced_rule, excluded, params.with_(**changes) if changes else params)
+    return RuleOutcome(forced, forced_rule, excluded, params.with_(**changes) if changes else params, no_fill,
+                       order_rule)

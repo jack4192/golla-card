@@ -22,7 +22,7 @@ def short(user_card_id: int) -> str:
 def monthly(result: dict) -> pd.DataFrame:
     rows = []
     for ym, snap in result["months"].items():
-        if ym < "2026-08":
+        if ym < "2026-01":
             continue
         rows.append({"월": ym, "알고리즘": sum(v[2] for v in snap["algo"].values()),
                      "습관": sum(v[2] for v in snap["habit"].values())})
@@ -33,7 +33,7 @@ def performance(result: dict) -> pd.DataFrame:
     rows = []
     card_ids = {c.user_card_id: c.card_id for c in Data.cards[result["user_id"]]}
     for ym, snap in result["months"].items():
-        if ym < "2026-08" or ym > "2026-10":
+        if ym < "2026-01" or ym > "2026-10":
             continue
         for uc, (_, perf, benefit) in snap["algo"].items():
             tiers = Data.catalog.tiers[card_ids[uc]]
@@ -75,6 +75,7 @@ def payment_rows(rows: list[dict]) -> pd.DataFrame:
             "2순위": short(shown[1].user_card_id) if len(shown) > 1 else "", "사용 카드": short(r["chosen"]),
             "습관 카드": short(p.user_card_id), "판단": decision, "문구": shown[0].message,
             "받은 혜택": r["got"], "습관 혜택": r["habit_got"], "차이": r["got"] - r["habit_got"], "결제별 최대": r["best"],
+            "프로모션": next((s["promotion_label"] for s in res.card_scores.values() if s.get("promotion_label")), ""),
         })
     return pd.DataFrame(out)
 
@@ -103,9 +104,8 @@ def main() -> None:
     args = parser.parse_args()
     pd.set_option("display.unicode.east_asian_width", True, "display.width", 200, "display.max_columns", 20)
     prepare()
-    if Data.users[args.user].location_enabled:
-        report(args.user, "동의 버전", ReplayConfig(keep_rows=True))
-    report(args.user, "미동의 버전", ReplayConfig(keep_rows=True, force_no_location=True))
+    report(args.user, "일정 없음", ReplayConfig(keep_rows=True))
+    report(args.user, "일정 입력 가정", ReplayConfig(keep_rows=True, schedule=True))
 
 
 if __name__ == "__main__":

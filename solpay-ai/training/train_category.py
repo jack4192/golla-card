@@ -1,6 +1,6 @@
 """업종 확률 v2(LightGBM)를 가상 데이터로 학습하고 v1(개인 빈도)과 비교한다.
 
-시간순으로 나눈다. 기본값은 7월을 이력으로만 쓰고, 8~9월로 학습하고, 10월로 평가한다.
+시간순으로 나눈다. 기본값은 2025-11~12월을 이력으로만 쓰고, 2026-01~06월로 학습하고, 07~10월로 평가한다.
 입력은 engine.category_model.features 가 만드는 값뿐이며 생성기 전용 컬럼은 쓰지 않는다.
 
     uv run python -m training.train_category
@@ -65,9 +65,9 @@ def metrics(probs: np.ndarray, y: np.ndarray) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--train-from", default="2026-08-01")
-    parser.add_argument("--train-until", default="2026-10-01")
-    parser.add_argument("--test-until", default="2026-11-01")
+    parser.add_argument("--train-from", default="2026-01-01")     # 2025-11~12 은 이력으로만
+    parser.add_argument("--train-until", default="2026-07-01")    # 1~6월로 학습
+    parser.add_argument("--test-until", default="2026-11-01")     # 7~10월로 평가
     parser.add_argument("--rounds", type=int, default=400)
     args = parser.parse_args()
     params = Params()

@@ -14,8 +14,8 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 def benefit(i, category, rate=None, amount=None, min_amount=0, group="G", **kw):
-    return Benefit(i, category, kw.pop("type", "discount"), rate, kw.pop("rate_by_tier", None), amount, min_amount,
-                   kw.pop("monthly_count", None), group, **kw)
+    return Benefit(i, category, kw.pop("type", "discount"), rate=rate, amount=amount, min_amount=min_amount,
+                   cap_group=group, **kw)
 
 
 def card(card_id, name, issuer, tiers, benefits):
@@ -31,7 +31,7 @@ def catalog() -> Catalog:
         4: card(4, "무실적(가칭)", "SHINHAN", ((0, None),), [benefit(4, "*", rate=0.005)]),
     }
     merchants = {
-        10: Merchant(10, "카페", "CAFE", 37.5000, 127.0000),
+        10: Merchant(10, "카페 강남점", "CAFE", 37.5000, 127.0000, brand="카페"),
         11: Merchant(11, "식당", "REST", 37.50018, 127.0000),      # 카페에서 20m
         12: Merchant(12, "먼 식당", "REST", 37.5100, 127.0000),
         20: Merchant(20, "지하철", "TRANSIT", is_online=True),
@@ -41,13 +41,19 @@ def catalog() -> Catalog:
 
 @pytest.fixture
 def params() -> Params:
-    return Params()
+    """단위 테스트는 전략 A(모든 첫 구간 먼저)로 고정한다. 자동 선택은 test_strategy.py 에서 따로 본다.
+    기존 테스트는 v3 결정(점수에 실적 가치·프로모션, 150원 교체, 두 장, 사용자 카드 순서, 구간 지키기 끔)을 확인한다.
+    v4.1 결정은 tests/test_v41.py 에서 Params() 기본값으로 본다."""
+    return Params(base_order="first_tier", **V3)
+
+
+V3 = dict(engine="v3", first_tier_order="user", hold_tiers=False, hold_worth_check=False, max_display=2)
 
 
 @pytest.fixture
 def priors() -> Priors:
     return Priors({"0|3": {"REST": 60, "CAFE": 40}, "0|1": {"CAFE": 100}},
-                  {"REST": [9000, 12000, 15000], "CAFE": [4000, 5000, 6000]})
+                  {"REST": 12000, "CAFE": 5000})
 
 
 USER_CARDS = [UserCard(101, 1, "SHINHAN", 1), UserCard(102, 2, "SHINHAN", 2), UserCard(103, 3, "KB", 3)]
@@ -59,13 +65,8 @@ def cards() -> list[UserCard]:
 
 
 @pytest.fixture
-def consent_state(catalog, params) -> UserState:
-    return UserState(User(1, True, True), USER_CARDS, catalog, params)
-
-
-@pytest.fixture
-def no_consent_state(catalog, params) -> UserState:
-    return UserState(User(2), USER_CARDS, catalog, params)
+def state(catalog, params) -> UserState:
+    return UserState(User(1), USER_CARDS, catalog, params)
 
 
 def at(month=10, day=7, hour=12, minute=0) -> datetime:     # 2026-10-07 수요일

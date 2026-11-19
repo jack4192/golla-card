@@ -5,7 +5,7 @@
 
 from dataclasses import dataclass
 
-from engine.benefit_calc import Benefit, evaluate, rate_of
+from engine.benefit_calc import SOLPAY, Benefit, evaluate
 from engine.catalog import Catalog
 from engine.ranker import CardScore, Decision
 from engine.scenarios import Scenario, ScenarioSet
@@ -21,6 +21,8 @@ PROMOTION = "PROMOTION"
 BASE_CHANGED = "BASE_CHANGED"
 REPEAT = "REPEAT"
 HABIT = "HABIT"
+HOLD = "HOLD"                       # v4 구간 지키기로 기본 카드가 된 경우
+PROMOTION_CARD = "PROMOTION_CARD"   # 일정 팝업에서 추천한 프로모션의 신한카드
 
 KIND = {"discount": "할인", "cashback": "캐시백", "point": "적립"}
 HOME_ISSUER = "SHINHAN"
@@ -41,13 +43,18 @@ def with_object_particle(word: str) -> str:
 
 def benefit_text(b: Benefit, prev_perf: int) -> str:
     kind = KIND.get(b.type, "혜택")
+    if b.per_liter is not None:
+        return f"ℓ당 {b.per_liter:,}원 {kind}"
     if b.amount is not None:
         return f"{b.amount:,}원 {kind}"
-    return f"{rate_of(b, prev_perf) * 100:g}% {kind}"
+    text = f"{(b.rate or 0) * 100:g}% {kind}"
+    return f"{text}(최대 {b.max_per_tx:,}원)" if b.max_per_tx is not None else text
 
 
 def when_text(b: Benefit) -> str:
     parts = []
+    if b.month_days is not None:
+        parts.append("매월 " + "·".join(f"{d}일" for d in b.month_days))
     if b.days is not None:
         if b.days == (0, 1, 2, 3, 4):
             parts.append("평일")
@@ -65,10 +72,11 @@ def _best_benefit(state: UserState, user_card_id: int, card_id: int, scenarios: 
     card, st = state.catalog.cards[card_id], state.ledger[user_card_id]
     best = (0.0, None, None)
     for s in scenarios:
-        for amount in s.amounts:
-            got, benefit = evaluate(card, s.category, amount, st, at)
-            if got * s.prob > best[0]:
-                best = (got * s.prob, benefit, s)
+        for brand, weight in s.brands.items():
+            for amount in s.amounts:
+                got, benefit = evaluate(card, s.category, amount, st, at, brand, SOLPAY)
+                if got * s.prob * weight > best[0]:
+                    best = (got * s.prob * weight, benefit, s)
     return best[1], best[2]
 
 
@@ -78,7 +86,7 @@ def _benefit_message(state: UserState, catalog: Catalog, user_card_id: int, card
         return None
     name = catalog.category_name(scenario.category)
     what = benefit_text(benefit, state.ledger[user_card_id].prev_perf)
-    if benefit.days is not None or benefit.hours is not None:
+    if benefit.days is not None or benefit.hours is not None or benefit.month_days is not None:
         minimum = f" {benefit.min_amount:,}원 이상" if benefit.min_amount else ""
         return Message(TIME_BENEFIT, f"{when_text(benefit)}에 {name}에서{minimum} 결제하면 {what}을 받을 수 있어요!")
     if benefit.min_amount:
@@ -96,17 +104,29 @@ def _performance_message(state: UserState, catalog: Catalog, user_card_id: int, 
     return Message(PERFORMANCE, f"{name} 실적 달성까지 {target - perf:,}원 남았어요!{note}")
 
 
+def _hold_message(state: UserState, catalog: Catalog, user_card_id: int, card_id: int, issuer: str) -> Message:
+    """지난달 받던 구간을 이번 달에 지키려고 기본 카드가 된 경우."""
+    held = max((t for t in catalog.tiers[card_id] if t <= state.ledger[user_card_id].prev_perf), default=0)
+    left = max(held - state.perf(user_card_id), 0)
+    note = "" if issuer == HOME_ISSUER else " (어제까지 기준)"
+    return Message(HOLD, f"{catalog.card_label(card_id)} {held // 10_000}만 원 구간까지 {left:,}원 남았어요. "
+                         f"채우면 다음 달에도 지금 혜택을 받아요{note}")
+
+
 def _dominant(score: CardScore, base: CardScore, params) -> str:
     deltas = {
         "immediate": params.w1 * (score.immediate - base.immediate),
         "performance": params.w2 * (score.performance - base.performance),
         "promotion": params.w3 * (score.promotion - base.promotion),
     }
+    if params.engine != "v3":           # v4 점수에는 실적 가치가 없다 (교체 기준으로만 쓴다)
+        del deltas["performance"]
     return max(deltas, key=deltas.get)
 
 
 def _promotion_message(score: CardScore) -> Message:
-    return Message(PROMOTION, f"이 매장 이벤트로 약 {int(score.promotion):,}원 혜택을 받을 수 있어요!")
+    name = score.promotion_label or "이 매장 이벤트"
+    return Message(PROMOTION, f"{name}로 약 {int(round(score.promotion, -1)):,}원을 더 받을 수 있어요!")
 
 
 def card_message(state: UserState, catalog: Catalog, decision: Decision, scenarios: ScenarioSet, user_card_id: int,
@@ -116,6 +136,17 @@ def card_message(state: UserState, catalog: Catalog, decision: Decision, scenari
     if user_card_id == decision.first and not decision.swapped:
         if base_changed:
             return Message(BASE_CHANGED, f"앞 카드 실적을 채워 오늘부터 {with_object_particle(catalog.card_label(card_row.card_id))} 먼저 보여 드려요")
+        if params.engine != "v3":
+            if decision.hold:
+                return _hold_message(state, catalog, user_card_id, card_row.card_id, card_row.issuer)
+            if decision.threshold > 0 and decision.gain > 0:   # 더 주는 카드가 있지만 실적 때문에 기본 카드를 유지
+                return _performance_message(state, catalog, user_card_id, card_row.card_id, card_row.issuer)
+            if score.promotion > 0 and score.promotion >= score.immediate:   # 기본 카드의 행사가 가장 큰 경우 (v4.2)
+                return _promotion_message(score)
+            message = _benefit_message(state, catalog, user_card_id, card_row.card_id, scenarios.scenarios, at)
+            return message or Message(HABIT, "보통 지금 시간대에 이 카드로 계산하셨어요!")
+        if score.promotion > 0 and score.promotion >= max(score.immediate, score.performance):
+            return _promotion_message(score)         # 기본 카드를 유지했지만 이 매장 이벤트가 가장 큰 경우
         if score.performance > score.immediate:      # 실적을 채우려고 기본 카드가 된 경우
             return _performance_message(state, catalog, user_card_id, card_row.card_id, card_row.issuer)
         message = _benefit_message(state, catalog, user_card_id, card_row.card_id, scenarios.scenarios, at)

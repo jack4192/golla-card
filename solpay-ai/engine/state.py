@@ -27,12 +27,14 @@ class History:
     amounts: dict[str, list[int]] = field(default_factory=lambda: defaultdict(list))
     merchant_amounts: dict[int, list[int]] = field(default_factory=lambda: defaultdict(list))
     visits: dict[int, list[tuple[datetime, Slot]]] = field(default_factory=lambda: defaultdict(list))
+    brand_counts: dict[str, Counter] = field(default_factory=lambda: defaultdict(Counter))   # 업종 → 브랜드 코드(없으면 None)
     last: Payment | None = None
     today: datetime | None = None
     today_count: int = 0
 
-    def add(self, p: Payment, slot: Slot) -> None:
+    def add(self, p: Payment, slot: Slot, brand: str | None = None) -> None:
         self.slot_counts[slot][p.category] += 1
+        self.brand_counts[p.category][brand] += 1
         self.category_counts[p.category] += 1
         self.amounts[p.category].append(p.amount)
         if p.merchant_id is not None:
@@ -59,7 +61,16 @@ class UserState:
         self.prev_rows: list[Payment] = []
         self.prev_ym: str | None = None
         self.plan = None                       # perf_value.MonthPlan 캐시
+        self.prev_month_start: dict[int, int] = {}   # 지난달이 시작될 때의 전월 실적 (본인 시뮬레이션용)
+        self.models = None                     # engine.ml.Models (남은 소비 예측, 전략 선택). 없으면 규칙만 쓴다
+        self.fixed_strategy: str | None = None
+        self.month_strategy: str | None = None  # 이번 달 맞춤 방식 (strategy.monthly_pick). 없으면 fixed_strategy
+        self.loss_guard: bool = False           # 손해 방지: 이번 달은 실적 채우기를 멈춘다 (strategy.loss_guard)
+        self.strategy_cache: dict | None = None  # (사용자, 달, 지난달 결제 수) → 고른 전략. 서비스가 요청 사이에 공유한다
         self.history = History()
+        # 내 카드 혜택이 걸린 브랜드. 나머지 브랜드는 '브랜드 없음'과 같으므로 기대값 계산에서 하나로 묶는다
+        self.relevant_brands = frozenset(code for c in self.cards for b in catalog.cards[c.card_id].benefits
+                                         if b.brands for code in b.brands)
 
     def roll_to(self, ym: str) -> None:
         if self.ym is None:
@@ -70,6 +81,7 @@ class UserState:
         if gap <= 0:
             return
         carried = {uc: (st.perf if gap == 1 else 0) for uc, st in self.ledger.items()}
+        self.prev_month_start = {uc: st.prev_perf for uc, st in self.ledger.items()} if gap == 1 else {}
         self.prev_rows = self.cur_rows if gap == 1 else []
         self.prev_ym = self.ym if gap == 1 else None
         self.cur_rows = []
@@ -87,13 +99,14 @@ class UserState:
 
         st = self.ledger[p.user_card_id]
         got, benefit = 0, None
+        brand = self.catalog.brand_of(p.merchant_id)
         if self.benefit_start is None or ym >= self.benefit_start:
             card = self.catalog.cards[self.card_ids[p.user_card_id]]
-            got, benefit = evaluate(card, p.category, p.amount, st, p.paid_at)
-        apply_benefit(st, p.amount, got, benefit)
+            got, benefit = evaluate(card, p.category, p.amount, st, p.paid_at, brand, p.pay)
+        apply_benefit(st, p.amount, got, benefit, when=p.paid_at)
         self.cur_rows.append(p)
         if p.is_placement:
-            self.history.add(p, slot_of(p.paid_at, self.params))
+            self.history.add(p, slot_of(p.paid_at, self.params), brand)
         return got
 
     def _apply_late(self, p: Payment, ym: str) -> int:

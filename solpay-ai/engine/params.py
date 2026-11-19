@@ -2,8 +2,14 @@
 
 from dataclasses import dataclass, replace
 
-BASE_ORDER_FIRST_TIER = "first_tier"   # 모든 카드의 첫 구간을 먼저 채운다 (기본값)
+BASE_ORDER_FIRST_TIER = "first_tier"   # 전략 A: 모든 카드의 첫 구간을 먼저 채운다
+BASE_ORDER_MAIN_TOP = "main_top"       # 전략 B: 구간 혜택이 가장 큰 주력 카드의 높은 구간부터 채우고 남으면 다른 카드
+BASE_ORDER_VALUE = "value"             # 전략 C: 남은 예산 안에서 (구간 증분 혜택 − 포기하는 혜택) 합이 최대인 구간 조합
+BASE_ORDER_AUTO = "auto"               # 사용자·달마다 A/B/C 중 하나를 고른다 (본인 시뮬레이션 + 전략 선택 모델)
 BASE_ORDER_TOP_TIER = "top_tier"       # 1번 카드의 최고 구간부터 채운다 (챗봇 순서 규칙)
+BASE_ORDER_NONE = "none"               # 실적을 채우지 않는다: 기본 카드 = 지난달 현장 결제 혜택률 1위 (사용자 맞춤 실험, 2026-11-15)
+STRATEGIES = (BASE_ORDER_FIRST_TIER, BASE_ORDER_MAIN_TOP, BASE_ORDER_VALUE)
+SELECTABLE = STRATEGIES + (BASE_ORDER_NONE,)   # 사용자가 챗봇으로 확정할 수 있는 방식 ("실적 채우지 않기" 포함)
 
 
 @dataclass(frozen=True)
@@ -16,32 +22,115 @@ class Params:
     weight_max: float = 1.5
 
     # 4~5단계 교체와 2장 표시
-    switch_threshold: int = 300         # 전환 기준 (원)
+    # 전환 기준 (원). 2026-11-15 300 → 150: 재생(365명) 4~10월 혜택률 1.000% → 1.009%, 손해 사용자 33 → 29명.
+    #   네 가지 실적 채우기 방식 모두에서 150원이 300원보다 나았다. 결제액 비례(3%)는 150원 고정보다 못했다.
+    switch_threshold: int = 150
+    switch_ratio: float = 0.0           # > 0 이면 전환 기준 = max(switch_min, 결제액 × switch_ratio). 0 이면 switch_threshold 고정
+    switch_min: int = 100
     evidence_prob: float = 0.3          # 근거 시나리오 확률 합의 최소값
     two_card_loss: int = 300            # 2장 표시 손실 기준 (원)
     scenario_min_prob: float = 0.2      # 2장 표시를 판단할 시나리오의 최소 확률
     top_gap_ratio: float = 0.1          # 1·2위 차이가 이 비율 이내면 2장 표시
 
     # 기본 카드
-    base_order: str = BASE_ORDER_FIRST_TIER
+    base_order: str = BASE_ORDER_AUTO   # 사용자 결정(2026-11-13): 사용자·달마다 본인 지난달 시뮬레이션으로 A/B/C 선택
     unreachable_sigma: float = 2.0      # 필요액이 예산 + 이 배수×σ 를 넘으면 건너뜀
+    # 월말 정리 (2026-11-15 결정): 달의 마지막 month_end_days 일에는
+    #   ① 예상 소비 + month_end_sigma×σ 로 못 닿는 구간은 포기하고 (평소의 2σ 여유를 줄인다)
+    #   ② 닿는 구간 중 남은 금액이 가장 적은 구간을 먼저 채운다. 0 이면 끈다.
+    #   1년 재생 결과 1.013% → 1.011%로 효과가 없어 기본은 끈다 (2026-11-15 사용자 결정). 켜려면 7.
+    month_end_days: int = 0
+    month_end_sigma: float = 0.0
+    month_end_closest: bool = True      # ② 남은 금액이 가장 적은 구간 먼저 채우기
+    # 손해 방지 (2026-11-15 결정): 매달 초 최근 loss_guard_months 달을 다시 돌려 봐서 알고리즘이 습관대로 결제한 것보다
+    # 덜 받았으면 그 달은 실적 채우기를 멈추고(기본 카드 = 혜택률 1위) 실적 가치 비중을 loss_guard_w2 배로 낮춘다. 0 이면 끈다.
+    #   1년 재생 결과 혜택률·손해 사용자 수가 나아지지 않고 계산은 3배 느려져 기본은 끈다 (2026-11-15). 켜려면 3.
+    loss_guard_months: int = 0
+    loss_guard_w2: float = 0.0
+    loss_guard_stop_filling: bool = True   # True: 기본 카드를 혜택률 1위로 (실적 채우기 중단), False: 실적 가치 비중만 낮춤
+    # 구간 지키기 (2026-11-15 손해 원인 분석): 손해 사용자 달의 20%에서 한 카드는 최고 구간을 넘겨 쌓이는데 다른 카드는
+    # 습관이 지키던 구간에서 떨어졌다. 켜면 전략보다 먼저, 지난달 실적으로 받고 있는 구간을 이번 달에 지킨다.
+    #   재생(365명, 4~10월, 전환 150원 기준): 끔 1.009% 손해 29명 / 켬 0.993% 25명 / 켬+채울 가치 확인 1.004% 22명,
+    #   8~10월은 36 → 39 / 33명. 사용자 맞춤 후보에 넣어도 손해 23 → 24명이라 기본은 끈다 (2026-11-15).
+    #   v4.1(2026-11-18 사용자 승인)부터 기본으로 켠다: 1장 표시·금액 비례 교체 기준과 함께 재생(365명, 1~11월,
+    #   일정 입력)에서 손해 사용자 31 → 25명, 첫 구간 충족 62.3 → 64.4%, 혜택률은 같았다.
+    hold_tiers: bool = True
+    hold_worth_check: bool = True       # 구간 지키기에도 채울 가치 확인(구간 증분 혜택 ≥ 포기하는 혜택)을 적용
 
-    # 2단계 시나리오
-    radius_m: float = 50.0              # 위치 후보 반경
-    confirm_accuracy_m: float = 30.0    # 후보가 1곳일 때 확정하는 위치 정확도
-    distance_scale_m: float = 50.0      # 거리 점수 exp(−거리 ÷ 이 값)
-    visit_window_days: int = 90         # 방문 빈도 집계 기간
+    # v4.1 결정 (설계서 v4.1, 2026-11-18 사용자 승인)
+    #   engine=v4: 점수 = 즉시 혜택(실적 가치 제외, v4.2 부터 프로모션 포함: promo_in_score),
+    #              교체 기준 = 기본 카드의 실적 가치(금액 비례, × w2),
+    #              항상 1장. v3 은 이전 결정(점수에 실적 가치·프로모션, 교체 기준 150원, 두 장 보여 주기).
+    engine: str = "v4"
+    #   방식 ①의 채우는 순서. value: 첫 구간의 구간 가치가 큰 카드부터(최고 구간 단계는 구간 가치 합이 큰 카드부터),
+    #   user: 사용자 카드 순서. 재생(일정 입력, DB 프로모션)에서 손해 합 −138,490 → −85,310원 (2026-11-18).
+    first_tier_order: str = "value"
+    max_display: int = 1                # 보여 주는 카드 수. 2 이면 v3 의 두 장 보여 주기 규칙을 쓴다
+    # v4.2 결정 (2026-11-18 사용자 승인): 프로모션을 5단계 원화 점수에 다시 넣는다 (× w3).
+    #   가게를 모르면 업종 안 브랜드 비중으로 센다. 재생(프로모션 31건 매달 반복, 일정 입력, 팝업)에서
+    #   1.381% · 손해 44명 → 1.409% · 34명. False 면 v4.1 처럼 점수에서 뺀다.
+    promo_in_score: bool = True
+    popup_promotions: int = 2           # 일정 팝업에 보여 줄 프로모션 최대 건수
+    # 월간 맞춤 방식 (2026-11-15 사용자 결정): 매달 초, 직전 adaptive_months 달의 본인 결제(그 시점에 보이는 것만)를
+    # 후보 방식마다 다시 돌려 혜택이 가장 큰 방식을 그달에 쓴다. 후보 = 최초 선택 방식 + adaptive_orders.
+    # 사용자가 챗봇으로 방식을 확정했으면 쓰지 않는다. 0 이면 끈다 (최초 선택 방식 고정).
+    #   인과 재생(365명, 4~10월): 고정 1.000% 손해 33명 → 맞춤 1.009% 23명, 손해 합 −206,020 → −154,060원.
+    adaptive_months: int = 6
+    adaptive_margin: int = 0            # 최초 선택 방식보다 이만큼(원) 이상 나아야 바꾼다
+    adaptive_orders: tuple[str, ...] = (BASE_ORDER_MAIN_TOP, BASE_ORDER_FIRST_TIER, BASE_ORDER_VALUE, BASE_ORDER_NONE)
+    adaptive_min_payments: int = 10     # 비교 기간 현장 결제가 이보다 적으면 최초 선택 방식을 그대로 쓴다
+    # 실제 카드 적용(2026-11-13) 때 정함: 무실적 카드처럼 구간을 채울 이유가 없는 카드가 생겨서
+    base_value_check: bool = True       # 구간 증분 혜택 < 그 구간을 채우느라 포기하는 혜택이면 기본 카드로 삼지 않는다
+    base_fallback: str = "best_rate"    # 채울 카드가 없을 때: best_rate(지난달 현장 결제 혜택률 1위) / first(원래 1번 카드)
+    # 구간 증분 혜택 계산 (사용자 결정 2026-11-13: marginal)
+    #   marginal  : 그 카드만 그 구간에 올렸을 때, 결제마다 가장 좋은 카드를 고른 지난달 혜택이 얼마나 늘었을지
+    #               (다른 카드로도 어차피 받는 혜택은 빼고 센다)
+    #   standalone: 지난달 소비를 그 카드 한 장으로 냈을 때의 혜택 차이 (이전 방식, 구간 가치를 부풀린다)
+    tier_gain_mode: str = "marginal"
+    # 실적 가치 계산 개선 (2026-11-15)
+    #   perf_budget_share: 남은 현장 예산 전체가 모든 카드에 들어온다고 보지 않고, 카드마다 실제로 들어올 몫만 본다.
+    #                      다른 카드 몫 = 지난달 현장 결제 중 다른 모든 카드보다 전환 기준 이상 더 줘서 그 카드로 갔을 금액 비중,
+    #                      기본 카드 몫 = 1 − 다른 카드 몫 합. (이전: 남은 예산 전체에서 화면 순서대로 최고 구간 필요액을 차감)
+    #   perf_net_value:    구간 증분 혜택에서 그 구간까지 채우느라 포기하는 혜택(늘어난 필요액 × 혜택률 1위와의 차이)을 뺀
+    #                      순가치로 센다. 4단계 채울 가치 확인·전략 C와 같은 식.
+    #   재생 결과(365명, 항상 1순위): 8~10월 현재 0.945% / ① 0.940% / ② 0.945% / ①+② 0.942%,
+    #   1~10월 현재 0.983% / ① 0.982% / ② 0.982% / ①+② 0.984%. 효과가 없어 기본은 끈다 (2026-11-15 사용자 결정).
+    #   ①은 실적 교체 비중을 10.7% → 26.4%로 늘린다(몫이 작은 비기본 카드로 교체하면 이후 결제도 따라가 가정이 깨짐).
+    #   참고: 실적 가치를 아예 빼도(w2=0) 0.938% / 0.981% 로, 성과 대부분은 기본 카드 선택과 전환 기준에서 나온다.
+    perf_budget_share: bool = False
+    perf_net_value: bool = False
+
+    # 2단계 시나리오 (GPS 는 쓰지 않는다. 2026-11-14 결정)
+    schedule_lead_min: int = 30         # 일정 시작 이만큼 전부터 그 일정으로 본다
+    schedule_tail_min: int = 30         # 일정 끝 이만큼 뒤까지 그 일정으로 본다
     prior_strength: int = 20            # 구간 결제가 이 건수보다 적으면 전체 분포를 섞는다
     min_category_prob: float = 0.02     # 이보다 작은 업종은 시나리오에서 뺀다
     amount_min_history: int = 5         # 금액 이력이 이보다 적으면 전체 분포를 쓴다
     repeat_min_count: int = 8           # 반복 구간 최소 결제 수
     repeat_min_share: float = 0.5       # 반복 구간 1위 업종 최소 확률
-    max_chips: int = 3                  # 가맹점 후보 칩 수
 
     # 평일/주말 구분. 운영에서는 공휴일 테이블로 교체한다.
     holidays: tuple[str, ...] = (
-        "2026-07-17", "2026-08-17", "2026-09-24", "2026-09-25", "2026-10-05", "2026-10-09",
+        "2025-12-25", "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-03-02", "2026-05-05",
+        "2026-05-25", "2026-06-03", "2026-07-17", "2026-08-17", "2026-09-24", "2026-09-25", "2026-10-05", "2026-10-09",
     )
+
+    # 신규 카드 추천 (2026-11-14 결정)
+    recommend_min_monthly: int = 3000   # 그 카드가 있었다면 지난 30일에 더 받았을 금액 − 연회비 월 환산액
+    recommend_min_event: int = 3000     # 일정의 특수 고액 결제 한 번에서 더 받는 금액 − 연회비 월 환산액
+    recommend_interval_days: int = 3    # 정기 추천 간격 (패턴이 드러나면 앞당긴다)
+    recommend_same_card_days: int = 30  # 같은 카드를 다시 추천하지 않는 기간 (2026-11-14 결정)
+    page_amount_min: int = 500          # 추천 페이지 카드 탭: 오늘 더 받는 금액이 이보다 작으면 금액 대신 '혜택을 받을 수 있어요' (2026-11-19 결정)
+    recommend_repeat_days: int = 3      # 최근 4일 중 이만큼 같은 업종을 결제하면 반복 소비로 본다
+    # 최종 카드 DB 업종 코드 (2026-11-15): 동물병원 PET, 골프장·연습장 GOLF, 차량 정비 OTHER, 주유 FUEL, 놀이공원, 안경점
+    special_categories: tuple[str, ...] = ("PET", "GOLF", "OTHER", "FUEL", "DEPARTMENT_STORE", "OUTLET",
+                                           "AMUSEMENT_PARK", "EYEWEAR", "EV_CHARGING")
+
+    def switch_for(self, amount: float) -> float:
+        """이 결제액에서 기본 카드를 바꾸는 기준 (원)."""
+        if self.switch_ratio <= 0:
+            return self.switch_threshold
+        return max(self.switch_min, amount * self.switch_ratio)
 
     def with_(self, **changes) -> "Params":
         return replace(self, **changes)
