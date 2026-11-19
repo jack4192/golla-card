@@ -4,8 +4,15 @@ node_modules/
 # Expo / build
 .expo/
 dist/
+dist-*/
 web-build/
 expo-env.d.ts
+solpay-web-ready.zip
+
+# Local backups
+*.bak
+*.before-*
+*.preview-backup
 
 # Native
 .kotlin/
