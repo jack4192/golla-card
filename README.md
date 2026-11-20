@@ -8,11 +8,22 @@
 |---|---|---|
 | `data/` | 가상 소비 데이터 생성기와 카드 상품 수집기 | `data/README.md` |
 | `solpay-ai/` | 카드 배치 AI 엔진(FastAPI), 학습·평가 코드 | `solpay-ai/README.md` |
+| `demo/` | AI 를 붙인 결제 데모 (일회용 코드, 가상 POS). Spring 역할을 대신한다 | `demo/README.md` |
 | `db/`, `docker-compose.yml` | 로컬 PostgreSQL(PostGIS) | `docker compose up -d db` |
 
 앱(Expo)과 Spring 서버는 이 저장소에 `frontend/`, `backend/` 로 합칠 예정이다. 앱은 Spring 만 호출하고, Spring 이 `solpay-ai` 의 `POST /internal/rank` 를 부른다. API 계약은 `solpay-ai/openapi.json` 에 있다.
 
-## 처음 실행
+## 결제 데모 써 보기
+
+[uv](https://docs.astral.sh/uv/getting-started/installation/) 를 설치하고 저장소 루트에서 실행한다. 처음에는 가상 데이터를 만드느라 1분 정도 걸린다.
+
+```bash
+./run_demo.sh
+```
+
+결제 화면은 http://localhost:8000/pay, 가상 POS 는 http://localhost:8000/pos 이다. 시연 순서는 `demo/README.md` 에 있다.
+
+## 처음 실행 (개발)
 
 ```bash
 cd data && uv sync && uv run python -m generate.main

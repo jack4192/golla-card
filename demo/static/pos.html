@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>가상 POS (데모)</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<main class="pos">
+  <header>
+    <h1>가상 POS</h1>
+    <a class="link" href="/pay" target="_blank">결제 화면 열기 ↗</a>
+  </header>
+
+  <div class="grid">
+    <form class="box" id="form" autocomplete="off">
+      <h2>결제 요청</h2>
+      <label for="merchant">가맹점</label>
+      <select id="merchant" required></select>
+      <label for="category">업종</label>
+      <input id="category" readonly>
+      <label for="amount">금액(원)</label>
+      <input id="amount" type="number" value="13000" min="1" max="10000000" required>
+      <label for="token">바코드·QR 번호 (스캐너로 찍거나 직접 입력 후 Enter)</label>
+      <input id="token" class="code" inputmode="numeric" placeholder="18자리 숫자" required autofocus>
+      <button class="btn primary block" type="submit">승인 요청</button>
+      <p class="muted small">결제 시각은 결제 화면의 시연 시각을 씁니다. 승인되면 AI 엔진에 결제가 반영되어 다음 카드 순서가 바뀔 수 있습니다.</p>
+    </form>
+
+    <section class="box result" id="result">
+      <p class="muted">결제 화면의 번호를 입력하면 여기에 승인 결과가 표시됩니다.</p>
+    </section>
+  </div>
+
+  <section class="box" style="margin-top:16px">
+    <h2>서버에 쌓인 거래 내역 <span class="muted" style="font-weight:400">(최근 20건, 3초마다 갱신)</span></h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>시연 시각</th><th>결과</th><th>가맹점</th><th>업종</th><th class="num">금액</th><th>카드</th><th class="num">혜택</th><th>가장 유리했던 카드 / 거절 사유</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const won = (n) => (n == null ? "—" : n.toLocaleString("ko-KR") + "원");
+const DAYS = "일월화수목금토";
+const when = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso), p = (n) => String(n).padStart(2, "0");
+  return `${d.getMonth() + 1}/${d.getDate()}(${DAYS[d.getDay()]}) ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+let byId = {};
+
+function el(tag, text, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined && text !== null) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+
+async function loadMerchants() {
+  const [opts, st] = await Promise.all([
+    fetch("/api/demo/options").then((r) => r.json()),
+    fetch("/api/demo/state").then((r) => r.json()),
+  ]);
+  const user = opts.users.find((u) => u.user_id === st.user_id);
+  const order = [...user.zones.map((z) => z.code), ...Object.keys(opts.merchants).filter((z) => !user.zones.some((u) => u.code === z))];
+  byId = {};
+  const groups = order.filter((z) => opts.merchants[z]).map((z) => {
+    const g = document.createElement("optgroup");
+    const role = user.zones.find((u) => u.code === z);
+    g.label = opts.zones[z] + (role ? ` (${role.role})` : "");
+    for (const m of opts.merchants[z]) {
+      byId[m.merchant_id] = m;
+      const o = el("option", `${m.name} · ${m.category_name}`); o.value = m.merchant_id; g.append(o);
+    }
+    return g;
+  });
+  $("merchant").replaceChildren(...groups);
+  onMerchant();
+}
+
+function onMerchant() {
+  const m = byId[$("merchant").value];
+  if (!m) return;
+  $("category").value = m.category_name;
+  $("amount").value = m.typical_amount;
+}
+$("merchant").onchange = onMerchant;
+
+$("form").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const body = { token: $("token").value, merchant_id: Number($("merchant").value), amount: Number($("amount").value) };
+  const box = $("result");
+  try {
+    const res = await fetch("/api/pos/approve", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "입력값을 확인하세요 (금액은 1원 이상).");
+    const ok = data.result === "APPROVED";
+    box.className = "box result " + (ok ? "ok" : "bad");
+    let lines;
+    if (ok) {
+      const benefit = data.benefit == null ? "혜택 계산 안 됨 (AI 꺼짐)" : `혜택 ${won(data.benefit)}`;
+      const best = data.best_benefit != null && data.best_benefit > (data.benefit || 0)
+        ? `${data.best_card}였다면 ${won(data.best_benefit)}` : (data.benefit == null ? "" : "가장 유리한 카드로 결제");
+      lines = [el("p", `${data.merchant} · ${won(data.amount)}`), el("p", data.card),
+               el("p", benefit, "strong"), el("p", best, "muted"), el("p", `승인번호 ${data.approval_no}`, "muted")];
+    } else {
+      lines = [el("p", data.reason), el("p", `${data.merchant} · ${won(data.amount)}`, "muted")];
+    }
+    box.replaceChildren(el("div", ok ? "승인" : "거절", "big"), ...lines);
+  } catch (e) {
+    box.className = "box result bad";
+    box.replaceChildren(el("div", "오류", "big"), el("p", e.message));
+  }
+  $("token").value = "";
+  $("token").focus();
+  loadRows();
+};
+
+async function loadRows() {
+  try {
+    const rows = await (await fetch("/api/transactions?limit=20")).json();
+    $("rows").replaceChildren(...rows.map((r) => {
+      const tr = document.createElement("tr");
+      const ok = r.result === "APPROVED";
+      const tagCell = el("td");
+      tagCell.append(el("span", ok ? "승인" : "거절", "tag " + (ok ? "ok" : "bad")));
+      const card = r.card_name ? r.card_name + (r.ai_rank ? ` (AI ${r.ai_rank}순위)` : "") : "—";
+      const best = !ok ? r.reason
+        : r.best_card == null ? "—"
+        : r.best_benefit > (r.benefit || 0) ? `${r.best_card} ${won(r.best_benefit)}` : "이 카드가 가장 유리";
+      tr.append(el("td", when(r.demo_at)), tagCell, el("td", r.merchant), el("td", r.category),
+                el("td", won(r.amount), "num"), el("td", card), el("td", ok ? won(r.benefit) : "", "num"), el("td", best));
+      return tr;
+    }));
+  } catch (e) { /* 다음 주기에 다시 시도 */ }
+}
+
+loadMerchants();
+loadRows();
+setInterval(loadRows, 3000);
+</script>
+</body>
+</html>
