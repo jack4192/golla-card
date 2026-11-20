@@ -1,36 +1,59 @@
 import FlowHeading from '../components/FlowHeading';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, ActivityIndicator, AppState, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, AppState, Image, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import PromotionOffer from '../components/PromotionOffer';
+import { resolveWalletProduct } from '../components/WalletProductCard';
 import { recommendPromotion } from '../data/promotions';
 import { CardReveal, officialProduct } from './RoutinePatternRecommendationScreen';
-import { dateKey, makeSignals, readEvents, readProfile } from '../utils/routineData';
+import { dateKey, eventEndDate, makeSignals, readEvents, readProfile } from '../utils/routineData';
 import { benefitText, emptyPreferences, money, rankRecommendations, readPreferences } from '../utils/cardRecommendation';
-import { restoreMyData, subscribeMyData } from '../utils/myDataService';
 export { officialProduct, recentPattern } from './RoutinePatternRecommendationScreen';
 export const RECOMMENDATION_LABELS = ['카드 추천', '프로모션 추천'];
-function buildRecommendations(profile, events, saved, data, now) {
-  const signals = makeSignals(profile, events, dateKey(now));
-  const input = signals.length ? profile : { coffee: 'always' };
+function CardFallback({ selectedWalletCard }) {
+  const walletProduct = resolveWalletProduct(selectedWalletCard);
+  return <View style={s.hero}>
+    {selectedWalletCard && <View style={s.fallbackRow}>
+      {!!walletProduct?.image && <Image source={walletProduct.image} fadeDuration={0} resizeMode="contain" style={s.fallbackImage} />}
+      <View style={s.flex}>
+        <Text style={s.strong}>지금 갖고 있는 카드가 적합합니다.</Text>
+        <Text style={s.caption}>{selectedWalletCard.name}</Text>
+      </View>
+    </View>}
+  </View>;
+}
+
+function buildRecommendations(profile, events, saved, now, useCurrentTime, cardAd) {
+  const day = dateKey(now);
+  const active = useCurrentTime ? events.filter(event => (event.category || event.start) &&
+    now >= new Date(`${event.date}T${event.start}:00`) && now < eventEndDate(event)) : [];
+  const relevant = active.length ? active.map(event => ({ ...event, date: day })) : events;
+  const input = active.length ? null : profile;
+  const signals = makeSignals(input, relevant, day);
   const preferences = emptyPreferences();
-  preferences.owned = [...new Set([...(saved?.owned || []), ...(data?.cards || []).map(card => card.catalogCode).filter(Boolean)])];
-  const ranked = rankRecommendations(input, events, preferences, now).filter(row => officialProduct(row.card.code));
+  preferences.owned = saved.owned;
+  const rank = (routine, schedules) => rankRecommendations(routine, schedules, preferences, now).filter(row =>
+    // 신한은행 프로젝트이므로 카드 추천은 신한카드 상품만 대상으로 합니다.
+    officialProduct(row.card.code) && row.card.issuer === '신한카드' &&
+    row.matches.some(match => match.status !== 'blocked')
+  );
+  const relevantCards = rank(input, relevant);
+  const example = cardAd && relevantCards.length === 0;
+  const ranked = example ? rank({ coffee: 'always' }, []) : relevantCards;
   const card = ranked.find(row => !row.owned) || ranked[0] || null;
-  return { card, example: !signals.length, ...recommendPromotion(signals, now) };
+  return { card, example, ...(cardAd ? {} : recommendPromotion(signals, now)) };
 }
 export default function RoutineRecommendationScreen({
   onNext,
   onBack,
   scheduleDate,
-  includeMyData = true,
+  selectedWalletCard,
   presentation = 'screen'
 }) {
+  const cardAd = presentation === 'card-ad';
   const [input, setInput] = useState(null);
-  const [data, setData] = useState(null);
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [details, setDetails] = useState(false);
   const [reduced, setReduced] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -61,21 +84,13 @@ export default function RoutineRecommendationScreen({
     let active = true;
     setLoading(true);
     setError('');
-    setNotice('');
-    const imported = includeMyData ? restoreMyData().catch(() => {
-      if (active) {
-        setNotice('마이데이터를 읽지 못해 일과 정보로 추천합니다.');
-      }
-      return null;
-    }) : null;
-    Promise.all([readProfile(), readEvents(), readPreferences(), imported]).then(([profile, events, saved, snapshot]) => {
+    Promise.all([readProfile(), readEvents(), readPreferences()]).then(([profile, events, saved]) => {
       if (!active) return;
       setInput({
         profile,
         events,
         saved
       });
-      setData(snapshot);
       setIndex(0);
     }).catch(problem => {
       if (active) {
@@ -84,24 +99,22 @@ export default function RoutineRecommendationScreen({
     }).finally(() => {
       if (active) setLoading(false);
     });
-    const off = includeMyData ? subscribeMyData(value => {
-      if (active) setData(value);
-    }) : null;
     return () => {
       active = false;
-      off?.();
     };
-  }, [reload, includeMyData]);
+  }, [reload]);
   const recommendations = useMemo(() => {
     if (!input) return null;
-    const when = scheduleDate && scheduleDate !== dateKey(now) ? new Date(scheduleDate + 'T12:00:00') : now;
-    return buildRecommendations(input.profile, input.events, input.saved, includeMyData ? data : null, when);
-  }, [input, data, now, includeMyData, scheduleDate]);
-  const cardAd = presentation === 'card-ad';
+    const useCurrentTime = !scheduleDate || scheduleDate === dateKey(now);
+    const when = useCurrentTime ? now : new Date(scheduleDate + 'T12:00:00');
+    return buildRecommendations(input.profile, input.events, input.saved, when, useCurrentTime, cardAd);
+  }, [input, now, scheduleDate, cardAd]);
   const promotionTab = !cardAd && index === 1;
   const selected = recommendations?.card;
   const card = promotionTab ? null : selected?.card;
-  const match = selected ? [...selected.matches].sort((a, b) => b.weight - a.weight)[0] : null;
+  const matches = selected?.matches.filter(item => item.status !== 'blocked') || [];
+  const match = matches.sort((a, b) => b.weight - a.weight)[0];
+  const reason = recommendations?.example ? '신한카드 추천' : match?.reasons?.[0];
   const run = async action => {
     if (lock.current) return;
     lock.current = true;
@@ -139,6 +152,14 @@ export default function RoutineRecommendationScreen({
   </> : <View style={s.empty}>
     <Text style={s.reason}>{error || '진행 중인 프로모션이 없어요.'}</Text>
   </View>;
+  const cardFallback = () => !cardAd && recommendations
+    ? <CardFallback selectedWalletCard={selectedWalletCard} />
+    : <View style={s.empty}>
+        <Text style={s.reason}>{error || '추천할 카드가 없어요.'}</Text>
+        {!!error && <TouchableOpacity accessibilityRole="button" onPress={() => setReload(value => value + 1)} style={s.small}>
+          <Text style={s.link}>다시 불러오기</Text>
+        </TouchableOpacity>}
+      </View>;
   if (presentation === 'popup' || cardAd) {
     return <ScrollView style={s.screen} contentContainerStyle={{padding:18,gap:16}}>
       {!cardAd && <View style={{flexDirection:'row',gap:8}}>
@@ -151,13 +172,11 @@ export default function RoutineRecommendationScreen({
       {loading ? <ActivityIndicator/> : promotionTab ? promotionContent() : card ? <View style={[s.hero,{gap:12}]}>
         <CardReveal key={card.code} card={card} reduced={reduced} replay={0}/>
         <Text style={s.cardName}>{card.name}</Text>
-        <Text style={s.reason}>{recommendations.example ? '일과 등록 전에 살펴볼 수 있는 카드예요.' : match?.reasons?.[0] || '등록한 일과와 맞는 혜택이 있어요.'}</Text>
+        {!!reason && <Text style={s.reason}>{reason}</Text>}
         {match && <View style={s.badge}><Text style={s.benefit}>{benefitText(match.benefit)}</Text><Text style={s.caption}>{match.benefit.name}</Text></View>}
         <TouchableOpacity disabled={busy} onPress={apply} style={s.primary}><Text style={s.white}>카드 상품 보기</Text></TouchableOpacity>
-      </View> : <View style={s.empty}><Text style={s.reason}>추천할 카드 정보를 찾지 못했어요.</Text>
-        <TouchableOpacity onPress={() => setReload(value=>value+1)} style={s.small}><Text style={s.link}>다시 불러오기</Text></TouchableOpacity></View>}
+      </View> : cardFallback()}
       {!!error && <Text style={s.error}>{error}</Text>}
-      {!promotionTab && <Text style={s.caption}>등록된 카드 상품과 가맹점 혜택을 바탕으로 골랐어요.</Text>}
     </ScrollView>;
   }
   return <ScrollView style={s.screen} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
@@ -171,10 +190,6 @@ export default function RoutineRecommendationScreen({
         <FlowHeading brand icon="sparkles-outline">
           일정 맞춤 추천
         </FlowHeading>
-
-        <Text style={s.demo}>
-          일정에 맞는 카드와 프로모션을 확인해보세요.
-        </Text>
 
         <View style={s.pager}>
           {RECOMMENDATION_LABELS.map((label, i) => (
@@ -197,9 +212,7 @@ export default function RoutineRecommendationScreen({
         </View>
 
         {loading ? <ActivityIndicator color="#104FE7" size="large" /> : promotionTab ? promotionContent() : card ? <>
-            <Text style={s.reason}>
-              {recommendations.example ? '일정을 등록하기 전이라 카드 상품 예시를 보여드려요.' : match?.reasons?.[0] || '일정에 맞는 혜택을 살펴봤어요.'}
-            </Text>
+            {!!reason && <Text style={s.reason}>{reason}</Text>}
 
             <View style={s.hero}>
               <Text style={s.cardName}>
@@ -231,7 +244,7 @@ export default function RoutineRecommendationScreen({
               </TouchableOpacity>
 
               {details && <View style={s.details}>
-                  {selected.matches.slice(0, 3).map((row, i) => <View key={i} style={s.detail}>
+                  {matches.slice(0, 3).map((row, i) => <View key={i} style={s.detail}>
                         <Text style={s.strong}>
                           {row.benefit.name} ·{' '}
                           {benefitText(row.benefit)}
@@ -252,23 +265,11 @@ export default function RoutineRecommendationScreen({
                       </View>)}
 
                   <Text style={s.detailText}>
-                    할인율·적립률은 상품 안내값입니다.
-                    실적·가맹점·시간·결제 방식·한도에 따라
-                    달라지며 실제 절약액을 뜻하지 않습니다.
+                    적용 조건은 카드사 상품 안내에서 확인하세요.
                   </Text>
                 </View>}
             </View>
-          </> : <View style={s.empty}>
-            <Text style={s.reason}>
-              {error || '이 항목에 맞는 카드 혜택을 확인하지 못했어요.'}
-            </Text>
-
-            <TouchableOpacity accessibilityRole="button" onPress={() => setReload(value => value + 1)} style={s.small}>
-              <Text style={s.link}>
-                다시 불러오기
-              </Text>
-            </TouchableOpacity>
-          </View>}
+          </> : cardFallback()}
 
         {!loading && card && <>
             <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={apply} style={[s.primary, busy && s.dim]}>
@@ -278,19 +279,16 @@ export default function RoutineRecommendationScreen({
             </TouchableOpacity>
 
             <Text style={s.caption}>
-              카드사 공식 상품 안내로 이동합니다.
-              발급 신청은 카드사에서 진행합니다.
+              카드사 상품 안내로 이동해요.
             </Text>
           </>}
 
-        {!!notice && <Text style={s.caption}>{notice}</Text>}
-
-        {!!error && card && <Text style={s.error} accessibilityRole="alert">
+        {!!error && recommendations && <Text style={s.error} accessibilityRole="alert">
             {error}
           </Text>}
 
-        {presentation !== 'popup' && <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={next} style={s.small}>
-            <Text style={s.caption}>
+        {presentation !== 'popup' && <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={next} style={[s.secondary, busy && s.dim]}>
+            <Text style={s.secondaryText}>
               괜찮아요, 메인으로 갈게요
             </Text>
           </TouchableOpacity>}
@@ -298,6 +296,10 @@ export default function RoutineRecommendationScreen({
     </ScrollView>;
 }
 const s = StyleSheet.create({
+  flex: { flex: 1 },
+  fallbackRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  fallbackImage: { width: 86, height: 60 },
+  modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   screen: {
     flex: 1,
     backgroundColor: "#F4F7FF"
@@ -316,12 +318,6 @@ const s = StyleSheet.create({
   caption: {
     fontSize: 12,
     lineHeight: 21,
-    color: "#5A6E89",
-    textAlign: 'center'
-  },
-  demo: {
-    fontSize: 12,
-    lineHeight: 20,
     color: "#5A6E89",
     textAlign: 'center'
   },
@@ -398,6 +394,22 @@ const s = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "700"
+  },
+  secondary: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    minHeight: 52,
+    borderRadius: 16,
+    backgroundColor: "#EAF1FF",
+    borderWidth: 1,
+    borderColor: "#C9D9FF",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  secondaryText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#104FE7"
   },
   primary: {
     padding: 16,

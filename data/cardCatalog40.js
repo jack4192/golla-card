@@ -47,11 +47,6 @@ export const CARD_CATALOG_40 = cards.map(card => ({
   image: images[card.imageFile],
 }));
 
-export const CARD_CATALOG_40_BENEFITS = CARD_CATALOG_40.reduce(
-  (count, card) => count + card.benefits.length,
-  0,
-);
-
 const byCode = new Map(CARD_CATALOG_40.map(card => [card.code, card]));
 const byName = new Map(CARD_CATALOG_40.map(card => [card.name, card]));
 

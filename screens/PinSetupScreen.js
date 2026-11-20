@@ -92,8 +92,9 @@ export default function PinSetupScreen({
     } else if (value === pin) {
       void save();
     } else {
-      setConfirmation('');
-      setMessage('비밀번호가 일치하지 않습니다. 다시 입력해주세요.');
+      // 1단계에서 오타가 났을 수 있으므로 처음부터 다시 설정합니다.
+      clear();
+      setMessage('비밀번호가 일치하지 않아요. 처음부터 다시 설정해주세요.');
     }
   };
   return <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as Store from '../utils/demoStore';
-export const CARD_ORDER_KEY = 'solpay_payment_card_order_v1';
+import { CARD_ORDER_KEY, saveWalletCardOrder } from '../utils/wallet';
 export function validateCardOrder(raw) {
   if (raw === null) return [];
   const value = JSON.parse(raw);
@@ -32,7 +32,7 @@ export async function persistCardOrder(ids) {
     ids: [...new Set(ids.map(String))]
   };
   validateCardOrder(JSON.stringify(value));
-  await Store.setItemAsync(CARD_ORDER_KEY, JSON.stringify(value));
+  await saveWalletCardOrder(value);
   return value.ids;
 }
 function CardThumb({

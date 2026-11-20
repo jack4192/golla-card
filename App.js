@@ -16,15 +16,18 @@ import { createPinSalt, hashPin } from './utils/pinCrypto';
 import {
   deleteDemoData,
   hasPendingReset,
+  PREVIEW_CARDS_KEY,
 } from './utils/privacyData';
 import {
   buildWallet,
+  canRegisterWalletCard,
   readWallet,
   saveWalletSelection,
   validWalletId,
   waitForWalletWrites,
   walletIdForCode,
 } from './utils/wallet';
+import { readPreferences, savePreferences } from './utils/cardRecommendation';
 
 import LoginScreen from './screens/LoginScreen';
 import PinLoginScreen from './screens/PinLoginScreen';
@@ -34,17 +37,12 @@ import SignUpScreen, { isValidPhone, isValidSignUpPassword } from './screens/Sig
 import AgreementScreen from './screens/AgreementScreen';
 import DetailedRoutineScreen from './screens/DetailedRoutineScreen';
 import RoutineRecommendationScreen from './screens/RoutineRecommendationScreen';
-import MyDataLoadingScreen from './screens/MyDataLoadingScreen';
-import MyDataScreen from './screens/MyDataScreen';
 import MainScreen from './screens/MainScreen';
 import PaymentScreen from './screens/PaymentScreen';
 
 import PrivacyDataModal from './components/PrivacyDataModal';
 
-import {
-  DEMO_WALLET_CARDS,
-  getActiveWalletCard,
-} from './data/cards';
+import { getActiveWalletCard } from './data/cards';
 
 const SESSION_KEY = 'solpay_demo_session_v1';
 const ACCOUNT_KEY = 'solpay_demo_account_v1';
@@ -53,9 +51,19 @@ const FINISHED_KEY = 'solpay_demo_onboarding_v1';
 const CONSENT_KEY = 'solpay_demo_consent_v1';
 const PIN_KEY = 'solpay_demo_pin_v1';
 const ATTEMPTS_KEY = 'solpay_demo_pin_attempts_v1';
+const PREVIEW_CARDS_STORAGE_KEY = 'solpay_public_demo_' + PREVIEW_CARDS_KEY;
 const LEGACY_CONSENT_VERSION = 'solpay-demo-consent-v1';
 const LEGACY_OPTIONS_VERSION = 'solpay-onboarding-options-v2';
 const ONBOARDING_OPTIONS_VERSION = 'solpay-onboarding-options-v3';
+
+// 데모 계정(demo@example.com)으로 로그인했을 때 지갑이 비어 있으면 미리 넣어두는 카드
+const DEMO_WALLET_CODES = [
+  'SH_DISCOUNT_PLAN',
+  'SH_EVERYWHERE',
+  'SH_SOL_TRAVEL_CHECK',
+  'SH_SOLMATE_SOL_PLAN_CHECK',
+  'SH_HI_POINT_PLAN',
+];
 
 const MAX_ATTEMPTS = 5;
 const LOCK_MS = 60000;
@@ -71,8 +79,6 @@ const DEV_SCREENS = [
   { key: 'RoutineRecommendation', label: '5. 일과 맞춤 카드 추천' },
   { key: 'Main', label: '6. 메인 화면' },
   { key: 'Payment', label: '7. 결제 화면' },
-  { key: 'MyDataLoading', label: '소비 분석 불러오기' },
-  { key: 'MyDataResult', label: '소비 분석 결과' },
 ];
 
 async function readConsent() {
@@ -167,17 +173,28 @@ async function readAttempts(now) {
   }
 }
 
+// 화면 미리보기: 개발 중이거나 웹(Vercel 데모)일 때만 보여줍니다. 실제 휴대폰 앱 배포본에는 나오지 않습니다.
+const PREVIEW_ENABLED = __DEV__ || Platform.OS === 'web';
+
+function readPreviewCardCodes() {
+  if (!PREVIEW_ENABLED || Platform.OS !== 'web') return [];
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(PREVIEW_CARDS_STORAGE_KEY));
+    return Array.isArray(saved) ? saved.filter(canRegisterWalletCard) : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function App() {
   const [demoAccount, setDemoAccount] = useState(null);
-  const [walletCards, setWalletCards] = useState(DEMO_WALLET_CARDS);
+  const [walletCards, setWalletCards] = useState([]);
   const [walletWarning, setWalletWarning] = useState('');
 
-  const selectedCardRef = useRef(DEMO_WALLET_CARDS[0].id);
+  const selectedCardRef = useRef(null);
   const walletRevision = useRef(0);
 
-  const [activeCardId, setActiveCardId] = useState(
-    DEMO_WALLET_CARDS[0].id
-  );
+  const [activeCardId, setActiveCardId] = useState(null);
 
   const activeCard = getActiveWalletCard(
     walletCards,
@@ -197,6 +214,14 @@ export default function App() {
 
   const [showDevMenu, setShowDevMenu] = useState(false);
   const [previewScreen, setPreviewScreen] = useState(null);
+  const [previewWallet, setPreviewWallet] = useState(null);
+  const [previewCardCodes, setPreviewCardCodes] = useState(readPreviewCardCodes);
+  const registeredPreviewCards = buildWallet({ owned: previewCardCodes }).filter(card =>
+    !walletCards.some(owned => owned.id === card.id)
+  );
+  const previewCards = previewWallet?.cards ?? [...walletCards, ...registeredPreviewCards];
+  const previewCardId = previewWallet?.id ?? activeCardId ?? previewCards[0]?.id;
+  const previewCard = getActiveWalletCard(previewCards, previewCardId);
 
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [privacyBusy, setPrivacyBusy] = useState(false);
@@ -294,8 +319,7 @@ export default function App() {
     const revision = ++walletRevision.current;
 
     try {
-      const savedConsent = await readConsent();
-      const snapshot = await readWallet(savedConsent?.myDataAgreed === true);
+      const snapshot = await readWallet();
       if (revision !== walletRevision.current) return;
 
       setWalletCards(snapshot.cards);
@@ -305,9 +329,6 @@ export default function App() {
     } catch {
       if (revision !== walletRevision.current) return;
 
-      setWalletCards(DEMO_WALLET_CARDS);
-      selectedCardRef.current = DEMO_WALLET_CARDS[0].id;
-      setActiveCardId(DEMO_WALLET_CARDS[0].id);
       setWalletWarning(
         '등록한 카드를 읽지 못했습니다. 기존 기록을 덮어쓰지 않았습니다.'
       );
@@ -347,7 +368,7 @@ export default function App() {
 
     walletRevision.current += 1;
 
-    const cards = buildWallet(preferences, consent?.myDataAgreed === true);
+    const cards = buildWallet(preferences);
     const id = validWalletId(cards, selectedCardRef.current);
 
     setWalletCards(cards);
@@ -368,10 +389,19 @@ export default function App() {
     }
   };
 
+  const handleRegisterCard = code => runAction(async () => {
+    requireAuthentication();
+    if (!canRegisterWalletCard(code)) throw Error('등록할 수 없는 카드 상품입니다.');
+    const preferences = await readPreferences();
+    if (preferences.owned.includes(code)) return;
+    const next = await savePreferences({ ...preferences, owned: [...preferences.owned, code] });
+    await handlePreferencesSaved(next);
+  });
+
   const handleUseCard = code => runAction(async () => {
     requireAuthentication();
 
-    const snapshot = await readWallet(consent?.myDataAgreed === true);
+    const snapshot = await readWallet();
 
     if (!snapshot.preferences.owned.includes(code)) {
       throw Error('보유 카드로 등록하고 저장한 후 선택해주세요.');
@@ -440,7 +470,7 @@ export default function App() {
         : false;
 
     const valid =
-      (address === DEMO_EMAIL && password === '1234') ||
+      (address === DEMO_EMAIL && password === 'Demo1234!') ||
       customMatches;
 
     if (!valid) {
@@ -462,6 +492,16 @@ export default function App() {
       setDemoAccount(account);
       setConsentDraft(null);
       setScheduleEditor({});
+    }
+    if (address === DEMO_EMAIL && !customMatches) {
+      try {
+        const preferences = await readPreferences();
+        if (preferences.owned.length === 0) {
+          await savePreferences({ ...preferences, owned: DEMO_WALLET_CODES });
+        }
+      } catch {
+        // 데모 카드를 못 넣어도 로그인은 계속 진행합니다.
+      }
     }
     await afterAuthentication({ firstSignupLogin });
   });
@@ -542,7 +582,6 @@ export default function App() {
       version: ONBOARDING_OPTIONS_VERSION,
       savedAt: new Date().toISOString(),
       termsAgreed: true,
-      myDataAgreed: value.myDataAgreed === true,
       morningNotificationAgreed: value.morningNotificationAgreed === true,
     };
 
@@ -662,11 +701,12 @@ export default function App() {
       setConsentDraft(null);
       setScheduleEditor({});
       setPreviewScreen(null);
+      setPreviewWallet(null);
 
       walletRevision.current += 1;
-      setWalletCards(DEMO_WALLET_CARDS);
-      selectedCardRef.current = DEMO_WALLET_CARDS[0].id;
-      setActiveCardId(DEMO_WALLET_CARDS[0].id);
+      setWalletCards([]);
+      selectedCardRef.current = null;
+      setActiveCardId(null);
       setWalletWarning('');
 
       navigate(lock ? 'PinLogin' : 'Login');
@@ -738,14 +778,16 @@ export default function App() {
     setPrivacyBusy(true);
 
     walletRevision.current += 1;
-    setWalletCards(DEMO_WALLET_CARDS);
-    selectedCardRef.current = DEMO_WALLET_CARDS[0].id;
-    setActiveCardId(DEMO_WALLET_CARDS[0].id);
+    setWalletCards([]);
+    selectedCardRef.current = null;
+    setActiveCardId(null);
     setWalletWarning('');
 
     setScheduleEditor({});
     setConsentDraft(null);
     setPreviewScreen(null);
+    setPreviewWallet(null);
+    setPreviewCardCodes(readPreviewCardCodes());
     setShowDevMenu(false);
 
     if (scope === 'account') {
@@ -757,7 +799,6 @@ export default function App() {
       setHasSavedPin(false);
       setOnboardingComplete(false);
       setRoutineMode('onboarding');
-      setActiveCardId(DEMO_WALLET_CARDS[0].id);
       setCurrentScreen('Login');
     }
 
@@ -802,33 +843,37 @@ export default function App() {
   };
 
   const previewSelect = id => {
-    if (!walletCards.some(card => card.id === id)) return;
-
-    selectedCardRef.current = id;
-    setActiveCardId(id);
+    if (previewCards.some(card => card.id === id)) {
+      setPreviewWallet({ cards: previewCards, id });
+    }
   };
 
   const previewPreferences = async preferences => {
     const cards = buildWallet(preferences);
-    const id = validWalletId(cards, selectedCardRef.current);
+    setPreviewWallet({ cards, id: validWalletId(cards, previewCardId) });
+  };
 
-    setWalletCards(cards);
-    selectedCardRef.current = id;
-    setActiveCardId(id);
+  const previewRegister = code => {
+    if (!canRegisterWalletCard(code)) throw Error('등록할 수 없는 카드 상품입니다.');
+    if (previewCards.some(card => card.catalogCode === code)) return;
+    if (Platform.OS === 'web') {
+      const codes = [...new Set([...readPreviewCardCodes(), code])];
+      window.localStorage.setItem(PREVIEW_CARDS_STORAGE_KEY, JSON.stringify(codes));
+      setPreviewCardCodes(codes);
+    }
+    const cards = [...previewCards, ...buildWallet({ owned: [code] })];
+    setPreviewWallet({ cards, id: walletIdForCode(code) });
   };
 
   const previewUseCard = async code => {
-    const snapshot = await readWallet();
     const id = walletIdForCode(code);
+    const cards = previewCards.some(card => card.id === id) ? previewCards : (await readWallet()).cards;
 
-    if (!snapshot.cards.some(card => card.id === id)) {
+    if (!cards.some(card => card.id === id)) {
       throw Error('보유 카드로 등록하고 저장해주세요.');
     }
 
-    setWalletCards(snapshot.cards);
-    selectedCardRef.current = id;
-    setActiveCardId(id);
-
+    setPreviewWallet({ cards, id });
     previewGo('Payment');
   };
 
@@ -902,6 +947,7 @@ export default function App() {
           return (
             <RoutineRecommendationScreen
               scheduleDate={scheduleEditor.date}
+              selectedWalletCard={previewCard}
               onBack={() => previewGo('DailyRoutine')}
               onNext={async () => previewGo('Main')}
               onPreferencesChange={previewPreferences}
@@ -909,25 +955,11 @@ export default function App() {
             />
           );
 
-        case 'MyDataLoading':
-          return (
-            <MyDataLoadingScreen
-              onNext={() => previewGo('MyDataResult')}
-            />
-          );
-
-        case 'MyDataResult':
-          return (
-            <MyDataScreen
-              onNext={() => previewGo('RoutineRecommendation')}
-            />
-          );
-
         case 'Payment':
           return (
             <PaymentScreen
-              card={activeCard}
-              cards={walletCards}
+              card={previewCard}
+              cards={previewCards}
               onSelectCard={previewSelect}
               onClose={() => previewGo('Main')}
               navigation={{
@@ -943,9 +975,10 @@ export default function App() {
           return (
             <View style={styles.screen}>
               <MainScreen
-                walletCards={walletCards}
-                activeCardId={activeCardId}
+                walletCards={previewCards}
+                activeCardId={previewCardId}
                 onSelectCard={previewSelect}
+                onRegisterCard={previewRegister}
                 onLogout={mode => previewGo(mode === 'lock' ? 'PinLogin' : 'Login')}
                 canLock
                 onEditRoutine={(date, entryId) => {
@@ -1051,23 +1084,13 @@ export default function App() {
         return (
           <RoutineRecommendationScreen
             scheduleDate={scheduleEditor.date}
+            selectedWalletCard={activeCard}
             onBack={() => navigate('DailyRoutine')}
             onNext={handleFinishDemo}
-              includeMyData={consent?.myDataAgreed === true}
             onPreferencesChange={handlePreferencesSaved}
             onUseCard={handleUseCard}
           />
         );
-
-      case 'MyDataLoading':
-        return (
-          <MyDataLoadingScreen
-            onNext={() => navigate('MyDataResult')}
-          />
-        );
-
-      case 'MyDataResult':
-        return <MyDataScreen onNext={handleFinishDemo} includeMyData={consent?.myDataAgreed === true} />;
 
       case 'Payment':
         return (
@@ -1086,10 +1109,10 @@ export default function App() {
               walletCards={walletCards}
               activeCardId={activeCardId}
               onSelectCard={handleSelectCard}
+              onRegisterCard={handleRegisterCard}
               onLogout={handleLogout}
               canLock={onboardingComplete && hasSavedPin}
               allowAutomaticAds={allowAutomaticAds}
-              includeMyData={consent?.myDataAgreed === true}
               scheduleDisabled={Boolean(previewScreen) || privacyOpen}
               onEditRoutine={openRoutine}
               onViewBenefits={() => {
@@ -1118,7 +1141,7 @@ export default function App() {
   }
 
   const showInlinePreviewButton =
-    __DEV__ && (Platform.OS !== 'web' || (previewScreen || currentScreen) === 'DailyRoutine');
+    PREVIEW_ENABLED && (Platform.OS !== 'web' || (previewScreen || currentScreen) === 'DailyRoutine');
   const inlinePreviewButton = showInlinePreviewButton && (
     <TouchableOpacity
       accessibilityRole="button"
@@ -1218,7 +1241,7 @@ export default function App() {
         onDelete={handleDeleteData}
       />
 
-      {__DEV__ && previewScreen && (
+      {PREVIEW_ENABLED && previewScreen && (
         <View style={styles.previewLayer}>
           <View style={styles.previewBar}>
             <Text style={styles.previewLabel}>
@@ -1248,7 +1271,7 @@ export default function App() {
         </View>
       )}
 
-      {__DEV__ && (
+      {PREVIEW_ENABLED && (
         <>
           {showDevMenu && (
             <View style={[styles.devMenu, showInlinePreviewButton ? styles.inlineDevMenu : styles.webDevMenu]}>

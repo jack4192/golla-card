@@ -41,7 +41,7 @@ export function WalletProductCardBody({
   return <View style={s.card}>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel={name + ' 카드로 결제 화면 열기'} activeOpacity={0.88} onPress={onPress} style={s.pressable}>
         <View style={s.artwork}>
-          {product && !failed ? <Image key={attempt} source={product.image} resizeMode="contain" style={s.image} accessibilityLabel={name + ' 실제 상품 이미지'} onLoad={() => setLoading(false)} onError={() => {
+          {product && !failed ? <Image key={attempt} source={product.image} resizeMode="contain" fadeDuration={0} style={s.image} accessibilityLabel={name + ' 실제 상품 이미지'} onLoad={() => setLoading(false)} onError={() => {
           setLoading(false);
           setFailed(true);
         }} /> : <View style={s.missing}>

@@ -6,7 +6,7 @@ import RoutineRecommendationScreen from '../screens/RoutineRecommendationScreen'
 import { hideAdForSevenDays, takeAutomaticAd } from '../utils/recommendationPopup';
 
 export default function RecommendationLaunchPopup({
-  enabled, allowAutomaticAds, includeMyData, openRequest, promotions, onViewPromotions
+  enabled, allowAutomaticAds, selectedWalletCard, openRequest, promotions, onViewPromotions
 }) {
   const [ad, setAd] = useState(null);
   const [foreground, setForeground] = useState(!AppState.currentState || AppState.currentState === 'active');
@@ -88,7 +88,7 @@ export default function RecommendationLaunchPopup({
               </ScrollView> : <RoutineRecommendationScreen
                 presentation={ad.automatic ? 'card-ad' : 'popup'}
                 onNext={close}
-                includeMyData={includeMyData}
+                selectedWalletCard={selectedWalletCard}
               />}
             </View>
 

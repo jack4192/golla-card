@@ -12,11 +12,14 @@ const icons = {
   convenience: 'storefront-outline', delivery: 'bicycle-outline', fuel: 'battery-charging-outline',
   shopping: 'bag-handle-outline', medical: 'medkit-outline', other: 'create-outline',
 };
-const activities = INDUSTRIES.filter(([id]) => icons[id]).map(([id, label]) => [id, label.slice(label.indexOf(' ') + 1)]);
+const activities = INDUSTRIES.filter(([id]) => id !== 'other' && icons[id]).map(([id, label]) => [id, label.slice(label.indexOf(' ') + 1)]);
+const activityNames = Object.fromEntries(activities);
 const empty = { category: '', start: '', end: '', title: '' };
 const hours = Array.from({ length: 25 }, (_, hour) => String(hour).padStart(2, '0') + ':00');
+const steps = ['① 시작 시간 선택', '② 종료 시간 선택', '③ 선택 완료'];
 const hourRowHeight = 54;
 const minimumBlockHeight = 44;
+const eventIconStackMinHeight = 80;
 
 function timeOffset(time) {
   const [hour, minute] = time.split(':').map(Number);
@@ -58,6 +61,7 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
   const [scheduleDate] = useState(() => date || dateKey());
   const [events, setEvents] = useState([]);
   const [form, setForm] = useState(empty);
+  const [savedRange, setSavedRange] = useState(null);
   const [editing, setEditing] = useState(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -101,16 +105,24 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
   const disabled = busy || loading || loadFailed;
   const { start, end } = form;
   const choosingEnd = Boolean(start && !end);
-  const overnight = Boolean(start && end && end < start);
-  const draftTime = end ? eventTimeCaption(form) : start + ' 시작';
+  const range = start || !savedRange ? form : savedRange;
+  const rangeComplete = Boolean(range.start && range.end);
+  const highlightedIntervals = !rangeComplete ? [] : range.end < range.start
+    ? [[range.start, '24:00'], ['00:00', range.end]]
+    : [[range.start, range.end]];
+  const step = rangeComplete ? 2 : range.start ? 1 : 0;
+  const timeSummary = value => `시작 시간 ${value.start || '—'} → 종료 시간 ${value.end && value.end < value.start ? '다음 날 ' : ''}${value.end || '—'}`;
   const selectTime = time => {
     if (disabled || lock.current || (!choosingEnd && time === '24:00')) return;
-    if (choosingEnd && time === start) {
-      setError('시작과 다른 종료 시간을 선택해주세요.');
+    if (choosingEnd && time <= start) {
+      setError('종료 시간은 시작 시간보다 늦어야 해요.');
       return;
     }
 
-    setForm(current => choosingEnd ? { ...current, end: time } : { ...current, start: time, end: '' });
+    setSavedRange(null);
+    setForm(current => choosingEnd
+      ? { ...current, end: time }
+      : { ...current, start: time, end: '', category: current.category || 'other' });
     setError('');
     if (choosingEnd) setEditorOpen(true);
   };
@@ -118,15 +130,27 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
     if (disabled || lock.current) return;
     setEditorOpen(false);
     setError('');
-    scroll.current?.scrollTo({ y: Math.max(0, timelineTop.current + timeOffset(start) - hourRowHeight) });
+    if (start) scroll.current?.scrollTo({ y: Math.max(0, timelineTop.current + timeOffset(start) - hourRowHeight) });
+  };
+  const reselectTime = () => {
+    if (disabled || lock.current) return;
+    returnToTimeline();
+    setSavedRange(null);
+    setForm(current => ({ ...current, start: '', end: '' }));
   };
   const update = (key, value) => {
     if (lock.current || disabled) return;
     setForm(current => ({ ...current, [key]: value }));
     setError('');
   };
+  const enterTitle = title => {
+    if (lock.current || disabled) return;
+    setForm(current => ({ ...current, category: 'other', title }));
+    setError('');
+  };
   const resetForm = () => {
     setForm(empty);
+    setSavedRange(null);
     setEditing(null);
     setEditorOpen(false);
     setError('');
@@ -148,10 +172,10 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
   const save = continueAfter => run(async () => {
     if (start) {
       if (!end) throw Error('왼쪽 시간표에서 종료 시간을 선택해주세요.');
-      if (!form.category) throw Error('일과 종류를 선택해주세요.');
       const saved = await saveEvent({ ...form, id: editing, date: scheduleDate });
       setEvents(current => [saved, ...current.filter(event => event.id !== saved.id)]);
       resetForm();
+      setSavedRange(saved);
     }
     if (continueAfter) await onContinue?.();
   });
@@ -159,12 +183,24 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
     await deleteEvent(id);
     setEvents(current => current.filter(event => event.id !== id));
     if (editing === id) resetForm();
+    if (savedRange?.id === id) setSavedRange(null);
   });
   return (
     <KeyboardAvoidingView style={s.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={s.steps}>
+        <View style={s.stepRow}>
+          {steps.map((label, index) => <Text key={label} style={[s.step, index === step && s.currentStep]}>
+            {label}
+          </Text>)}
+        </View>
+        <Text style={s.stepHint} accessibilityLiveRegion="polite">
+          {step === 0 ? '왼쪽에서 시작 시간을 먼저 선택해 주세요' : step === 1
+            ? `시작 시간 ${range.start} 선택됨! 이제 종료 시간을 선택해 주세요`
+            : '시간 선택 완료'}
+        </Text>
+      </View>
       <ScrollView ref={scroll} style={s.scroll} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
         <FlowHeading brand icon="time-outline">오늘의 특별한 일정을 알려주세요</FlowHeading>
-        <Text style={s.hint}>왼쪽에서 시작과 종료 시간을 차례로 눌러주세요. 저장한 일정은 시간 옆에서 수정할 수 있어요.</Text>
         <Text style={s.date}>{scheduleDate}</Text>
 
         {loading && <ActivityIndicator color="#1854D8" />}
@@ -174,19 +210,25 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
           <Text style={s.section}>일과</Text>
         </View>
         <View style={s.timeline} onLayout={event => { timelineTop.current = event.nativeEvent.layout.y; }}>
+          {highlightedIntervals.map(([from, to]) => <View key={from} pointerEvents="none"
+            style={[s.rangeBand, { top: timeOffset(from) + hourRowHeight / 2, height: timeOffset(to) - timeOffset(from) }]} />)}
           <View style={s.railLine} />
           {hours.map((time, hour) => {
-            const selected = time === start || time === end;
-            const inRange = start && end && (overnight ? time > start || time < end : time > start && time < end);
+            const selected = time === range.start || time === range.end;
+            const inRange = rangeComplete && (range.end < range.start
+              ? time > range.start || time < range.end
+              : time > range.start && time < range.end);
+            const invalidEnd = choosingEnd && time <= start;
             const unavailable = disabled || (time === '24:00' && !choosingEnd);
             return (
               <View key={time} style={s.hourRow}>
-                <View pointerEvents="none" style={s.hourLine} />
+                {hour % 3 === 0 && <View pointerEvents="none" style={s.hourLine} />}
                 <TouchableOpacity accessibilityRole="button" accessibilityLabel={hour + '시 선택'}
+                  aria-pressed={selected}
                   accessibilityState={{ selected, disabled: unavailable }} disabled={unavailable}
-                  onPress={() => selectTime(time)} style={[s.hour, inRange && s.inRange, selected && s.selected, unavailable && !selected && s.dim]}>
+                  onPress={() => selectTime(time)} style={[s.hour, inRange && s.inRange, selected && s.selectedHour, (unavailable || invalidEnd) && !selected && s.dim]}>
                   <View style={[s.dot, selected && s.dotSelected]} />
-                  <Text style={s.hourText}>{time}</Text>
+                  <Text style={[s.hourText, selected && s.white]}>{time}</Text>
                 </TouchableOpacity>
               </View>
             );
@@ -195,6 +237,9 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
             {arrangeEvents(events).map(({ event, start: offset, height, lane, lanes }) => {
               const title = eventTitle(event);
               const time = eventTimeCaption(event);
+              const label = activityNames[event.category] ?? title;
+              const icon = icons[event.category] || 'calendar-outline';
+              const compact = height < eventIconStackMinHeight;
               return (
                 <View key={event.id} pointerEvents="box-none" style={[
                   s.eventSlot,
@@ -207,7 +252,13 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
                     disabled={disabled}
                     onPress={() => edit(event)}
                     style={[s.eventBlock, editing === event.id && s.selected]}>
-                    <Text style={s.blue} numberOfLines={1}>{title}</Text>
+                    {!compact && <View style={s.eventIcon} accessible={false}>
+                      <Ionicons name={icon} size={23} color="#245DE5" />
+                    </View>}
+                    <View style={s.eventTitleRow}>
+                      {compact && <Ionicons name={icon} size={14} color="#245DE5" accessible={false} />}
+                      <Text style={[s.eventTitle, compact && s.eventTitleCompact]} numberOfLines={1}>{label}</Text>
+                    </View>
                     <Text style={s.eventTime} numberOfLines={1}>{time}</Text>
                   </TouchableOpacity>
                 </View>
@@ -218,27 +269,37 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
       </ScrollView>
       <View style={s.footer}>
         {!editorOpen && !!error && <Text accessibilityRole="alert" style={s.danger}>{error}</Text>}
-        {!!start && <View style={s.draftRow}>
-          <Text style={s.draftText} accessibilityLiveRegion="polite">
-            {draftTime}{choosingEnd ? ' · 종료 시간을 선택해주세요' : ''}
-          </Text>
-          <Action label={editing ? '일정 수정' : '일과 선택'} disabled={disabled} onPress={() => setEditorOpen(true)} />
+        <Text style={s.draftText} accessibilityLiveRegion="polite">{timeSummary(range)}</Text>
+        {!!range.start && <View style={s.draftRow}>
+          <Action label="시간 다시 선택" disabled={disabled} onPress={reselectTime} />
+          <Action label="초기화" disabled={disabled} onPress={resetForm} />
+          {!!end && <Action label={editing ? '일정 수정' : '일과 선택'} disabled={disabled} onPress={() => setEditorOpen(true)} />}
         </View>}
         <View style={s.footerRow}>
           <Action label="이전" disabled={busy} onPress={onBack} />
-          <Action primary disabled={disabled} onPress={() => save(true)}
-            label={busy ? '저장 중…' : start ? '저장하고 맞춤 카드 보기' : events.length ? '맞춤 카드 보기' : '추가 입력 없이 계속'} />
+          <Action primary disabled={disabled || !rangeComplete} onPress={() => save(true)} label="맞춤 카드 보기" />
         </View>
+        {!range.start && <TouchableOpacity accessibilityRole="button" disabled={disabled}
+          onPress={() => save(true)} style={s.skip}>
+          <Text style={s.blue}>{events.length ? '저장한 일정으로 계속' : '일정 없이 계속'}</Text>
+        </TouchableOpacity>}
       </View>
       <Modal visible={editorOpen} transparent animationType="fade" onRequestClose={returnToTimeline}>
         <KeyboardAvoidingView style={s.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={s.editor} accessibilityViewIsModal>
-            <Text accessibilityRole="header" style={s.editorTitle}>{editing ? '일정 수정' : '일과 선택'}</Text>
+            <Text accessibilityRole="header" style={s.editorTitle}>{editing ? '일정 수정' : '일과 입력'}</Text>
             <View style={s.editorTime}>
-              <Text style={s.blue}>{draftTime}</Text>
-              <Action label={end ? '시간 변경' : '종료 시간 선택'} onPress={returnToTimeline} disabled={disabled} />
+              <Text style={s.blue}>{timeSummary(form)}</Text>
+              <Action label="시간 변경" onPress={reselectTime} disabled={disabled} />
             </View>
             <ScrollView style={s.editorScroll} keyboardShouldPersistTaps="handled">
+              <View style={s.directEntry}>
+                <Text style={s.directTitle}>직접 입력</Text>
+                <TextInput accessibilityLabel="일정 이름 직접 입력" style={[s.input, form.category === 'other' && s.selected]}
+                  value={form.title} onFocus={() => update('category', 'other')} onChangeText={enterTitle}
+                  maxLength={ROUTINE_TITLE_LIMIT} editable={!disabled} placeholder="예: 출근 지하철"
+                  placeholderTextColor="#697C98" returnKeyType="done" />
+              </View>
               <View style={s.options}>
                 {activities.map(([id, label]) => (
                   <TouchableOpacity key={id} accessibilityRole="radio" accessibilityLabel={label} aria-checked={form.category === id} disabled={disabled}
@@ -248,7 +309,6 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
                   </TouchableOpacity>
                 ))}
               </View>
-              {form.category === 'other' && <TextInput accessibilityLabel="기타 일정 제목" style={s.input} value={form.title} onChangeText={value => update('title', value)} maxLength={ROUTINE_TITLE_LIMIT} editable={!disabled} placeholder="일정 제목" placeholderTextColor="#697C98" />}
             </ScrollView>
             {!!error && <Text accessibilityRole="alert" style={s.danger}>{error}</Text>}
             <View style={s.actions}>
@@ -267,37 +327,50 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F1F5FF' },
   scroll: { flex: 1 },
   body: { width: '100%', maxWidth: 720, alignSelf: 'center', gap: 16, paddingHorizontal: 16, paddingVertical: 23 },
-  hint: { color: '#536A88', fontSize: 13, lineHeight: 21, textAlign: 'center' },
+  steps: { width: '100%', maxWidth: 720, alignSelf: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
+  stepRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  step: { flexGrow: 1, color: '#536A88', backgroundColor: '#E8EEF9', borderRadius: 14, paddingVertical: 7, paddingHorizontal: 6, fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  currentStep: { color: '#FFFFFF', backgroundColor: '#1854D8' },
+  stepHint: { color: '#18365F', fontSize: 13, lineHeight: 19, textAlign: 'center' },
   date: { color: '#385988', fontSize: 13, fontWeight: '700', textAlign: 'center' },
   timelineHeading: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   railHeading: { width: 76 },
   timeline: { position: 'relative', marginTop: -10, paddingBottom: 24 },
+  rangeBand: { position: 'absolute', left: 0, right: 0, borderRadius: 14, backgroundColor: '#E5EFFF' },
   railLine: { position: 'absolute', left: 9, top: hourRowHeight / 2, width: 2, height: 24 * hourRowHeight, backgroundColor: '#BDD1FA' },
   section: { color: '#1854D8', fontSize: 17, fontWeight: '800', textAlign: 'center' },
   hourRow: { position: 'relative', height: hourRowHeight, justifyContent: 'center' },
   hourLine: { position: 'absolute', left: 86, right: 0, top: hourRowHeight / 2, height: 1, backgroundColor: '#DEE7F5' },
   hour: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingLeft: 12, width: 76, minHeight: 44, borderRadius: 22, borderWidth: 1, borderColor: 'transparent' },
   dot: { position: 'absolute', left: 5, width: 8, height: 8, borderRadius: 4, backgroundColor: '#91B2F4' },
-  dotSelected: { backgroundColor: '#104FE7' },
+  dotSelected: { backgroundColor: '#FFFFFF' },
   hourText: { color: '#18365F', fontSize: 13, fontWeight: '700' },
   eventTrack: { position: 'absolute', left: 86, right: 0, top: hourRowHeight / 2, bottom: 0 },
   eventSlot: { position: 'absolute', paddingHorizontal: 2 },
-  eventBlock: { flex: 1, borderRadius: 12, borderWidth: 1, borderColor: '#BFCEF2', borderLeftWidth: 3, borderLeftColor: '#2D62DF', backgroundColor: '#E3EDFF', justifyContent: 'flex-start', paddingHorizontal: 7, paddingTop: 4 },
-  eventTime: { color: '#385988', fontSize: 12, marginTop: 2 },
+  eventBlock: { flex: 1, borderRadius: 12, borderWidth: 1, borderColor: '#BFCEF2', borderLeftWidth: 3, borderLeftColor: '#2D62DF', backgroundColor: '#E3EDFF', justifyContent: 'center', alignItems: 'center', paddingLeft: 4, paddingRight: 6, overflow: 'hidden' },
+  eventIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F5F9FF', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  eventTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, maxWidth: '100%' },
+  eventTitle: { flexShrink: 1, color: '#18365F', fontSize: 15, lineHeight: 20, fontWeight: '800', textAlign: 'center' },
+  eventTitleCompact: { fontSize: 13, lineHeight: 17 },
+  eventTime: { color: '#385988', fontSize: 11, lineHeight: 15, textAlign: 'center' },
   overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16, backgroundColor: '#11234380' },
   editor: { width: '100%', maxWidth: 480, maxHeight: '92%', borderRadius: 24, padding: 16, gap: 12, backgroundColor: '#FFFFFF' },
   editorTitle: { color: '#152D50', fontSize: 20, fontWeight: '800' },
   editorTime: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   editorScroll: { flexGrow: 0, flexShrink: 1 },
   options: { gap: 6, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  directEntry: { alignSelf: 'center', width: '100%', maxWidth: 340, gap: 8, marginBottom: 12 },
+  directTitle: { color: '#1854D8', fontSize: 15, fontWeight: '800', textAlign: 'center' },
   option: { width: '48%', minHeight: 46, flexDirection: 'row', gap: 6, paddingHorizontal: 6, paddingVertical: 8, alignItems: 'center', borderRadius: 16, borderWidth: 1, borderColor: 'transparent' },
   optionLabel: { color: '#152D50', flexShrink: 1, fontSize: 13, fontWeight: '700' },
   selected: { backgroundColor: '#E2EDFF', borderColor: '#8CA8EF' },
+  selectedHour: { backgroundColor: '#1854D8', borderColor: '#1854D8' },
   inRange: { backgroundColor: '#EAF1FF' },
   input: { backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#D9E5F7', textAlign: 'center', minHeight: 48, paddingHorizontal: 8, color: '#152D50', fontSize: 16 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6 },
-  draftRow: { flexDirection: 'row', alignItems: 'center', gap: 8, width: '100%', maxWidth: 688, alignSelf: 'center' },
-  draftText: { flex: 1, color: '#385988', fontWeight: '700', fontSize: 13 },
+  draftRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6 },
+  draftText: { color: '#385988', textAlign: 'center', fontWeight: '700', fontSize: 13 },
+  skip: { alignSelf: 'center', justifyContent: 'center', minHeight: 36, paddingHorizontal: 8 },
   button: { backgroundColor: '#EAF1FF', borderRadius: 22, borderWidth: 1, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 13, minHeight: 44 },
   footer: { backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#DEE7F5', padding: 14, gap: 8 },
   footerRow: { flexDirection: 'row', gap: 8, width: '100%', maxWidth: 688, alignSelf: 'center' },

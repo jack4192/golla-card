@@ -6,6 +6,7 @@ import { waitForEventWrites } from './routineData';
 import { AUTOMATIC_AD_HISTORY_KEY, waitForAdWrites } from './recommendationPopup';
 
 export const RESET_KEY = 'solpay_demo_reset_pending_v1';
+export const PREVIEW_CARDS_KEY = 'solpay_preview_cards_v1';
 
 const PERSONAL = [
   ['solpay_recommendation_hide_until_v1', '추천 팝업 숨김 설정'],
@@ -21,6 +22,7 @@ const PERSONAL = [
   ['solpay_recommendation_preferences_v1', '추천·보유·관심 설정'],
   ['solpay_today_card_plan_v1', '오늘 카드 계획'],
   ['solpay_wallet_selection_v1', '지갑 선택 카드'],
+  [PREVIEW_CARDS_KEY, '미리보기 카드'],
 ];
 
 const ACCOUNT = [

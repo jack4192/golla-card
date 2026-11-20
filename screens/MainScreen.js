@@ -1,26 +1,21 @@
 import BenefitReport from '../components/BenefitReport';
-import { CARD_CATALOG_40, CARD_CATALOG_40_BENEFITS, findCatalog40Product } from '../data/cardCatalog40';
+import { CARD_CATALOG_40, findCatalog40Product } from '../data/cardCatalog40';
 import { PROMOTION_BRANDS } from '../data/promotionBrands';
 import { PROMOTIONS, activePromotions } from '../data/promotions';
 import { MYSHOP_LOGOS } from '../data/myshopLogos';
 import WalletDeck from '../components/WalletDeck';
-import WalletProductCard from '../components/WalletProductCard';
-import WalletWheelControls from '../components/WalletWheelControls';
 import RecommendationLaunchPopup from '../components/RecommendationLaunchPopup';
-import MyDataCardStatus, { useMyDataSnapshot, mergeImportedWallet } from '../components/MyDataCardStatus';
 import AccountWithdrawal from '../components/AccountWithdrawal';
 import TodaySchedulePanel from '../components/TodaySchedulePanel';
-import CardCatalogCompare from '../components/CardCatalogCompare';
-import { SAMPLE_PAYMENT_CARDS } from '../data/samplePayment';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform, useWindowDimensions, Vibration } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform, Vibration } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Alert } from '../utils/demoAlert';
 import * as SecureStore from '../utils/demoStore';
 import { createPinSalt, hashPin } from '../utils/pinCrypto';
 import PaymentScreen, { realProductCard, realWalletCards } from './PaymentScreen';
-import { getCatalogCardForWallet } from '../data/cardCatalogCsv'; // SOLPAY_CSV_CATALOG_V1
-import { DEMO_WALLET_CARDS, getActiveWalletCard } from '../data/cards';
+import { getActiveWalletCard } from '../data/cards';
+import { canRegisterWalletCard } from '../utils/wallet';
 const NAV = [{
   id: 'home',
   label: '홈',
@@ -264,46 +259,19 @@ export default function MainScreen({
   onViewBenefits,
   scheduleDisabled = false,
   allowAutomaticAds = false,
-  includeMyData = true,
-  walletCards = DEMO_WALLET_CARDS,
-  activeCardId = DEMO_WALLET_CARDS[0].id,
+  walletCards = [],
+  activeCardId,
+  onRegisterCard,
   onSelectCard = () => {}
 }) {
-  const [walletViewportWidth, setWalletViewportWidth] = useState(0);
-  // MYDATA_UI_LINK_V1
-  const {
-    snapshot: importedMyData
-  } = useMyDataSnapshot(includeMyData);
-  const [importedSelection, setImportedSelection] = useState(null);
-  const suppliedCards = walletCards;
-  const suppliedActive = activeCardId;
-  const suppliedSelect = onSelectCard;
-  useEffect(() => {
-    setImportedSelection(null);
-  }, [suppliedActive, importedMyData?.userId]);
-  walletCards = mergeImportedWallet(walletCards, importedMyData);
-  activeCardId = walletCards.some(card => card.id === importedSelection) ? importedSelection : walletCards.some(card => card.id === suppliedActive) ? suppliedActive : walletCards[0]?.id;
-  onSelectCard = id => {
-    if (!walletCards.some(card => card.id === id)) return;
-    setImportedSelection(id);
-    if (suppliedCards.some(card => card.id === id)) {
-      suppliedSelect(id);
-    }
-  };
-  const {
-    width
-  } = useWindowDimensions();
-  const cardWidth = Math.max(1, walletViewportWidth || width - 40);
   const [tab, setTab] = useState('home');
   const [schedulePayment, setSchedulePayment] = useState(null);
-  const [sampleActive, setSampleActive] = useState(false);
+  const [sampleActive, setSampleActive] = useState(null);
   const [adRequest, setAdRequest] = useState(null);
   const [catalogQuery, setCatalogQuery] = useState('');
-  const [catalogCompareOpen, setCatalogCompareOpen] = useState(false);
   const [selectedCatalog, setSelectedCatalog] = useState(null);
-  const walletRef = useRef(null);
+  const [registeringCard, setRegisteringCard] = useState(false);
   const currentCard = getActiveWalletCard(walletCards, activeCardId);
-  const activeCardIndex = Math.max(0, walletCards.findIndex(card => card.id === currentCard.id));
   const [filter, setFilter] = useState('전체');
   const [search, setSearch] = useState('');
   const [selectedBenefit, setSelectedBenefit] = useState(null);
@@ -326,14 +294,6 @@ export default function MainScreen({
   const [savedConsent, setSavedConsent] = useState(null);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [sessionOpenedAt] = useState(new Date());
-  useEffect(() => {
-    if (tab === 'home' && !settingsOpen) {
-      walletRef.current?.scrollToIndex({
-        index: activeCardIndex,
-        animated: false
-      });
-    }
-  }, [activeCardIndex, cardWidth, tab, settingsOpen]);
   useEffect(() => {
     let active = true;
     const load = async () => {
@@ -493,22 +453,32 @@ export default function MainScreen({
     const keyword = search.trim().toLowerCase();
     return !keyword || `${item.merchant} ${item.benefit}`.toLowerCase().includes(keyword);
   }), [filter, search]);
-  const homeBenefits = ALL_BENEFITS.filter(item => benefitStatus(item) === '기간 내' && !item.merchant.includes('식별불가')).slice(0, 3);
   const selectTab = nextTab => {
     setSchedulePayment(null);
     setTab(nextTab);
   };
+  const registerCard = async code => {
+    if (!onRegisterCard || registeringCard) return;
+    setRegisteringCard(true);
+    try {
+      await onRegisterCard(code);
+    } catch (error) {
+      Alert.alert('카드 등록', error?.message || '카드를 등록하지 못했어요.');
+    } finally {
+      setRegisteringCard(false);
+    }
+  };
   const openChat = () => {
     if (typeof onOpenChat === 'function') {
       onOpenChat({
-        cardId: currentCard.id,
-        cardName: currentCard.name
+        cardId: currentCard?.id,
+        cardName: currentCard?.name
       });
       return;
     }
     setChatMessages([{
       role: 'bot',
-      text: '안녕하세요! SOL AI 도우미예요.\n' + `현재 선택한 ${currentCard.name}의 카드 정보와 혜택을 안내해드려요.`
+      text: currentCard ? `${currentCard.name}의 상품 정보와 혜택을 안내해드려요.` : '카드 상품이나 혜택에 대해 물어보세요.'
     }]);
     setChatInput('');
     setChatVisible(true);
@@ -520,7 +490,7 @@ export default function MainScreen({
     if (/추천/.test(q)) {
       answer = '맞춤 카드는 홈의 ‘오늘의 카드 추천’에서 확인할 수 있어요.';
     } else if (/현재 카드|카드 정보|이유|왜/.test(q)) {
-      answer = `${currentCard.name}: ${currentCard.reason}`;
+      answer = currentCard ? `${currentCard.name}: ${currentCard.reason}` : '등록된 카드가 없습니다.';
     } else if (/혜택|할인|적립/.test(q)) {
       answer = '혜택 탭에서 이벤트·마이샵 31개를 확인할 수 있어요. 각 항목을 누르면 결제 조건과 기간이 나와요.';
     } else if (/실적|한도/.test(q)) {
@@ -537,13 +507,13 @@ export default function MainScreen({
     }]);
     setChatInput('');
   };
-  const benefitTile = (item, compact = false) => {
+  const benefitTile = item => {
     const logo = PROMOTION_BRANDS[item.merchant]?.image || MYSHOP_LOGOS[item.merchant];
     return <TouchableOpacity
       key={item.id}
       accessibilityRole="button"
       accessibilityLabel={item.merchant + ' ' + item.benefit + ' 상세 조건'}
-      style={[styles.benefitTile, compact && styles.compactBenefitTile]}
+      style={styles.benefitTile}
       activeOpacity={0.8}
       onPress={() => setSelectedBenefit(item)}
     >
@@ -560,256 +530,78 @@ export default function MainScreen({
       </View>
     </TouchableOpacity>;
   };
-  const wallet = () => <WalletWheelControls cards={walletCards} selectedId={currentCard.id} onSelect={onSelectCard} onLayout={event => {
-    const measured = Math.round(event.nativeEvent.layout.width);
-    if (Number.isFinite(measured) && measured > 0) setWalletViewportWidth(previous => previous === measured ? previous : measured);
-  }}><>
-      <FlatList ref={walletRef} data={walletCards} extraData={activeCardId} horizontal pagingEnabled showsHorizontalScrollIndicator={false} keyExtractor={item => item.id} initialScrollIndex={activeCardIndex} getItemLayout={(_, index) => ({
-        length: cardWidth,
-        offset: cardWidth * index,
-        index
-      })} onMomentumScrollEnd={event => {
-        const index = Math.round(event.nativeEvent.contentOffset.x / cardWidth);
-        const nextIndex = Math.max(0, Math.min(index, walletCards.length - 1));
-        if (walletCards[nextIndex]) {
-          onSelectCard(walletCards[nextIndex].id);
-        }
-      }} renderItem={({
-        item
-      }) => <View style={{
-        width: cardWidth
-      }}>
-            <WalletProductCard card={item} onPress={() => {
-          onSelectCard(item.id);
-          selectTab('payment');
-        }} />
-          </View>} />
-
-      <View style={styles.dotsRow}>
-        {walletCards.map((item, index) => <View key={item.id} style={[styles.dot, activeCardIndex === index && styles.dotActive]} />)}
-      </View>
-
-
-    </></WalletWheelControls>;
-
-  // 내 지갑에서 선택된 카드에 맞는 혜택 표시
-  const walletBenefitSummary = () => {
-    const product = findCatalog40Product(currentCard);
-    const details = WALLET_CARD_BENEFITS[currentCard.id];
-    return <View style={styles.walletBenefitBox}>
-        <View style={styles.walletBenefitHeading}>
-          <View style={styles.walletBenefitHeadingLeft}>
-            <Ionicons name="sparkles-outline" size={18} color="#235DE6" />
-            <Text style={styles.walletBenefitHeadingText}>
-              이 카드의 주요 혜택
-            </Text>
-          </View>
-
-          <Text style={styles.walletBenefitDemoTag}>
-            상품 안내서 기준
-          </Text>
-        </View>
-
-        <Text style={styles.walletBenefitCardName} numberOfLines={2}>
-          {currentCard.name}
-        </Text>
-
-        {product ? <>
-          <View style={styles.walletBenefitChips}>
-            {product.benefits.slice(0, 2).map(benefit => {
-              const requirement = benefit.note.match(/^전월 [^·\n]+이상/m)?.[0];
-              return <View key={benefit.benefitId} style={styles.walletBenefitChip}>
-                <Ionicons name="pricetag-outline" size={16} color="#225CD6" />
-                <View style={styles.walletBenefitChipTexts}>
-                  <Text style={styles.walletBenefitChipValue}>{benefit.name}</Text>
-                  {!!requirement && <Text style={styles.walletBenefitChipLabel}>{requirement}</Text>}
-                </View>
-              </View>;
-            })}
-          </View>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={product.name + ' 혜택 상세보기'}
-            style={styles.walletBenefitDetailButton} onPress={() => setSelectedCatalog(product)}>
-            <Text style={styles.walletBenefitDetailButtonText}>혜택 자세히 보기</Text>
-            <Ionicons name="chevron-forward" size={17} color="#225CD6" />
-          </TouchableOpacity>
-        </> : details ? <>
-            <View style={styles.walletBenefitChips}>
-              {details.highlights.map((entry, index) => <View key={`${currentCard.id}-${index}`} style={styles.walletBenefitChip}>
-                  <Ionicons name={entry.icon} size={16} color="#225CD6" />
-
-                  <View style={styles.walletBenefitChipTexts}>
-                    <Text style={styles.walletBenefitChipLabel}>
-                      {entry.label}
-                    </Text>
-                    <Text style={styles.walletBenefitChipValue}>
-                      {entry.value}
-                    </Text>
-                  </View>
-                </View>)}
-            </View>
-
-            <View style={styles.walletBenefitMetaRow}>
-              <Ionicons name="checkmark-circle-outline" size={15} color="#72819C" />
-              <Text style={styles.walletBenefitMetaText}>
-                <Text style={styles.walletBenefitMetaLabel}>
-                  전월 실적{'  '}
-                </Text>
-                {details.condition}
-              </Text>
-            </View>
-
-            <View style={styles.walletBenefitMetaRow}>
-              <Ionicons name="wallet-outline" size={15} color="#72819C" />
-              <Text style={styles.walletBenefitMetaText}>
-                <Text style={styles.walletBenefitMetaLabel}>
-                  혜택 한도{'  '}
-                </Text>
-                {details.limit}
-              </Text>
-            </View>
-
-            <TouchableOpacity style={styles.walletBenefitDetailButton} onPress={() => setWalletBenefitDetailsOpen(true)} accessibilityRole="button" accessibilityLabel={`${currentCard.name} 혜택 상세보기`}>
-              <Text style={styles.walletBenefitDetailButtonText}>
-                혜택 자세히 보기
-              </Text>
-              <Ionicons name="chevron-forward" size={17} color="#225CD6" />
-            </TouchableOpacity>
-          </> : <View style={styles.walletBenefitUnknown}>
-            <Ionicons name="information-circle-outline" size={19} color="#8795A9" />
-            <Text style={styles.walletBenefitUnknownText}>
-              이 카드의 상품 정보를 확인할 수 없어요.
-            </Text>
-          </View>}
-
-        <Text style={styles.walletBenefitFootnote}>
-          상품 안내서에서 확인한 혜택이에요.
-          실제 혜택 적용 여부·실적·잔여 한도는 확인되지 않았어요.
-        </Text>
-      </View>;
-  };
   const renderSchedule = (home = false) => <TodaySchedulePanel
     home={home}
+    onOpenCards={() => selectTab('cards')}
+    onOpenSchedule={() => selectTab('schedule')}
     disabled={scheduleDisabled}
     onEditRoutine={onEditRoutine}
     onViewBenefits={onViewBenefits}
     cards={realWalletCards(currentCard, walletCards)}
+    selectedCard={currentCard}
     sampleActive={sampleActive}
-    onStartSample={() => setSampleActive(true)}
-    onEndSample={() => setSampleActive(false)}
+    onStartSample={setSampleActive}
+    onEndSample={() => setSampleActive(null)}
     onPay={context => {
-      if (!context.sample) onSelectCard(context.cardId);
+      onSelectCard(context.cardId);
       setSchedulePayment({ ...context, returnTab: tab });
       setTab('payment');
     }}
   />;
-  const renderHome = () => {
-    const canPay = Boolean(realProductCard(currentCard));
-    const product = findCatalog40Product(currentCard);
-    const mainBenefit = product?.benefits[0]?.name || WALLET_CARD_BENEFITS[currentCard.id]?.highlights[0]?.value;
-    return <>
-      {renderSchedule(true)}
-      <View style={styles.homeLinks}>
-        {[['calendar-outline','오늘의 일정',() => selectTab('schedule')],
-          ['sparkles-outline','오늘의 카드 추천',() => setAdRequest({kind:'recommendation'})],
-          ['pricetag-outline','오늘의 프로모션',() => setAdRequest({kind:'promotion'})]].map(([icon,label,open]) =>
-          <TouchableOpacity key={label} accessibilityRole="button" accessibilityLabel={label} style={styles.homeLink} onPress={open}>
-            <View style={styles.homeLinkIcon}><Ionicons name={icon} color="#174BC5" size={21}/></View>
-            <Text style={styles.homeLinkTitle}>{label}</Text>
-            <Ionicons name="chevron-forward" size={17} color="#66768D"/>
-          </TouchableOpacity>)}
-      </View>
-      <View style={styles.homeHeroHeading}>
-        <View style={{flex:1}}>
-          <Text accessibilityRole="header" style={styles.sectionTitle}>내 지갑</Text>
-          <Text style={styles.homeHeroCaption}>보유 카드 {walletCards.length}장</Text>
-        </View>
-        <TouchableOpacity accessibilityRole="button" onPress={() => selectTab('cards')} style={styles.moreRow}>
-          <Text style={styles.moreText}>전체 카드</Text>
-          <Ionicons name="chevron-forward" size={15} color="#516884" />
+  const renderHomeHighlights = () => {
+    const [promotion, ...morePromotions] = activePromotions();
+    const [benefit, ...moreBenefits] = ALL_BENEFITS.filter(item =>
+      item.type === '마이샵' && item.merchant !== promotion?.merchant && benefitStatus(item) === '기간 내'
+    );
+    const highlights = [];
+    for (const item of [promotion, benefit, ...morePromotions, ...moreBenefits]) {
+      if (item && !highlights.some(highlight => highlight.merchant === item.merchant)) highlights.push(item);
+      if (highlights.length === 3) break;
+    }
+    if (!highlights.length) return null;
+
+    return <View style={styles.homeHighlights}>
+      <View style={styles.homeHighlightsHeader}>
+        <Text accessibilityRole="header" style={styles.sectionTitle}>프로모션·혜택</Text>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="혜택 더 보기"
+          style={styles.homeHighlightsLink} onPress={() => selectTab('benefits')}>
+          <Text style={styles.tileStatus}>혜택 더 보기</Text>
+          <Ionicons name="chevron-forward" size={14} color="#3168DF" />
         </TouchableOpacity>
       </View>
-      {wallet()}
-      {!!mainBenefit && <View style={styles.homeBenefitPill}>
-        <Ionicons name="pricetag-outline" size={19} color="#1657D9"/>
-        <Text style={styles.homeBenefitPillText}>{mainBenefit}</Text>
-      </View>}
-      <TouchableOpacity accessibilityRole="button" accessibilityState={{disabled: !canPay}} disabled={!canPay}
-        style={[styles.payShortcut,!canPay && styles.unavailablePay]} onPress={() => selectTab('payment')}>
-        <Ionicons name="qr-code-outline" size={22} color="#FFFFFF" />
-        <Text style={styles.payShortcutText}>{canPay ? '이 카드로 결제' : '결제할 카드를 선택해주세요'}</Text>
-      </TouchableOpacity>
-      {walletBenefitSummary()}{appNotice && <View style={styles.noticeStrip}>
-          <Ionicons name="notifications-outline" size={16} color="#2C60C2" />
-          <Text style={styles.noticeStripText}>
-            이번 달 혜택{' '}
-            {ALL_BENEFITS.filter(item => benefitStatus(item) === '기간 내').length}
-            건을 확인해보세요.
-          </Text>
-        </View>}
-      <TouchableOpacity onPress={() => selectTab('cards')} style={{
-      backgroundColor: "#EDF3FF",
-      padding: 14,
-      borderRadius: 14,
-      marginTop: 12,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between'
-    }}>
-        <View>
-          <Text style={{
-          color: '#204CA2',
-          fontWeight: '800'
-        }}>
-            카드 {CARD_CATALOG_40.length}종 혜택 보기
-          </Text>
-          <Text style={{
-          color: '#607DAC',
-          fontSize: 12,
-          marginTop: 4
-        }}>
-            카드별 혜택 {CARD_CATALOG_40_BENEFITS}건
-          </Text>
-        </View>
-        <Ionicons name="chevron-forward" size={19} color="#204CA2" />
-      </TouchableOpacity>
-
-      {getCatalogCardForWallet(currentCard) && <TouchableOpacity onPress={() => setSelectedCatalog(getCatalogCardForWallet(currentCard))} style={{
-      padding: 12,
-      marginTop: 9,
-      backgroundColor: "#FFFFFF",
-      borderRadius: 12
-    }}>
-          <Text style={{
-        color: '#235CEA',
-        fontWeight: '700'
-      }}>
-            SOL메이트 카드의 CSV 혜택 자세히 보기
-          </Text>
-        </TouchableOpacity>}
-
-
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>
-          놓치기 쉬운 혜택
-        </Text>
-        <TouchableOpacity onPress={() => selectTab('benefits')} style={styles.moreRow}>
-          <Text style={styles.moreText}>31개 모두 보기</Text>
-          <Ionicons name="chevron-forward" size={15} color="#6A7590" />
-        </TouchableOpacity>
+      <View style={styles.homeHighlightsRow}>
+        {highlights.map((item, index) => {
+          const logo = PROMOTION_BRANDS[item.merchant]?.image || MYSHOP_LOGOS[item.merchant];
+          return <TouchableOpacity key={item.id} accessibilityRole="button"
+            accessibilityLabel={item.merchant + ' ' + item.benefit + ' 상세 조건'}
+            style={[styles.homeHighlight, index === 1 && styles.homeHighlightMint, index === 2 && styles.homeHighlightPeach]}
+            onPress={() => setSelectedBenefit(item)}>
+            <View style={styles.homeHighlightIcon}>
+              {logo ? <Image source={logo} resizeMode="contain" style={styles.homeHighlightLogo} accessible={false} />
+                : <Ionicons name="gift-outline" size={20} color="#245DE5" accessible={false} />}
+            </View>
+            <Text style={styles.homeHighlightMerchant} numberOfLines={1}>{item.merchant}</Text>
+            <Text style={styles.homeHighlightAmount} numberOfLines={2}>{item.benefit}</Text>
+          </TouchableOpacity>;
+        })}
       </View>
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.previewScroll}>
-        {homeBenefits.map(item => benefitTile(item, true))}
-      </ScrollView>
-    </>;
+    </View>;
   };
   const renderBenefits = () => <>
 
-      <BenefitReport offers={ALL_BENEFITS} date={kstToday()} data={importedMyData} onCardPress={card => {
-        onSelectCard(card.id);
-        selectTab('cards');
-      }}/>
+      <BenefitReport offers={ALL_BENEFITS} date={kstToday()} />
       <Text accessibilityRole="header" style={styles.sectionTitle}>혜택 둘러보기</Text>
+      {appNotice && <View style={styles.noticeStrip}>
+        <Ionicons name="notifications-outline" size={16} color="#2C60C2" />
+        <Text style={styles.noticeStripText}>이번 달 혜택 {ALL_BENEFITS.filter(item => benefitStatus(item) === '기간 내').length}건</Text>
+      </View>}
+      {[['sparkles-outline', '오늘의 카드 추천', 'recommendation'], ['pricetag-outline', '오늘의 프로모션', 'promotion']].map(([icon, label, kind]) =>
+        <TouchableOpacity key={kind} accessibilityRole="button" accessibilityLabel={label}
+          style={styles.homeLink} onPress={() => setAdRequest({ kind })}>
+          <View style={styles.homeLinkIcon}><Ionicons name={icon} color="#174BCA" size={21} /></View>
+          <Text style={styles.homeLinkTitle}>{label}</Text>
+          <Ionicons name="chevron-forward" size={17} color="#66768D" />
+        </TouchableOpacity>)}
       <View style={styles.searchBox}>
         <Ionicons name="search-outline" size={18} color="#8C98AE" />
         <TextInput style={styles.searchInput} placeholder="가맹점 또는 혜택 검색" value={search} onChangeText={setSearch} placeholderTextColor="#99A4B3" />
@@ -841,63 +633,13 @@ export default function MainScreen({
         현재 이용 가능 여부와 카드별 적용 조건은 각 혜택의 상세 안내를 확인해주세요.
       </Text>
     </>;
-  const renderFinance = () => <>
-      <Text style={styles.pageEyebrow}>MY FINANCE</Text>
-      <Text style={styles.pageTitle}>내 금융 한눈에</Text>
-      <Text style={styles.pageSubtitle}>
-        자산·소비 정보를 보기 쉽게 모으는 공간이에요.
-      </Text>
-
-      <View style={styles.financeHero}>
-        <Ionicons name="shield-checkmark-outline" size={30} color="#1D63D1" />
-        <Text style={styles.financeTitle}>
-          연결된 금융기관이 없어요
-        </Text>
-        <Text style={styles.financeDesc}>
-          현재 계좌 잔액과 실제 카드 이용 내역은 조회할 수 없어요.
-        </Text>
-      </View>
-
-      <View style={styles.financeBox}>
-        <View style={styles.financeIconCircle}>
-          <Ionicons name="wallet-outline" size={21} color="#2363D3" />
-        </View>
-        <View style={styles.financeCopy}>
-          <Text style={styles.financeRowTitle}>계좌·자산</Text>
-          <Text style={styles.financeRowDesc}>
-            실시간 계좌 데이터 없음
-          </Text>
-        </View>
-        <Text style={styles.notConnected}>미연동</Text>
-      </View>
-
-      <View style={styles.financeBox}>
-        <View style={styles.financeIconCircle}>
-          <Ionicons name="stats-chart-outline" size={21} color="#2363D3" />
-        </View>
-        <View style={styles.financeCopy}>
-          <Text style={styles.financeRowTitle}>소비 분석</Text>
-          <Text style={styles.financeRowDesc}>
-            API 연동 후 월별 지출 제공 예정
-          </Text>
-        </View>
-        <Text style={styles.notConnected}>미연동</Text>
-      </View>
-
-      <TouchableOpacity style={styles.financeCTA} onPress={() => selectTab('cards')}>
-        <Text style={styles.financeCTAText}>
-          내 카드 확인하기
-        </Text>
-        <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
-      </TouchableOpacity>
-    </>;
-  const renderCards = () => <>
+  const renderCardsHeader = () => <View style={styles.catalogHeading}>
       <WalletDeck cards={walletCards} selected={currentCard} onSelect={onSelectCard} canPay={Boolean(realProductCard(currentCard))} onPay={() => selectTab("payment")}
-        highlight={findCatalog40Product(currentCard)?.benefits[0]?.name || WALLET_CARD_BENEFITS[currentCard.id]?.highlights[0]?.value}
-        status={currentCard.status} onDetails={() => {
+        highlight={findCatalog40Product(currentCard)?.benefits[0]?.name || WALLET_CARD_BENEFITS[currentCard?.id]?.highlights[0]?.value}
+        status={currentCard?.status} onDetails={() => {
           const product = findCatalog40Product(currentCard);
           if (product) setSelectedCatalog(product);
-          else if (WALLET_CARD_BENEFITS[currentCard.id]) setWalletBenefitDetailsOpen(true);
+          else if (WALLET_CARD_BENEFITS[currentCard?.id]) setWalletBenefitDetailsOpen(true);
         }} />
 
       <Text style={{
@@ -906,15 +648,7 @@ export default function MainScreen({
       color: '#203251',
       marginBottom: 8
     }}>
-        카드 상품 {CARD_CATALOG_40.length}종
-      </Text>
-
-      <Text style={{
-      color: '#6C7C94',
-      fontSize: 12,
-      marginBottom: 12
-    }}>
-        상품 정보 조회용이며 실제 보유 카드와는 별개입니다.
+        카드 상품
       </Text>
 
       <TextInput placeholder="카드 이름이나 혜택 검색" value={catalogQuery} onChangeText={setCatalogQuery} style={{
@@ -926,90 +660,31 @@ export default function MainScreen({
       marginBottom: 12
     }} />
 
-      <TouchableOpacity accessibilityRole="button" style={styles.homeLink} onPress={() => setCatalogCompareOpen(true)}>
-        <View style={styles.homeLinkIcon}><Ionicons name="git-compare-outline" size={21} color="#174BC5" /></View>
-        <Text style={styles.homeLinkTitle}>카드 상품 비교</Text>
-        <Ionicons name="chevron-forward" size={17} color="#66768D" />
-      </TouchableOpacity>
+    </View>;
+  const renderCards = () => {
+    const query = catalogQuery.trim().toLowerCase();
+    const results = query ? CARD_CATALOG_40.filter(card =>
+      [card.name, card.issuer, card.description, ...card.tags, ...card.benefits.map(benefit => benefit.name)]
+        .join(' ').toLowerCase().includes(query)
+    ) : CARD_CATALOG_40;
+    return <FlatList style={styles.mainScroll} contentContainerStyle={[styles.pageContent, styles.chatClearance]}
+      showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"
+      data={results} keyExtractor={card => card.code} ListHeaderComponent={renderCardsHeader()}
+      initialNumToRender={5} maxToRenderPerBatch={5} windowSize={3}
+      ListEmptyComponent={<Text style={styles.catalogIssuer}>검색 결과가 없어요.</Text>}
+      renderItem={({ item }) => <TouchableOpacity accessibilityRole="button" accessibilityLabel={item.name + ' 상품 상세'}
+          onPress={() => setSelectedCatalog(item)} style={styles.catalogRow}>
+        {!!item.image && <Image source={item.image} resizeMode="contain" fadeDuration={0}
+          style={styles.catalogThumb} accessibilityLabel={item.name + ' 상품 이미지'} />}
+        <View style={styles.catalogRowText}>
+          <Text style={styles.catalogName}>{item.name}</Text>
+          <Text style={styles.catalogIssuer}>{item.issuer} · {item.type}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color="#647890" />
+      </TouchableOpacity>}
+    />;
+  };
 
-      {CARD_CATALOG_40.filter(c => (c.name + ' ' + c.issuer + ' ' + c.description + ' ' + c.tags.join(' ') + ' ' + c.benefits.map(b => b.name).join(' ')).toLowerCase().includes(catalogQuery.trim().toLowerCase())).map(c => <TouchableOpacity key={c.code} onPress={() => setSelectedCatalog(c)} style={{
-      backgroundColor: "#FFFFFF",
-      padding: 14,
-      borderRadius: 14,
-      marginBottom: 8,
-      borderWidth: 1,
-      borderColor: '#E6EBF4'
-    }}>
-          <Text style={{
-        fontSize: 14,
-        fontWeight: '800',
-        color: '#1D304D'
-      }}>
-            {c.name}
-          </Text>
-          {!!c.image && <Image source={c.image} resizeMode="contain" style={styles.catalogThumb} accessibilityLabel={c.name + ' 상품 이미지'}/>}
-          <Text style={{
-        fontSize: 12,
-        color: '#687A96',
-        marginTop: 5
-      }}>
-            {c.issuer} · {c.type} · 혜택 {c.benefits.length}건
-          </Text>
-          <Text numberOfLines={2} style={{
-        fontSize: 12,
-        color: '#687A96',
-        marginTop: 6
-      }}>
-            {c.description}
-          </Text>
-        </TouchableOpacity>)}
-
-      <Text style={{
-      fontSize: 18,
-      fontWeight: "800",
-      marginTop: 20,
-      marginBottom: 15,
-      color: '#203251'
-    }}>
-        내 지갑 카드
-      </Text>
-      <Text style={styles.pageEyebrow}>MY CARDS</Text>
-      <Text style={styles.pageTitle}>카드 관리</Text>
-      <Text style={styles.pageSubtitle}>
-        지갑에 표시되는 카드 {walletCards.length}장이에요.
-      </Text>
-
-      {walletCards.map(card => <TouchableOpacity key={card.id} style={styles.cardListItem} onPress={() => {
-      onSelectCard(card.id);
-      selectTab('home');
-    }}>
-          <View style={[styles.miniCard, {
-        backgroundColor: card.color
-      }]}>
-            <Ionicons name="card" size={26} color={card.textColor} />
-          </View>
-
-          <View style={styles.cardListCopy}>
-            <Text style={styles.cardListName}>
-              {card.name}
-            </Text>
-            <Text style={styles.cardListSub}>
-              {card.number} · {card.issuer}
-            </Text>
-          </View>
-
-          <Ionicons name="chevron-forward" size={19} color="#78859C" />
-        </TouchableOpacity>)}
-
-      <View style={styles.cardHintBox}>
-        <Ionicons name="information-circle-outline" size={20} color="#456CBA" />
-        <Text style={styles.cardHintText}>
-          카드를 누르면 홈 지갑에서 해당 카드가 선택돼요.
-          홈 화면의 카드를 누르면 QR·바코드 결제로 이동해요.
-          실제 금융기관에 카드를 등록하는 것은 아니에요.
-        </Text>
-      </View>
-    </>;
   const renderSettings = () => <>
       <View style={styles.settingsHeader}>
         <TouchableOpacity onPress={() => setSettingsOpen(false)} style={styles.settingsHeaderButton}>
@@ -1028,7 +703,7 @@ export default function MainScreen({
           <SettingsItem icon="keypad-outline" title="현재 로그인 방식" subtitle="앱을 다시 열면 6자리 간편비밀번호로 확인해요" value={hasPin ? '간편 PIN' : '미설정'} />
           <SettingsItem icon="lock-closed-outline" title="간편비밀번호 변경" subtitle="기존 번호를 확인한 뒤 새 6자리로 변경" onPress={() => {
           if (!hasPin) {
-            Alert.alert('간편비밀번호 미설정', '계좌·자산 연동 단계에서 먼저 PIN을 등록해주세요.');
+            Alert.alert('간편비밀번호 미설정', '가입을 마치고 간편비밀번호를 등록해주세요.');
             return;
           }
           setPinChangeOpen(true);
@@ -1036,12 +711,11 @@ export default function MainScreen({
         </SettingsGroup>
 
         <SettingsGroup title="알림">
-          <SettingsToggle icon="notifications-outline" title="앱 내 혜택 알림" subtitle="홈에서 진행 중인 혜택 안내 배너 표시" value={appNotice} disabled={settingsBusy} onChange={value => persistUISettings(value, vibrationOn)} />
+          <SettingsToggle icon="notifications-outline" title="앱 내 혜택 알림" subtitle="혜택 탭에 진행 중인 혜택 안내 표시" value={appNotice} disabled={settingsBusy} onChange={value => persistUISettings(value, vibrationOn)} />
         </SettingsGroup>
 
         <SettingsGroup title="편의 기능">
           <SettingsItem icon="qr-code-outline" title="결제" subtitle="QR·바코드 및 예상 혜택 확인" onPress={() => goFromSettings('payment')} />
-          <SettingsItem icon="pie-chart-outline" title="마이데이터" subtitle="금융 연결 상태와 소비 분석 안내" onPress={() => goFromSettings('finance')} />
           <SettingsItem icon="card-outline" title="카드 관리" subtitle="등록된 카드 목록" onPress={() => goFromSettings('cards')} />
           <SettingsToggle icon="phone-portrait-outline" title="버튼 진동" value={vibrationOn} disabled={settingsBusy} onChange={value => persistUISettings(appNotice, value)} />
           <SettingsItem icon="pulse-outline" title="진동 확인" subtitle="버튼 진동 설정이 켜져 있을 때만 작동" onPress={() => {
@@ -1056,8 +730,7 @@ export default function MainScreen({
         </SettingsGroup>
 
         <SettingsGroup title="서비스·이용 동의">
-          <SettingsItem icon="document-text-outline" title="카드·소비 데이터 활용" value={savedConsent?.termsAgreed ? savedConsent.myDataAgreed ? '동의' : '미동의' : '기록 없음'} />
-          <SettingsItem icon="notifications-outline" title="아침 일정 알림 선택" value={savedConsent ? savedConsent.morningNotificationAgreed ? '선택함' : '선택 안 함' : '기록 없음'} />
+          <SettingsItem icon="notifications-outline" title="알림 수신 동의" value={savedConsent ? savedConsent.morningNotificationAgreed ? '선택함' : '선택 안 함' : '기록 없음'} />
         </SettingsGroup>
 
         <SettingsGroup title="앱 정보">
@@ -1075,8 +748,7 @@ export default function MainScreen({
 
       </ScrollView>
     </>;
-  return <SafeAreaView style={styles.root}><RecommendationLaunchPopup includeMyData={includeMyData} allowAutomaticAds={allowAutomaticAds} onViewPromotions={() => selectTab('benefits')} promotions={activePromotions()} openRequest={adRequest} enabled={tab === 'home' && !settingsOpen && !exitOpen && !pinChangeOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
-      {catalogCompareOpen && <CardCatalogCompare cards={CARD_CATALOG_40} onClose={() => setCatalogCompareOpen(false)} />}
+  return <SafeAreaView style={styles.root}><RecommendationLaunchPopup selectedWalletCard={currentCard} allowAutomaticAds={tab === 'home' && allowAutomaticAds} onViewPromotions={() => selectTab('benefits')} promotions={activePromotions()} openRequest={adRequest} enabled={(tab === 'home' || tab === 'benefits') && !settingsOpen && !exitOpen && !pinChangeOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
       {!settingsOpen && tab !== 'payment' && <View style={[styles.topBar, tab === 'cards' && styles.walletTopBar]}>
           <View>
             <Text style={[styles.brand,{color:tab === 'cards' ? "#FFFFFF" : "#134CCA",fontSize:27}]}>SOL·Pay</Text>
@@ -1097,19 +769,15 @@ export default function MainScreen({
       <View style={styles.mainArea}>
         {settingsOpen ? renderSettings() : tab === 'payment' ? <PaymentScreen
           key={schedulePayment ? 'schedule-payment' : 'standard-payment'}
-          card={schedulePayment?.sample ? SAMPLE_PAYMENT_CARDS[0] : currentCard}
-          cards={schedulePayment?.sample ? SAMPLE_PAYMENT_CARDS : walletCards}
+          card={currentCard}
+          cards={walletCards}
           schedule={schedulePayment}
-          onSelectCard={schedulePayment?.sample ? undefined : onSelectCard}
+          onSelectCard={onSelectCard}
           onClose={() => selectTab(schedulePayment?.returnTab || 'home')}
-        /> : <ScrollView key={tab} style={styles.mainScroll} contentContainerStyle={[styles.pageContent, !settingsOpen && tab !== 'payment' && styles.chatClearance]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            {tab === 'home' && <>
-                {renderHome()}{includeMyData && <MyDataCardStatus card={currentCard} />}
-              </>}
+        /> : tab === 'cards' ? renderCards() : <ScrollView key={tab} style={styles.mainScroll} contentContainerStyle={[styles.pageContent, styles.chatClearance]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            {tab === 'home' && <>{renderSchedule(true)}{renderHomeHighlights()}</>}
             {tab === 'benefits' && renderBenefits()}
             {tab === 'schedule' && renderSchedule()}
-            {tab === 'finance' && renderFinance()}
-            {tab === 'cards' && renderCards()}
           </ScrollView>}
         {!settingsOpen && tab !== 'payment' && !chatVisible && <View pointerEvents="box-none" style={styles.chatDock}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="챗봇 열기" onPress={openChat} style={styles.chatFab}>
@@ -1130,7 +798,7 @@ export default function MainScreen({
       })}
         </View>}
 
-      {__DEV__ && <View style={styles.devClearance} />}
+      {(__DEV__ || Platform.OS === 'web') && <View style={styles.devClearance} />}
 
       <Modal visible={exitOpen} transparent animationType="fade" onRequestClose={() => setExitOpen(false)}>
         <View style={styles.modalOverlay}>
@@ -1197,10 +865,10 @@ export default function MainScreen({
                 내 지갑 · 카드 혜택
               </Text>
               <Text style={styles.modalTitle}>
-                {currentCard.name}
+                {currentCard?.name}
               </Text>
 
-              {WALLET_CARD_BENEFITS[currentCard.id] ? <>
+              {WALLET_CARD_BENEFITS[currentCard?.id] ? <>
                   <Text style={styles.walletBenefitDetailIntro}>
                     {WALLET_CARD_BENEFITS[currentCard.id].description}
                   </Text>
@@ -1321,7 +989,7 @@ export default function MainScreen({
           </View>
 
           <Text style={styles.chatInfo}>
-            현재 카드: {currentCard.name}
+            {currentCard ? '현재 카드: ' + currentCard.name : '등록된 카드가 없습니다'}
             {' · '}AI API 미연결
           </Text>
 
@@ -1390,6 +1058,14 @@ export default function MainScreen({
                     {selectedCatalog.description}
                   </Text>
                   {!!selectedCatalog.image && <Image source={selectedCatalog.image} resizeMode="contain" style={styles.catalogPlate} accessibilityLabel={selectedCatalog.name + ' 상품 이미지'}/>}
+                  {onRegisterCard && canRegisterWalletCard(selectedCatalog.code) && (
+                    walletCards.some(card => card.catalogCode === selectedCatalog.code)
+                      ? <Text style={styles.catalogIssuer}>지갑에 등록된 카드</Text>
+                      : <TouchableOpacity accessibilityRole="button" disabled={registeringCard}
+                          style={styles.walletBenefitDetailButton} onPress={() => registerCard(selectedCatalog.code)}>
+                          <Text style={styles.walletBenefitDetailButtonText}>{registeringCard ? '등록 중…' : '보유 카드로 등록'}</Text>
+                        </TouchableOpacity>
+                  )}
                   {selectedCatalog.registryCardId != null && <Text style={styles.catalogFee}>
                     국내 연회비 {money(selectedCatalog.annualFeeDomestic)} · 해외 연회비 {money(selectedCatalog.annualFeeOverseas)}
                   </Text>}
@@ -1397,7 +1073,6 @@ export default function MainScreen({
                     style={styles.walletBenefitDetailButton} onPress={() => Linking.openURL(selectedCatalog.sourcePage).catch(() => Alert.alert('상품 안내', '브라우저에서 BC카드 상품 안내를 열어주세요.'))}>
                     <Text style={styles.walletBenefitDetailButtonText}>BC카드 공식 상품 안내</Text>
                   </TouchableOpacity>}
-                  {includeMyData && <MyDataCardStatus card={selectedCatalog} expanded />}
 
                   {selectedCatalog.benefits.map((b, i) => <View key={i} style={{
                 paddingVertical: 11,
@@ -1495,7 +1170,12 @@ const styles = StyleSheet.create({
   exitOptionTitle:{fontSize:16,fontWeight:'700',color:'#142D4E'},
   exitHint:{fontSize:13,color:'#526783'},
   exitCancel:{minHeight:44,alignItems:'center',justifyContent:'center'},
-  catalogThumb:{width:104,height:70,marginTop:8},
+  catalogHeading:{gap:8},
+  catalogRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:82,padding:10,borderRadius:14,backgroundColor:'#FFFFFF'},
+  catalogRowText:{flex:1,gap:4},
+  catalogName:{fontSize:14,fontWeight:'800',color:'#1D304D'},
+  catalogIssuer:{fontSize:12,color:'#586E8B'},
+  catalogThumb:{width:92,height:62},
   catalogPlate:{width:'100%',maxWidth:300,height:180,alignSelf:'center'},
   catalogFee:{fontSize:13,lineHeight:20,color:'#526783',marginVertical:8},
   chatClearance:{paddingBottom:90},
@@ -1506,15 +1186,9 @@ const styles = StyleSheet.create({
   tileLogo:{width:'92%',maxWidth:132,height:48},
   tileBrandLabel:{fontSize:12,color:'#536C88',textAlign:'center',marginTop:5},
   tileCentered:{textAlign:'center',marginTop:6},
-  homeHeroHeading:{flexDirection:'row',alignItems:'center',gap:8,marginTop:10},
-  homeHeroCaption:{fontSize:13,color:'#586E8B',marginTop:4},
   walletTopBar:{backgroundColor:'#0B1940'},
-  homeBenefitPill:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:8,padding:10,backgroundColor:'#EDF4FF',borderRadius:13},
-  homeBenefitPillText:{flexShrink:1,fontSize:14,fontWeight:'700',color:'#173769'},
-  unavailablePay:{backgroundColor:'#526782'},
-  homeLinks:{backgroundColor:'#FFFFFF'},
   homeLinkIcon:{height:38,width:38,borderRadius:12,backgroundColor:'#EDF4FF',alignItems:'center',justifyContent:'center'},
-  homeLink:{flexDirection:'row',alignItems:'center',minHeight:60,gap:14,borderBottomWidth:1,borderBottomColor:'#E4E9F1'},
+  homeLink:{flexDirection:'row',alignItems:'center',minHeight:54,gap:14},
   homeLinkTitle:{flex:1,fontSize:17,fontWeight:'700',color:'#13223B'},
   root: {
     flex: 1,
@@ -1574,6 +1248,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 14
   },
+  homeHighlights: { gap: 8 },
+  homeHighlightsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  homeHighlightsLink: { minHeight: 44, flexDirection: 'row', gap: 4, alignItems: 'center' },
+  homeHighlightsRow: { flexDirection: 'row', gap: 8 },
+  homeHighlight: {
+    flexBasis: 0, flexGrow: 1, minWidth: 0, maxWidth: '33.33%', minHeight: 106, maxHeight: 178, aspectRatio: 1.1,
+    alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 5, paddingVertical: 8,
+    borderRadius: 18, borderWidth: 1, borderColor: '#E3ECFC', backgroundColor: '#EEF4FF'
+  },
+  homeHighlightMint: { borderColor: '#DDEFEA', backgroundColor: '#ECF8F3' },
+  homeHighlightPeach: { borderColor: '#F7E9DB', backgroundColor: '#FFF5EA' },
+  homeHighlightIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  homeHighlightLogo: { width: 28, height: 25 },
+  homeHighlightMerchant: { maxWidth: '100%', color: '#526783', fontSize: 11, textAlign: 'center' },
+  homeHighlightAmount: { color: '#142D4E', fontSize: 12, lineHeight: 15, fontWeight: '800', textAlign: 'center' },
   hero: {
     borderRadius: 24,
     backgroundColor: "#245DE5",
@@ -1653,97 +1342,6 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     lineHeight: 17
   },
-  walletBenefitBox: {
-    marginTop: 0,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: "#E3EAF4",
-    padding: 20
-  },
-  walletBenefitHeading: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 8
-  },
-  walletBenefitHeadingLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    flexShrink: 1
-  },
-  walletBenefitHeadingText: {
-    color: '#1E2D48',
-    fontSize: 16,
-    fontWeight: "800",
-    lineHeight: 24
-  },
-  walletBenefitDemoTag: {
-    color: '#647FA9',
-    backgroundColor: '#EEF4FF',
-    overflow: 'hidden',
-    borderRadius: 7,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    fontSize: 12,
-    fontWeight: '700'
-  },
-  walletBenefitCardName: {
-    marginTop: 11,
-    marginBottom: 12,
-    color: '#76849A',
-    fontSize: 12,
-    lineHeight: 18
-  },
-  walletBenefitChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 13
-  },
-  walletBenefitChip: {
-    minWidth: 118,
-    flexGrow: 1,
-    flexBasis: '27%',
-    backgroundColor: '#F2F6FF',
-    borderRadius: 12,
-    paddingVertical: 11,
-    paddingHorizontal: 11,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7
-  },
-  walletBenefitChipTexts: {
-    flex: 1,
-    gap: 4
-  },
-  walletBenefitChipLabel: {
-    color: '#7485A2',
-    fontSize: 12,
-    fontWeight: '600'
-  },
-  walletBenefitChipValue: {
-    color: '#2057D0',
-    fontSize: 13,
-    fontWeight: "800"
-  },
-  walletBenefitMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 7,
-    paddingTop: 8
-  },
-  walletBenefitMetaText: {
-    color: '#5E6B81',
-    fontSize: 12,
-    lineHeight: 19,
-    flex: 1
-  },
-  walletBenefitMetaLabel: {
-    fontWeight: '800',
-    color: '#3F506C'
-  },
   walletBenefitDetailButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1758,26 +1356,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#225CD6',
     fontWeight: '800'
-  },
-  walletBenefitUnknown: {
-    flexDirection: 'row',
-    gap: 9,
-    padding: 13,
-    borderRadius: 12,
-    backgroundColor: '#F5F7FA',
-    alignItems: 'flex-start'
-  },
-  walletBenefitUnknownText: {
-    flex: 1,
-    color: '#758196',
-    fontSize: 12,
-    lineHeight: 19
-  },
-  walletBenefitFootnote: {
-    color: "#5A6E89",
-    fontSize: 12,
-    marginTop: 14,
-    lineHeight: 21
   },
   walletBenefitDetailIntro: {
     color: '#63728B',
@@ -1828,25 +1406,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 1.8
   },
-  dotsRow: {
-    flexDirection: 'row',
-    gap: 6,
-    justifyContent: 'center',
-    marginTop: 12
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#CCD4E1'
-  },
-  dotActive: {
-    width: 19,
-    backgroundColor: "#245DE5"
-  },
-  previewScroll: {
-    marginHorizontal: -1
-  },
   benefitTile: {
     width: '48%',
     minHeight: 176,
@@ -1857,11 +1416,6 @@ const styles = StyleSheet.create({
     padding: 18,
     marginBottom: 10,
     justifyContent: 'space-between'
-  },
-  compactBenefitTile: {
-    width: 205,
-    marginRight: 10,
-    marginBottom: 0
   },
   tileTop: {
     flexDirection: 'row',
@@ -2011,41 +1565,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 6
   },
-  payShortcut: {
-    backgroundColor: '#1557E5',
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    borderRadius: 14,
-    minHeight: 52,
-    justifyContent: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12
-  },
-  payShortcutText: {
-    color: "#FFFFFF",
-    fontWeight: "800",
-    fontSize: 15
-  },
-  pageEyebrow: {
-    color: '#376ED2',
-    letterSpacing: 1.1,
-    fontSize: 12,
-    fontWeight: "800"
-  },
-  pageTitle: {
-    color: "#142D4E",
-    fontSize: 26,
-    fontWeight: "800",
-    marginTop: 8
-  },
-  pageSubtitle: {
-    fontSize: 13,
-    color: '#7B8799',
-    lineHeight: 20,
-    marginTop: 8,
-    marginBottom: 18
-  },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2110,75 +1629,6 @@ const styles = StyleSheet.create({
     color: '#8B95A5',
     lineHeight: 17,
     marginTop: 10
-  },
-  financeHero: {
-    borderRadius: 18,
-    backgroundColor: "#EDF3FF",
-    padding: 22,
-    marginTop: 2,
-    marginBottom: 15
-  },
-  financeTitle: {
-    fontSize: 19,
-    color: '#1B3E7D',
-    fontWeight: "800",
-    marginTop: 15
-  },
-  financeDesc: {
-    fontSize: 13,
-    color: '#56749E',
-    lineHeight: 20,
-    marginTop: 9
-  },
-  financeBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E4EAF4',
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    marginBottom: 10
-  },
-  financeIconCircle: {
-    width: 43,
-    height: 43,
-    borderRadius: 13,
-    backgroundColor: '#EBF3FF',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  financeCopy: {
-    flex: 1,
-    paddingHorizontal: 12
-  },
-  financeRowTitle: {
-    color: '#25334B',
-    fontSize: 14,
-    fontWeight: '800'
-  },
-  financeRowDesc: {
-    color: '#8590A3',
-    fontSize: 12,
-    marginTop: 5
-  },
-  notConnected: {
-    color: '#99A3B4',
-    fontSize: 12,
-    fontWeight: '700'
-  },
-  financeCTA: {
-    padding: 16,
-    borderRadius: 15,
-    backgroundColor: '#235DE6',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12
-  },
-  financeCTAText: {
-    color: "#FFFFFF",
-    fontWeight: '800',
-    fontSize: 14
   },
   cardListItem: {
     flexDirection: 'row',

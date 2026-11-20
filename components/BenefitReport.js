@@ -1,8 +1,8 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function BenefitReport({offers, date, data, onCardPress}) {
+export default function BenefitReport({offers, date}) {
   const month = date.slice(0, 7);
   const weeks = [0, 0, 0, 0, 0];
   for (const offer of offers) {
@@ -10,7 +10,6 @@ export default function BenefitReport({offers, date, data, onCardPress}) {
   }
   const peak = Math.max(1, ...weeks);
   const active = offers.filter(offer => offer.start <= date && offer.end >= date).length;
-  const eligible = (data?.cards || []).filter(card => card.status?.nextThreshold > 0);
   return <View style={s.report}>
     <View style={s.hero}>
       <View style={{flex:1}}>
@@ -30,18 +29,6 @@ export default function BenefitReport({offers, date, data, onCardPress}) {
         </View>)}
       </View>
     </View>
-    {eligible.length > 0 && <View style={s.progressList}>
-      <Text style={s.title}>실적까지 한 걸음</Text>
-      <Text style={s.caption}>예시 소비 내역 · {data.asOf?.slice(0,10)} 기준</Text>
-      {eligible.map(card => {
-        const progress = Math.max(0, Math.min(1, card.status.progress || 0));
-        return <TouchableOpacity key={card.id} accessibilityRole="button" style={s.panel} onPress={() => onCardPress(card)}>
-          <Text style={s.number}>{card.name}</Text>
-          <Text style={s.caption}>{card.status.currentSpend.toLocaleString('ko-KR')}원 / {card.status.nextThreshold.toLocaleString('ko-KR')}원</Text>
-          <View accessibilityLabel={'실적 '+Math.round(progress*100)+'%'} style={s.track}><View style={[s.filled,{width: Math.round(progress*100)+'%'}]}/></View>
-        </TouchableOpacity>;
-      })}
-    </View>}
   </View>;
 }
 const s=StyleSheet.create({
@@ -58,7 +45,4 @@ const s=StyleSheet.create({
   column:{flex:1,alignItems:'center',gap:5},
   bar:{width:'100%',maxWidth:54,borderTopLeftRadius:7,borderTopRightRadius:7},
   number:{fontSize:13,fontWeight:'700',color:'#142747'},
-  progressList:{gap:8},
-  track:{height:7,borderRadius:5,backgroundColor:'#E4EBF7',overflow:'hidden'},
-  filled:{height:'100%',backgroundColor:'#1858E8'},
 });
