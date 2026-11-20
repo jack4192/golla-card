@@ -13,6 +13,7 @@ import {
 import { Alert } from './utils/demoAlert';
 import * as DemoStore from './utils/demoStore';
 import { createPinSalt, hashPin } from './utils/pinCrypto';
+import { SERVER_MODE, api, clearToken, readToken } from './utils/api';
 import {
   deleteDemoData,
   hasPendingReset,
@@ -246,13 +247,14 @@ export default function App() {
         return;
       }
 
-      const [savedConsent, savedPin, fullLogout, finished, savedAccount, session] = await Promise.all([
+      const [savedConsent, savedPin, fullLogout, finished, savedAccount, session, savedToken] = await Promise.all([
         readConsent(),
         readPin(),
         DemoStore.getItemAsync(FULL_LOGOUT_KEY),
         DemoStore.getItemAsync(FINISHED_KEY),
         readDemoAccount(),
         DemoStore.getItemAsync(SESSION_KEY),
+        SERVER_MODE ? readToken() : null,
       ]);
 
       if (!active) return;
@@ -263,7 +265,7 @@ export default function App() {
       setConsent(savedConsent);
       setHasSavedPin(Boolean(savedPin) && !savedAccount?.firstLogin);
       setOnboardingComplete(completed);
-      const canUsePin = !fullLogout && completed && PIN_SESSION_STATES.has(session);
+      const canUsePin = !fullLogout && completed && PIN_SESSION_STATES.has(session) && (!SERVER_MODE || Boolean(savedToken));
       setCurrentScreen(canUsePin ? 'PinLogin' : 'Login');
     };
 
@@ -474,12 +476,30 @@ export default function App() {
   };
 
   const handleLogin = (email, password) => runAction(async () => {
-    if (!__DEV__ && Platform.OS !== 'web') {
+    if (!__DEV__ && Platform.OS !== 'web' && !SERVER_MODE) {
       throw Error('현재 이메일 로그인을 사용할 수 없어요.');
     }
 
     const address = normalizeEmail(email);
     if (!isValidEmail(address)) throw Error('올바른 이메일 형식을 입력해주세요.');
+
+    if (SERVER_MODE) {
+      await api.login(address, password);
+      const previousEmail = await DemoStore.getItemAsync(LOGIN_EMAIL_KEY);
+      const switchedAccount = previousEmail !== address;
+      if (switchedAccount) {
+        // 다른 계정으로 로그인하면 이 기기의 이전 계정 정보(동의·PIN·일정·카드)를 지우고 처음부터 시작합니다.
+        await deleteDemoData('personal').catch(() => {});
+        for (const key of [FINISHED_KEY, CONSENT_KEY, PIN_KEY, ATTEMPTS_KEY]) {
+          await DemoStore.deleteItemAsync(key);
+        }
+        setConsentDraft(null);
+        setScheduleEditor({});
+      }
+      await DemoStore.setItemAsync(LOGIN_EMAIL_KEY, address);
+      await afterAuthentication({ firstSignupLogin: switchedAccount });
+      return;
+    }
 
     const customMatches =
       demoAccount?.email === address && typeof password === 'string'
@@ -515,7 +535,7 @@ export default function App() {
   });
 
   const handleVerifyPin = pin => runAction(async () => {
-    if (!__DEV__ && Platform.OS !== 'web') {
+    if (!__DEV__ && Platform.OS !== 'web' && !SERVER_MODE) {
       throw Error('현재 간편비밀번호로 로그인할 수 없어요.');
     }
 
@@ -576,6 +596,21 @@ export default function App() {
     }
 
     await DemoStore.deleteItemAsync(ATTEMPTS_KEY);
+    if (SERVER_MODE) {
+      try {
+        await api.me();
+      } catch (problem) {
+        if (problem?.status === 401) {
+          await clearToken();
+          await DemoStore.setItemAsync(FULL_LOGOUT_KEY, 'yes');
+          navigate('Login');
+          Alert.alert('다시 로그인해주세요', '로그인 시간이 지났어요. 이메일과 비밀번호로 다시 로그인해주세요.');
+          return;
+        }
+        throw problem;
+      }
+    }
+
     await afterAuthentication();
   });
 
@@ -616,7 +651,7 @@ export default function App() {
   const handlePinSetup = pin => runAction(async () => {
     requireAuthentication();
 
-    if (!__DEV__ && Platform.OS !== 'web') {
+    if (!__DEV__ && Platform.OS !== 'web' && !SERVER_MODE) {
       throw Error('현재 간편비밀번호를 등록할 수 없어요.');
     }
 
@@ -701,6 +736,7 @@ export default function App() {
       if (lock) {
         await DemoStore.setItemAsync(SESSION_KEY, 'locked');
       } else {
+        if (SERVER_MODE) await api.logout();
         await DemoStore.setItemAsync(FULL_LOGOUT_KEY, 'yes');
         await DemoStore.deleteItemAsync(SESSION_KEY);
       }
@@ -743,6 +779,14 @@ export default function App() {
     }
 
     const email = normalizeEmail(account.email);
+
+    if (SERVER_MODE) {
+      await api.signup({ ...account, email });
+      setOnboardingComplete(false);
+      navigate('Login');
+      Alert.alert('가입 완료', '가입한 이메일과 비밀번호로 로그인해주세요.');
+      return;
+    }
 
     if (isDemoEmailTaken(email)) {
       throw Error('이미 사용 중인 이메일입니다.');
@@ -916,8 +960,8 @@ export default function App() {
             <SignUpScreen
               onBack={() => previewGo('Login')}
               onComplete={() => previewGo('Login')}
-              isEmailTaken={isDemoEmailTaken}
-              isPhoneTaken={isDemoPhoneTaken}
+              isEmailTaken={SERVER_MODE ? api.isEmailTaken : isDemoEmailTaken}
+              isPhoneTaken={SERVER_MODE ? api.isPhoneTaken : isDemoPhoneTaken}
             />
           );
 
@@ -1048,8 +1092,8 @@ export default function App() {
           <SignUpScreen
             onBack={() => navigate('Login')}
             onComplete={handleDemoSignUp}
-            isEmailTaken={isDemoEmailTaken}
-            isPhoneTaken={isDemoPhoneTaken}
+            isEmailTaken={SERVER_MODE ? api.isEmailTaken : isDemoEmailTaken}
+            isPhoneTaken={SERVER_MODE ? api.isPhoneTaken : isDemoPhoneTaken}
           />
         );
 
