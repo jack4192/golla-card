@@ -73,11 +73,6 @@ export function realWalletCards(card, cards = []) {
   const matched = [...(active ? [active] : []), ...cards].map(realProductCard).filter(Boolean);
   return Array.from(new Map(matched.map(item => [item.id, item])).values());
 }
-// 마지막 글자 받침에 따라 '을'/'를' (영문·숫자로 끝나면 '를')
-const objectParticle = word => {
-  const code = String(word || '').trim().slice(-1).charCodeAt(0);
-  return code >= 0xAC00 && code <= 0xD7A3 && (code - 0xAC00) % 28 ? '을' : '를';
-};
 const unknown = (reason, name = null, condition) => ({
   value: null,
   unit: 'KRW',
@@ -677,7 +672,7 @@ export default function PaymentScreen({
               ? selected.id === schedule.cardId
                 ? '오늘 일정의 업종과 관련된 혜택이 있는 보유 카드예요.'
                 : '결제 카드를 바꿨어요. 바꾸기 전과 같은 일정·금액으로 혜택을 확인할 수 있어요.'
-              : '지갑에서 선택한 ' + selected.name + objectParticle(selected.name) + ' 결제 카드로 유지하고 있어요.'}
+              : '지갑에서 선택한 카드(' + selected.name + ')로 결제해요.'}
           </Text>
 
           {!!selectedBenefit?.name && <Text style={s.text}>{selectedBenefit.name}</Text>}
