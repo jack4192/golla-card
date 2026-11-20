@@ -774,6 +774,7 @@ export default function MainScreen({
           schedule={schedulePayment}
           onSelectCard={onSelectCard}
           onClose={() => selectTab(schedulePayment?.returnTab || 'home')}
+          onOpenCards={() => selectTab('cards')}
         /> : tab === 'cards' ? renderCards() : <ScrollView key={tab} style={styles.mainScroll} contentContainerStyle={[styles.pageContent, styles.chatClearance]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {tab === 'home' && <>{renderSchedule(true)}{renderHomeHighlights()}</>}
             {tab === 'benefits' && renderBenefits()}

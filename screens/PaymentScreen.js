@@ -285,6 +285,7 @@ export default function PaymentScreen({
   schedule,
   onSelectCard,
   onClose,
+  onOpenCards,
   navigation
 }) {
   const options = useMemo(() => realWalletCards(card, cards), [card, cards]);
@@ -475,9 +476,10 @@ export default function PaymentScreen({
           카드 탭에서 보유 카드를 등록해주세요.
         </Text>
 
-        <TouchableOpacity onPress={close}>
+        {/* 카드 탭(내 카드)으로 이동. 연결이 없으면 이전 화면으로 */}
+        <TouchableOpacity accessibilityRole="button" onPress={() => (typeof onOpenCards === 'function' ? onOpenCards() : close())}>
           <Text style={s.link}>
-            카드 등록하러 돌아가기
+            카드 등록하러 가기
           </Text>
         </TouchableOpacity>
       </View>;
