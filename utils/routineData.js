@@ -367,7 +367,9 @@ export function eventTimeCaption(event) {
 }
 
 export function eventTitle(event) {
-  return event.category ? routineLabel(event) : event.types.map(eventLabel).join(' · ');
+  if (event.category) return routineLabel(event);
+  // 직접 입력한 상황 일정은 입력한 이름을 보여줍니다.
+  return event.types.map(type => type === 'other' && event.title ? '✏️ ' + event.title : eventLabel(type)).join(' · ');
 }
 
 export const saveEvent = input => writeEventRecord(async () => {
@@ -407,8 +409,9 @@ export const saveEvent = input => writeEventRecord(async () => {
     if (start === end) throw Error('시작 시간과 종료 시간을 다르게 설정해주세요.');
     situationTime = { start, end };
   }
-  if (!timed && types.includes('other') && !String(input.memo || '').trim()) {
-    throw Error('기타를 고른 경우 메모에 어떤 일정인지 적어주세요.');
+  const situationTitle = String(input.title || '').trim().slice(0, ROUTINE_TITLE_LIMIT);
+  if (!timed && types.includes('other') && !situationTitle && !String(input.memo || '').trim()) {
+    throw Error('일정 이름을 직접 입력해주세요.');
   }
 
   const events = await readEvents();
@@ -437,7 +440,9 @@ export const saveEvent = input => writeEventRecord(async () => {
   if (!timed) {
     delete event.start;
     delete event.end;
+    delete event.title;
     if (situationTime) Object.assign(event, situationTime);
+    if (types.includes('other') && situationTitle) event.title = situationTitle;
   }
 
   await writeJson(EVENTS_KEY, [
