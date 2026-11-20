@@ -9,7 +9,7 @@ const won = value => value.toLocaleString('ko-KR') + '원';
 function answerQuestion(question, { selected, baseline, difference }) {
   if (/조건|실적|한도|가맹점|횟수|대상/.test(question)) {
     return {
-      text: selected.benefit.reason,
+      text: selected.benefit.reason || '이 거래에 적용되는 혜택 조건이에요.',
       detail: selected.benefit.condition || '등록된 상품 정보에서 자세한 조건을 확인할 수 없어요.',
     };
   }
@@ -87,7 +87,7 @@ export default function PaymentBenefitChat({ transaction, selected, baseline, di
                 {message.rows?.map(row => <View key={row.id} style={s.row}>
                   <View style={s.rowCard}>
                     <Text style={s.answerText}>{row.name}</Text>
-                    {!Number.isFinite(row.benefit.value) && <Text style={s.hint}>{row.benefit.reason}</Text>}
+                    {!Number.isFinite(row.benefit.value) && !!row.benefit.reason && <Text style={s.hint}>{row.benefit.reason}</Text>}
                   </View>
                   <Text style={[s.amount, s.rowAmount]}>{row.reward}</Text>
                 </View>)}

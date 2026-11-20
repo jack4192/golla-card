@@ -33,11 +33,23 @@ function dateHeading(day) {
 }
 
 // 1단계: 일정 종류 + 카드 추천 반영 안내
-function TypePicker({ types, setTypes, disabled }) {
+// 직접 입력은 저장 시 types에 'other' + title 로 저장됩니다(다른 항목과 함께 고를 수 있음).
+function TypePicker({ types, setTypes, title, setTitle, disabled }) {
   const labels = [...new Set(types.map(eventTypeBenefitLabel).filter(Boolean))];
+  const typed = types.includes('other');
   return <>
+    <TextInput accessibilityLabel="일정 이름 직접 입력" value={title} editable={!disabled}
+      onChangeText={text => {
+        setTitle(text);
+        const has = Boolean(text.trim());
+        setTypes(previous => has
+          ? (previous.includes('other') ? previous : ['other', ...previous])
+          : previous.filter(item => item !== 'other'));
+      }}
+      style={[s.input, s.fullInput, typed && s.inputActive]} placeholder="직접 입력 · 예: 치과 정기검진, 친구 생일 파티" maxLength={40} />
+    <Text style={s.orText}>또는 아래에서 골라주세요 (여러 개 선택 가능)</Text>
     <View style={s.options}>
-      {EVENT_OPTIONS.map(([value, label]) => {
+      {EVENT_OPTIONS.filter(([value]) => value !== 'other').map(([value, label]) => {
         const checked = types.includes(value);
         return <TouchableOpacity key={value} disabled={disabled} accessibilityRole="checkbox" accessibilityState={{ checked, disabled }}
           style={[s.option, checked && s.selected]}
@@ -129,15 +141,14 @@ function PlacePicker({ category, setCategory, title, setTitle, disabled }) {
 function MemoInput({ memo, setMemo, types, disabled }) {
   return <>
     <TextInput accessibilityLabel="일정 메모" value={memo} onChangeText={setMemo} editable={!disabled} style={[s.input, s.memo]}
-      placeholder={types.includes('other') ? '어떤 일정인지 적어주세요 · 개인정보는 적지 마세요' : '예: 오후 반차 후 병원 · 개인정보는 적지 마세요'}
+      placeholder="예: 오후 반차 후 병원 · 개인정보는 적지 마세요"
       maxLength={80} multiline textAlignVertical="top" />
     <Text style={s.counter}>{memo.length}/80</Text>
   </>;
 }
 
-const problemOf = (types, mode, start, end, memo) => !types.length ? '어떤 일정인지 하나 이상 골라주세요.'
-  : !rangeReadyOf(mode, start, end) ? '시작·종료 시간을 입력하거나 하루 종일을 선택해주세요.'
-  : types.includes('other') && !memo.trim() ? '기타를 골랐다면 메모에 어떤 일정인지 적어주세요.' : '';
+const problemOf = (types, mode, start, end) => !types.length ? '일정을 직접 입력하거나 아래에서 골라주세요.'
+  : !rangeReadyOf(mode, start, end) ? '시작·종료 시간을 입력하거나 하루 종일을 선택해주세요.' : '';
 
 // mode: 'manage' = 등록된 일정 목록·수정·삭제, 'add' = 새 일정 추가
 export default function SpecialScheduleModal({
@@ -198,6 +209,7 @@ export default function SpecialScheduleModal({
   }, [visible, reload, mode]);
   const clear = () => {
     setTypes([]);
+    setPlaceTitle('');
     setMemo('');
     setTimeMode('allday');
     setStart('');
@@ -205,7 +217,7 @@ export default function SpecialScheduleModal({
   };
   const dirty = adding && (types.length > 0 || !!memo.trim() || timeMode === 'range');
   const disabled = busy || loading || !!loadError || readOnly;
-  const formProblem = problemOf(types, timeMode, start, end, memo);
+  const formProblem = problemOf(types, timeMode, start, end);
   const today = dateKey();
   const sorted = [...events].sort((a, b) => a.date.localeCompare(b.date) || (a.start || '').localeCompare(b.start || ''));
   const upcoming = sorted.filter(event => event.date >= today);
@@ -251,6 +263,7 @@ export default function SpecialScheduleModal({
     const saved = await saveEvent({
       date,
       types,
+      title: placeTitle,
       memo,
       ...(timeMode === 'range' ? { start, end } : {})
     });
@@ -275,7 +288,7 @@ export default function SpecialScheduleModal({
   });
   const openSheet = (kind, event) => {
     setPlaceCategory(event.category || '');
-    setPlaceTitle(event.title || '');
+    setPlaceTitle(event.title || (!event.category && event.types.includes('other') ? event.memo || '' : ''));
     setTypes([...event.types]);
     setMemo(event.memo || '');
     setTimeMode(event.start ? 'range' : 'allday');
@@ -291,7 +304,7 @@ export default function SpecialScheduleModal({
   };
   const isPlace = Boolean(sheet?.event.category);
   const sheetProblem = !sheet ? ''
-    : !isPlace ? problemOf(types, timeMode, start, end, memo)
+    : !isPlace ? problemOf(types, timeMode, start, end)
     : !placeCategory || (placeCategory === 'other' && !placeTitle.trim()) ? '일정 이름을 직접 입력하거나 아래에서 골라주세요.'
     : !rangeReadyOf('range', start, end) ? '시작·종료 시간을 입력해주세요.' : '';
   const saveSheet = () => run(async () => {
@@ -307,6 +320,7 @@ export default function SpecialScheduleModal({
       id: sheet.event.id,
       date: sheet.event.date,
       types,
+      title: placeTitle,
       memo,
       ...(timeMode === 'range' ? { start, end } : {})
     });
@@ -386,13 +400,13 @@ export default function SpecialScheduleModal({
         <TextInput accessibilityLabel="일정 날짜" value={date} onChangeText={changeDate} editable={!busy} style={s.input} placeholder="YYYY-MM-DD" maxLength={10} autoCapitalize="none" autoCorrect={false} />
         {validDate(date) ? <Text style={s.hint}>{dateHeading(date)}</Text> : <Text style={s.error}>실제 날짜를 YYYY-MM-DD로 입력해주세요.</Text>}
 
-        <Text style={s.step}>1. 어떤 일정인가요? <Text style={s.stepHint}>(여러 개 선택 가능)</Text></Text>
-        <TypePicker types={types} setTypes={setTypes} disabled={disabled} />
+        <Text style={s.step}>1. 어떤 일정인가요?</Text>
+        <TypePicker types={types} setTypes={setTypes} title={placeTitle} setTitle={setPlaceTitle} disabled={disabled} />
 
         <Text style={s.step}>2. 언제인가요?</Text>
         <TimePicker mode={timeMode} setMode={setTimeMode} start={start} setStart={setStart} end={end} setEnd={setEnd} disabled={disabled} />
 
-        <Text style={s.step}>3. 메모 <Text style={s.stepHint}>({types.includes('other') ? '기타는 필수' : '선택'})</Text></Text>
+        <Text style={s.step}>3. 메모 <Text style={s.stepHint}>(선택)</Text></Text>
         <MemoInput memo={memo} setMemo={setMemo} types={types} disabled={disabled} />
 
         {!!formProblem && !disabled && <Text style={s.formProblem}>{formProblem}</Text>}
@@ -462,8 +476,8 @@ export default function SpecialScheduleModal({
                     : <>
                         {isPlace
                           ? <PlacePicker category={placeCategory} setCategory={setPlaceCategory} title={placeTitle} setTitle={setPlaceTitle} disabled={busy} />
-                          : <TypePicker types={types} setTypes={setTypes} disabled={busy} />}
-                        <Text style={s.step}>메모 <Text style={s.stepHint}>({types.includes('other') ? '기타는 필수' : '선택'})</Text></Text>
+                          : <TypePicker types={types} setTypes={setTypes} title={placeTitle} setTitle={setPlaceTitle} disabled={busy} />}
+                        <Text style={s.step}>메모 <Text style={s.stepHint}>(선택)</Text></Text>
                         <MemoInput memo={memo} setMemo={setMemo} types={types} disabled={busy} />
                       </>}
                 </ScrollView>
@@ -798,6 +812,9 @@ const s = StyleSheet.create({
     fontSize: 18,
     color: '#5A6E89',
     paddingBottom: 14
+  },
+  fullInput: {
+    width: '100%'
   },
   inputActive: {
     borderColor: '#245DE5',
