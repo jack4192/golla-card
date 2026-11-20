@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOL페이 AI 결제 (데모)</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<div class="demo">
+  <!-- 시연 조건: 실제 앱에는 없고, 시연자가 상황을 바꾸는 곳 -->
+  <section class="box controls">
+    <div class="controls-head">
+      <h2>시연 조건</h2>
+      <div class="actions">
+        <a class="link" href="/pos" target="_blank">가상 POS 열기 ↗</a>
+        <button class="btn small" id="restart">아침 알림부터 다시</button>
+        <button class="btn small" id="reset">시연 초기화</button>
+      </div>
+    </div>
+    <div class="fields">
+      <label>데모 사용자
+        <select id="user"></select>
+        <span class="hint" id="userDesc"></span>
+      </label>
+      <label>시연 시각
+        <select id="timePreset"></select>
+        <input type="datetime-local" id="timeInput">
+      </label>
+      <div class="flow-hint">
+        <b>흐름</b> 아침 알림 → 하루 일정 입력 → 새 카드 추천 → 결제 화면.
+        <span class="hint">위치(GPS)는 쓰지 않습니다. 일정이 있으면 일정에, 없으면 평소 소비 패턴과 실적에 맞춰 카드 순서를 정합니다.</span>
+      </div>
+    </div>
+  </section>
+
+  <main class="phone">
+    <!-- 1. 아침 알림 -->
+    <section class="screen lock" id="scrAlarm" hidden>
+      <div class="lock-time" id="lockTime">08:00</div>
+      <div class="lock-date" id="lockDate"></div>
+      <button class="push" id="push">
+        <div class="push-head"><span class="push-app">SOL페이</span><span>지금</span></div>
+        <div class="push-title">오늘 일정을 알려주세요</div>
+        <div class="push-body">일정을 알려 주시면 결제할 때 혜택이 가장 큰 카드를 먼저 꺼내 드려요.</div>
+      </button>
+      <p class="lock-hint">알림을 누르면 SOL페이가 열립니다</p>
+    </section>
+
+    <!-- 2. 하루 일정 -->
+    <section class="screen" id="scrSchedule" hidden>
+      <h1 class="screen-title">오늘 일정을 알려주세요!</h1>
+      <p class="screen-sub">시간, 업종, 예상 금액만 받아요. 일정은 암호화해 보관하고 오늘이 지나면 지웁니다.</p>
+      <div id="rows"></div>
+      <button class="btn small add" id="addRow">+ 일정 추가</button>
+      <p class="err" id="schedErr" hidden></p>
+      <button class="btn primary block" id="schedNext">다음</button>
+      <button class="btn ghost block" id="schedSkip">일정 없음 · 건너뛰기</button>
+    </section>
+
+    <!-- 3. 새 카드 추천 -->
+    <section class="screen" id="scrRec" hidden>
+      <h1 class="screen-title">카드를 추천해드려요</h1>
+      <div class="rec-card"><div class="rec-chip"></div><div class="rec-name" id="recName"></div><div class="rec-issuer">신한카드</div></div>
+      <div class="rec-gain" id="recGain"></div>
+      <p class="rec-reason" id="recReason"></p>
+      <p class="muted small" id="recNote"></p>
+      <button class="btn primary block" id="recApply">카드 신청</button>
+      <button class="btn ghost block" id="recLater">다음에 하기</button>
+    </section>
+
+    <!-- 3-1. 일정 맞춤 프로모션 (카드 추천이 없는 날) -->
+    <section class="screen" id="scrPromo" hidden>
+      <h1 class="screen-title">오늘 일정에 맞는 혜택이에요</h1>
+      <div id="promoList"></div>
+      <p class="muted small">일정 시간에는 이 혜택을 받는 신한카드를 결제 화면 맨 앞에 보여 드려요. 결제 화면에서 다른 카드로 바꿀 수 있어요.</p>
+      <button class="btn primary block" id="promoOk">확인</button>
+    </section>
+
+    <!-- 4. 결제 화면 (기존 SOL페이 앱) -->
+    <section id="scrPay" hidden>
+    <div class="top">
+      <h1>현장 결제</h1>
+      <span class="badge" id="version"></span>
+    </div>
+    <div class="aibar" id="aibar">AI에 카드 순서를 묻는 중…</div>
+    <div class="toast" id="toast" hidden></div>
+
+    <div class="today" id="today">
+      <div class="today-head"><span>오늘 일정</span><button class="btn small ghost" id="editSched">수정</button></div>
+      <div id="todayList"></div>
+      <div class="muted small" id="strategyLine" hidden></div>
+    </div>
+
+    <div id="recommend"></div>
+    <div class="others-title" id="othersTitle">다른 카드</div>
+    <div class="cards" id="others"></div>
+
+    <section class="panel" id="panel">
+      <div class="card-name" id="cardName">카드를 불러오는 중…</div>
+      <div class="codebox">
+        <img class="bar" id="barcode" alt="결제 바코드">
+        <div class="num" id="number">—</div>
+        <img class="qr" id="qr" alt="결제 QR 코드">
+      </div>
+      <div class="timer">
+        <div class="bar-track"><div class="bar-fill" id="fill"></div></div>
+        <span id="remain">--초</span>
+      </div>
+      <button class="btn block" id="refresh">새 코드 받기</button>
+
+      <div class="overlay" id="done">
+        <div class="check">✓</div>
+        <h2>결제 완료</h2>
+        <div class="amt" id="doneAmt"></div>
+        <div class="benefit" id="doneBenefit"></div>
+        <div class="benefit-sub" id="doneBest"></div>
+        <dl>
+          <dt>가맹점</dt><dd id="doneMerchant"></dd>
+          <dt>카드</dt><dd id="doneCard"></dd>
+          <dt>승인번호</dt><dd id="doneNo"></dd>
+        </dl>
+        <button class="btn primary block" id="again">확인</button>
+      </div>
+    </section>
+    </section>
+
+    <p class="notice">
+      데모 화면입니다. 카드 이름과 혜택은 가상 데이터의 임의 값이며, 코드는 이 프로젝트의 가상 POS에서만 승인됩니다.
+      AI는 카드 순서만 정하고, 어떤 카드로 결제할지는 직접 고릅니다. 카드 신청은 실제로 이루어지지 않습니다.
+    </p>
+  </main>
+
+  <aside class="side" hidden>
+    <details class="box" open>
+      <summary>AI 판단 근거</summary>
+      <div id="why"></div>
+    </details>
+    <details class="box" open>
+      <summary>이번 달 카드 실적</summary>
+      <div id="perf"></div>
+    </details>
+    <details class="box">
+      <summary>연말 결산 미리보기</summary>
+      <p class="muted small">지난 1년 결제를 그대로 두고, 그 신한카드가 있었다면 더 받았을 혜택(연회비 반영)입니다.</p>
+      <button class="btn small" id="missedBtn">계산하기</button>
+      <div id="missed"></div>
+    </details>
+    <details class="box">
+      <summary>내 규칙 <span class="muted">(챗봇 대신 간단 입력)</span></summary>
+      <div class="rule-form">
+        <select id="ruleKind">
+          <option value="force_now">지금 요일·시간대에는 이 카드</option>
+          <option value="force_always">항상 이 카드</option>
+          <option value="exclude">이 카드는 추천하지 않기</option>
+          <option value="prefer_immediate">실적보다 건당 혜택 우선</option>
+          <option value="order_top">최고 구간까지 채우고 다음 카드로</option>
+        </select>
+        <select id="ruleCard"></select>
+        <button class="btn small" id="ruleAdd">추가</button>
+      </div>
+      <ul class="rules" id="rules"></ul>
+    </details>
+  </aside>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const won = (n) => (n == null ? "—" : Math.round(n).toLocaleString("ko-KR") + "원");
+const man = (n) => (n >= 10000 ? (n / 10000).toLocaleString("ko-KR") + "만" : n.toLocaleString("ko-KR"));
+const group = (s) => s.replace(/(\d{4})(?=\d)/g, "$1 ");
+const DAYS = "일월화수목금토";
+
+let opts = null;        // 사용자·시각·가맹점·일정 업종 목록
+let screen = "alarm";   // alarm → schedule → rec → pay
+let me = null;          // /api/me 결과
+let st = null;          // 시연 조건 (사용자·시각)
+let selected = null;    // 고른 카드 (user_card_id)
+let current = null;     // 발급받은 토큰
+let deadline = 0;
+let pollTimer = null;
+
+function el(tag, text, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined && text !== null) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || res.statusText);
+  return body;
+}
+const put = (path, body) => api(path, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+
+function atLabel(iso) {
+  const d = new Date(iso), p = (n) => String(n).padStart(2, "0");
+  return `${d.getMonth() + 1}월 ${d.getDate()}일(${DAYS[d.getDay()]}) ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function localInput(iso) {   // datetime-local 값 (KST 기준 문자열 그대로)
+  return iso.slice(0, 16);
+}
+
+// ---------- 시연 조건 ----------
+function fillControls() {
+  $("user").replaceChildren(...opts.users.map((u) => {
+    const o = el("option", u.name); o.value = u.user_id; o.selected = u.user_id === st.user_id; return o;
+  }));
+  const user = opts.users.find((u) => u.user_id === st.user_id);
+  $("userDesc").textContent = user.desc;
+
+  const presets = opts.times.map((t) => { const o = el("option", t.label); o.value = t.at; return o; });
+  const custom = el("option", "직접 입력"); custom.value = "";
+  $("timePreset").replaceChildren(...presets, custom);
+  $("timePreset").value = opts.times.some((t) => t.at === st.demo_at) ? st.demo_at : "";
+  $("timeInput").value = localInput(st.demo_at);
+}
+
+// 사용자를 바꾸면 그 사람의 아침부터 다시, 시각만 바꾸면 지금 화면을 그 시각으로 다시 그린다
+async function change(body, restart) {
+  try {
+    st = await put("/api/demo/state", body);
+    fillControls();
+    if (restart) show("alarm"); else if (screen === "pay") await load(); else show(screen);
+  } catch (e) { alert(e.message); }
+}
+$("user").onchange = () => change({ user_id: Number($("user").value) }, true);
+$("timePreset").onchange = () => { if ($("timePreset").value) change({ demo_at: $("timePreset").value }); };
+$("timeInput").onchange = () => { if ($("timeInput").value) change({ demo_at: $("timeInput").value + ":00+09:00" }); };
+$("restart").onclick = () => show("alarm");
+$("reset").onclick = async () => {
+  if (!confirm("시연 중 쌓은 결제·규칙·일정·카드 추천 기록을 모두 지우고 처음 상태로 돌아갈까요?")) return;
+  try { await post("/api/demo/reset"); st = await api("/api/demo/state"); fillControls(); show("alarm"); }
+  catch (e) { alert(e.message); }
+};
+
+// ---------- 화면 전환 ----------
+function show(name) {
+  screen = name;
+  for (const [id, n] of [["scrAlarm", "alarm"], ["scrSchedule", "schedule"], ["scrRec", "rec"], ["scrPromo", "promo"], ["scrPay", "pay"]]) $(id).hidden = n !== name;
+  document.querySelector(".side").hidden = name !== "pay";      // 근거·실적은 결제 화면 것이라 그때만 보인다
+  if (name !== "pay") { clearInterval(pollTimer); current = null; }
+  if (name === "alarm") renderAlarm();
+  if (name === "schedule") openSchedule();
+  if (name === "pay") load();
+}
+
+function renderAlarm() {
+  const d = new Date(st.demo_at);
+  $("lockDate").textContent = `${d.getMonth() + 1}월 ${d.getDate()}일 ${DAYS[d.getDay()]}요일`;
+}
+$("push").onclick = () => show("schedule");
+
+// ---------- 하루 일정 ----------
+const hhmm = (h, m) => `${String(h).padStart(2, "0")}:${String(m || 0).padStart(2, "0")}`;
+
+function scheduleRow(item) {
+  const row = el("div", null, "srow");
+  const start = el("input"); start.type = "time"; start.step = 600; start.value = item.start;
+  const end = el("input"); end.type = "time"; end.step = 600; end.value = item.end;
+  const cat = el("select");
+  cat.append(...opts.schedule_categories.map((c) => { const o = el("option", c.name); o.value = c.code; return o; }));
+  cat.value = item.category;
+  const amount = el("input"); amount.type = "number"; amount.min = 1000; amount.step = 1000; amount.value = item.amount;
+  amount.inputMode = "numeric";
+  const amountHint = el("span", "", "muted small");
+  const sync = () => { const n = Number(amount.value); amountHint.textContent = n > 0 ? won(n) : ""; };
+  cat.onchange = () => { amount.value = opts.schedule_categories.find((c) => c.code === cat.value).typical_amount; sync(); };
+  amount.oninput = sync; sync();
+  const del = el("button", "삭제", "btn small ghost"); del.onclick = () => row.remove();
+  const time = el("div", null, "srow-time"); time.append(start, el("span", "~"), end);
+  const money = el("div", null, "srow-money"); money.append(amount, amountHint);
+  const head = el("div", null, "srow-head"); head.append(time, del);
+  row.append(head, cat, money);
+  row.read = () => ({ start: start.value, end: end.value, category: cat.value, amount: Number(amount.value) });
+  return row;
+}
+
+function newItem() {
+  const h = Math.min(22, new Date(st.demo_at).getHours() + 1);
+  const c = opts.schedule_categories[0];
+  return { start: hhmm(h), end: hhmm(h + 1), category: c.code, amount: c.typical_amount };
+}
+
+async function openSchedule() {
+  $("schedErr").hidden = true;
+  let items = [];
+  try { items = (await api("/api/schedule")).items; } catch (e) { /* 엔진이 꺼져 있으면 빈 칸으로 시작 */ }
+  $("rows").replaceChildren(...(items.length ? items : [newItem()]).map(scheduleRow));
+}
+$("addRow").onclick = () => {
+  if ($("rows").children.length >= 10) return;
+  $("rows").append(scheduleRow(newItem()));
+};
+
+async function saveSchedule(items) {
+  $("schedErr").hidden = true;
+  const bad = items.find((i) => !i.start || !i.end || i.end <= i.start || !(i.amount > 0));
+  if (bad) { $("schedErr").textContent = "끝 시각은 시작 시각보다 늦게, 금액은 0원보다 크게 넣어 주세요."; $("schedErr").hidden = false; return; }
+  try { await put("/api/schedule", { items }); }
+  catch (e) { $("schedErr").textContent = e.message; $("schedErr").hidden = false; return; }
+  await schedulePopup();
+}
+$("schedNext").onclick = () => saveSchedule([...$("rows").children].map((r) => r.read()));
+$("schedSkip").onclick = () => saveSchedule([]);
+
+// ---------- 일정 팝업: 3일마다 새 카드 추천, 그 외의 날은 일정 맞춤 프로모션 ----------
+let pendingToast = "";
+async function schedulePopup() {
+  let popup = { kind: "none" };
+  try { popup = await post("/api/schedule-popup"); } catch (e) { /* 팝업은 건너뛴다 */ }
+  if (popup.kind === "card") { showCard(popup); return; }
+  if (popup.kind === "promotion") { showPromotions(popup.offers); return; }
+  pendingToast = popup.error || "오늘 일정에 맞는 혜택이 없어요. 결제 화면으로 이동합니다.";
+  show("pay");
+}
+
+function showPromotions(offers) {
+  $("promoList").replaceChildren(...offers.map((o) => {
+    const box = el("div", null, "promo-item");
+    box.append(el("div", `${o.schedule_time} · ${o.category_name} 일정`, "muted small"),
+               el("div", o.brand, "strong"),
+               el("div", o.title, "small"),
+               el("div", o.card_value > 0 ? `행사 ${won(o.promo_value)} + ${o.card_name} ${won(o.card_value)} = 약 ${won(o.total)}`
+                                           : `${o.card_name}로 결제하면 약 ${won(o.total)}`, "rec-gain"),
+               el("div", `${o.window}에는 ${o.card_name}를 먼저 보여 드려요`, "small"));
+    if (o.kind === "myshop") box.append(el("div", "마이샵 혜택 ON 설정이 필요해요", "muted small"));
+    return box;
+  }));
+  show("promo");
+}
+$("promoOk").onclick = () => show("pay");
+
+function showCard(rec) {
+  $("recName").textContent = rec.card_name;
+  $("recGain").textContent = rec.trigger === "schedule" ? `이번 일정에서 약 ${won(rec.gain)} 더` : `한 달에 약 ${won(rec.gain)} 더`;
+  $("recReason").textContent = rec.reason;
+  $("recNote").textContent = rec.first_month_note || "";
+  show("rec");
+}
+$("recApply").onclick = () => { pendingToast = "카드 신청 화면으로 연결됩니다 (데모에서는 실제로 신청되지 않아요)."; show("pay"); };
+$("recLater").onclick = () => { pendingToast = "같은 카드는 30일 동안 다시 추천하지 않아요."; show("pay"); };
+
+// ---------- 연말 결산 미리보기 ----------
+$("missedBtn").onclick = async () => {
+  $("missed").replaceChildren(el("p", "계산 중…", "muted small"));
+  try {
+    const r = await api("/api/missed-benefit");
+    $("missed").replaceChildren(...(r.cards.length ? r.cards.map((m) => {
+      const row = el("div", null, "perf-row");
+      row.append(el("div", m.card_name, "strong small"),
+                 el("div", `그때 발급받으셨다면 ${m.months}개월 동안 약 ${won(m.gain)} 더 받으셨어요`, "small"));
+      return row;
+    }) : [el("p", "지난 1년 동안 더 유리했던 신한카드가 없어요.", "muted small")]));
+  } catch (e) { $("missed").replaceChildren(el("p", e.message, "muted small")); }
+};
+
+// ---------- 결제 화면 ----------
+function cardFace(c, big) {
+  const b = el("button", null, "card" + (big ? " big" : "") + (c.user_card_id === selected ? " on" : ""));
+  b.style.setProperty("--c", c.color);
+  const head = el("div", null, "card-head");
+  head.append(el("span", c.name, "card-title"), el("span", `•••• ${c.last4}`, "card-no"));
+  b.append(head);
+  if (big && c.message) b.append(el("div", c.message, "card-msg"));
+  b.onclick = () => { if (c.user_card_id !== selected) { selected = c.user_card_id; renderCards(); issue(); } };
+  return b;
+}
+
+function renderCards() {
+  const shown = me.cards.filter((c) => c.shown);
+  const rest = me.cards.filter((c) => !c.shown);
+  const box = $("recommend");
+  const title = el("div", shown.length > 1 ? "AI 추천 · 상황에 따라 골라 쓰세요" : "AI 추천 1순위", "rec-title");
+  box.replaceChildren(title, ...shown.map((c) => cardFace(c, true)));
+  $("others").replaceChildren(...rest.map((c) => cardFace(c, false)));
+  $("othersTitle").hidden = rest.length === 0;
+}
+
+function renderTop() {
+  $("version").textContent = me.version === "schedule" ? "일정 반영" : me.version === "pattern" ? "소비 패턴" : "기본 순서";
+  const bar = $("aibar");
+  if (me.ai.ok) {
+    bar.className = "aibar";
+    bar.textContent = `${atLabel(me.at)} · ${me.mode_label} · AI 응답 ${me.ai.ms}ms`;
+  } else {
+    bar.className = "aibar bad";
+    bar.textContent = "AI 응답이 없어 기본 순서로 보여 드려요 (solpay-ai 서버 확인)";
+  }
+  const items = me.schedule || [];
+  $("todayList").replaceChildren(...(items.length
+    ? items.map((i) => el("div", `${i.start}~${i.end} · ${i.category_name} · ${won(i.amount)}`, "today-item"))
+    : [el("div", "입력한 일정이 없어요. 평소 소비 패턴으로 카드를 골랐어요.", "muted small")]));
+  $("strategyLine").hidden = !me.strategy;
+  if (me.strategy) $("strategyLine").textContent = `이번 달 실적 채우기: ${me.strategy.label}`;
+  $("toast").hidden = !pendingToast;
+  $("toast").textContent = pendingToast;
+  if (pendingToast) { const t = pendingToast; setTimeout(() => { if (pendingToast === t) { pendingToast = ""; $("toast").hidden = true; } }, 5000); }
+}
+$("editSched").onclick = () => show("schedule");
+
+function renderWhy() {
+  const x = me.explanation, box = $("why");
+  if (!x) { box.replaceChildren(el("p", me.rule_applied ? "사용자 규칙이 적용되어 계산을 생략했습니다." : "AI 판단 근거가 없습니다.", "muted")); return; }
+  const rows = [
+    ["계산 방식", me.mode_label],
+    ["기본 카드", x.base_card_name],
+    ["판단", x.swapped ? (x.swap_reason === "performance" ? "실적 때문에 교체" : "즉시 혜택 때문에 교체")
+                       : "기본 카드 유지"],
+  ];
+  if (x.repeat_applied) rows.push(["반복 구간", "평소 이 시간대 소비 패턴을 적용"]);
+  const dl = el("dl", null, "kv");
+  for (const [k, v] of rows) dl.append(el("dt", k), el("dd", v));
+
+  const sc = el("div", null, "scen");
+  sc.append(el("div", "예상 결제", "sub"));
+  for (const s of x.scenarios) {
+    const line = el("div", null, "scen-row");
+    const amounts = s.amounts.length > 1 ? `${won(Math.min(...s.amounts))}~${won(Math.max(...s.amounts))}` : won(s.amounts[0]);
+    line.append(el("span", s.category_name), el("span", `${Math.round(s.prob * 100)}% · ${amounts}`, "muted"));
+    const bar = el("div", null, "mini"); const fill = el("i"); fill.style.width = Math.round(s.prob * 100) + "%"; bar.append(fill);
+    sc.append(line, bar);
+  }
+
+  const table = el("table", null, "scores");
+  const hasPromo = x.card_scores.some((r) => r.promotion > 0);
+  const cols = hasPromo ? ["카드", "즉시 혜택", "실적 가치", "이벤트", "합계"] : ["카드", "즉시 혜택", "실적 가치", "합계"];
+  const head = el("tr"); cols.forEach((h, i) => head.append(el("th", h, i ? "num" : "")));
+  table.append(head);
+  for (const r of x.card_scores) {
+    const tr = el("tr");
+    tr.append(el("td", r.name), el("td", won(r.immediate), "num"), el("td", won(r.performance), "num"));
+    if (hasPromo) { const td = el("td", won(r.promotion), "num"); if (r.promotion_label) td.title = r.promotion_label; tr.append(td); }
+    tr.append(el("td", won(r.total), "num strong"));
+    table.append(tr);
+  }
+  const promoNote = x.card_scores.find((r) => r.promotion_label);
+  if (promoNote) { const tr = el("tr"); const td = el("td", `이벤트: ${promoNote.promotion_label}`, "muted small"); td.colSpan = cols.length; tr.append(td); table.append(tr); }
+  box.replaceChildren(dl, sc, el("div", "카드별 원화 점수 (기대값)", "sub"), table);
+}
+
+function renderPerf() {
+  $("perf").replaceChildren(...me.cards.slice().sort((a, b) => a.display_order - b.display_order).map((c) => {
+    const s = c.status, row = el("div", null, "perf-row");
+    const head = el("div", null, "perf-head");
+    head.append(el("span", c.name), el("span", s.synced_note ? "어제까지 기준" : "", "muted small"));
+    row.append(head);
+    if (!s.tiers.length) { row.append(el("div", "실적 조건 없는 카드", "muted small")); return row; }
+    const target = s.next_tier || s.tiers[s.tiers.length - 1];
+    const bar = el("div", null, "mini big"); const fill = el("i");
+    fill.style.width = Math.min(100, s.perf / target * 100) + "%"; fill.style.background = c.color; bar.append(fill);
+    const tiers = s.tiers.map(man).join("/") + "원";
+    const line = s.next_tier ? `${won(s.perf)} · 다음 구간(${man(s.next_tier)}원)까지 ${won(s.remaining)}` : `${won(s.perf)} · 최고 구간 달성`;
+    const prev = s.eligible_tier ? `전월 ${man(s.prev_perf)}원 → 이번 달 ${man(s.eligible_tier)}원 구간 혜택` : `전월 ${man(s.prev_perf)}원 → 이번 달 혜택 없음`;
+    row.append(bar, el("div", line, "small"), el("div", `${prev} · 받은 혜택 ${won(s.benefit_this_month)} · 구간 ${tiers}`, "muted small"));
+    return row;
+  }));
+}
+
+function renderRules() {
+  $("ruleCard").replaceChildren(...me.cards.slice().sort((a, b) => a.display_order - b.display_order).map((c) => {
+    const o = el("option", c.name); o.value = c.user_card_id; return o;
+  }));
+  const list = me.rules || [];
+  $("rules").replaceChildren(...(list.length ? list.map((r, i) => {
+    const li = el("li"); li.append(el("span", r.source_text || r.rule_type));
+    const del = el("button", "삭제", "btn small ghost");
+    del.onclick = async () => { try { await api(`/api/rules/${i}`, { method: "DELETE" }); await load(); } catch (e) { alert(e.message); } };
+    li.append(del); return li;
+  }) : [el("li", "저장된 규칙이 없습니다.", "muted")]));
+}
+$("ruleKind").onchange = () => { $("ruleCard").disabled = ["prefer_immediate", "order_top"].includes($("ruleKind").value); };
+$("ruleAdd").onclick = async () => {
+  try { await post("/api/rules", { kind: $("ruleKind").value, user_card_id: Number($("ruleCard").value) }); await load(); }
+  catch (e) { alert(e.message); }
+};
+
+// ---------- 코드 발급과 결제 ----------
+async function issue() {
+  clearInterval(pollTimer);
+  $("done").classList.remove("show");
+  $("panel").classList.remove("dim");
+  current = await post("/api/tokens", { card_id: selected });
+  deadline = Date.now() + current.ttl_sec * 1000;
+  const rank = current.card.ai_rank ? ` · AI ${current.card.ai_rank}순위` : "";
+  $("cardName").textContent = `${current.card.name} · 끝자리 ${current.card.last4}${rank}`;
+  $("barcode").src = current.barcode;
+  $("qr").src = current.qr;
+  $("number").textContent = group(current.token);
+  pollTimer = setInterval(poll, 1000);
+  tick();
+}
+
+function tick() {
+  if (!current) return;
+  const left = Math.max(0, deadline - Date.now());
+  $("fill").style.width = (left / (current.ttl_sec * 1000) * 100) + "%";
+  $("remain").textContent = Math.ceil(left / 1000) + "초";
+  if (left === 0 && !$("done").classList.contains("show")) expire();
+}
+
+function expire() {
+  clearInterval(pollTimer);
+  $("panel").classList.add("dim");
+  $("remain").textContent = "만료됨";
+}
+
+async function poll() {
+  if (!current) return;
+  try {
+    const s = await api(`/api/tokens/${current.token_id}`);
+    if (s.status === "USED" && s.transaction) showDone(s.transaction);
+    else if (s.status === "EXPIRED" || s.status === "REVOKED") expire();
+  } catch (e) { /* 네트워크 오류는 다음 주기에 다시 시도 */ }
+}
+
+function showDone(tx) {
+  clearInterval(pollTimer);
+  $("doneAmt").textContent = won(tx.amount);
+  $("doneMerchant").textContent = tx.merchant;
+  $("doneCard").textContent = `${current.card.name} (${current.card.last4})`;
+  $("doneNo").textContent = tx.approval_no;
+  if (tx.benefit == null) {
+    $("doneBenefit").textContent = "AI가 꺼져 있어 혜택을 계산하지 못했어요";
+    $("doneBest").textContent = "";
+  } else {
+    $("doneBenefit").textContent = tx.benefit > 0 ? `이번 결제 혜택 ${won(tx.benefit)}` : "이번 결제로 받은 즉시 혜택은 없어요";
+    $("doneBest").textContent = tx.best_benefit > tx.benefit
+      ? `${tx.best_card}였다면 ${won(tx.best_benefit)}` : "이 결제에서 가장 유리한 카드였어요";
+  }
+  $("done").classList.add("show");
+}
+
+$("refresh").onclick = issue;
+$("again").onclick = load;          // 결제 후 실적·한도가 바뀌었으니 순서를 다시 받는다
+setInterval(tick, 250);
+
+async function load() {
+  try {
+    me = await api("/api/me");
+  } catch (e) {
+    $("aibar").className = "aibar bad";
+    $("aibar").textContent = e.message;
+    return;
+  }
+  selected = me.default_card_id;     // AI 가 고른 카드가 맨 앞에 선택됨
+  st = me.state; fillControls(); renderTop(); renderCards(); renderWhy(); renderPerf(); renderRules();
+  await issue();
+}
+
+(async () => {
+  [opts, st] = await Promise.all([api("/api/demo/options"), api("/api/demo/state")]);
+  fillControls();
+  show("alarm");
+})();
+</script>
+</body>
+</html>

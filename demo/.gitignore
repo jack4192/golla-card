@@ -1,0 +1,6 @@
+# 실행하면 생기는 SQLite DB
+data/
+__pycache__/
+.pytest_cache/
+# 개인 편집기 설정
+.vscode/
