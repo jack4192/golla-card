@@ -8,6 +8,7 @@
 """
 
 import json
+import os
 import re
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
@@ -16,6 +17,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import psycopg
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 from engine.catalog import Catalog
 from engine.crypto import DataCipher, load_cipher
@@ -54,6 +56,8 @@ class AppSchemaMissing(RuntimeError):
 
 
 class TeamDbPgStore:
+    purge_daily = True          # 지난 일정은 요청 밖 하루 작업이 지운다 (engine/jobs.py)
+
     def __init__(self, url: str, schema: str = "public", app: str = "app", card_map: CardMap | None = None):
         self.url = url
         self.s, self.a = _ident(schema), _ident(app)
@@ -64,10 +68,25 @@ class TeamDbPgStore:
         self.merchant_key: dict[tuple[str, str], int] = {}
         self.benefit_start: str | None = None
         self.strategy_store = PgStrategyStore(self)
-        self._check_app_schema()
+        # 연결 풀 (2026-11-20): 원격 공용 DB 는 접속마다 수십 ms 가 들어 결제 화면 0.8초 제한을 넘길 수 있다.
+        # 접속을 재사용하고, 꺼내 줄 때 살아 있는지 확인한다 (클라우드 DB 가 놀던 연결을 끊는 경우).
+        timeout = float(os.environ.get("SOLPAY_DB_POOL_TIMEOUT", "5"))
+        self._pool = ConnectionPool(
+            url, min_size=1, max_size=int(os.environ.get("SOLPAY_DB_POOL_MAX", "10")), timeout=timeout,
+            kwargs={"row_factory": dict_row, "autocommit": True},
+            check=ConnectionPool.check_connection, name="solpay-ai", open=True)
+        try:
+            self._pool.wait(timeout=timeout)       # DB 가 꺼져 있으면 여기서 바로 실패한다 (PoolTimeout)
+            self._check_app_schema()
+        except Exception:
+            self._pool.close()
+            raise
 
     def _connect(self):
-        return psycopg.connect(self.url, row_factory=dict_row, autocommit=True)
+        return self._pool.connection()
+
+    def close(self) -> None:
+        self._pool.close()
 
     def _check_app_schema(self) -> None:
         with self._connect() as c:
@@ -160,7 +179,6 @@ class TeamDbPgStore:
                               f"where user_id = %s and active order by created_seq, rule_id", (user_id,)).fetchall()
             last = c.execute(f"select base_card from {self.a}.recommendation_logs where user_id = %s "
                              f"order by recommendation_id desc limit 1", (user_id,)).fetchone()
-        self.purge_schedules(at.date())
         return UserContext(
             User(user_id), cards, [p for p in payments if p.visible_at <= at],
             [parse_rule(r["rule"], int(r["rule_id"]), r["created_seq"]) for r in rules],

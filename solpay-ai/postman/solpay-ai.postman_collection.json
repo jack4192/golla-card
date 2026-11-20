@@ -923,7 +923,7 @@
 								}
 							]
 						},
-						"description": ""
+						"description": "지난 365일 결제에 아직 없는 신한카드가 있었다면 더 받았을 금액 (연회비 뺌, 상위 3장). basis=add 는 함께 썼다면, basis=swap 은 replaces 카드 대신 썼다면. message 는 화면 문구."
 					},
 					"event": [
 						{
@@ -934,7 +934,9 @@
 									"pm.test('HTTP 200', () => pm.response.to.have.status(200));",
 									"const m = pm.response.json();",
 									"pm.test('최대 3장', () => pm.expect(m.length).to.be.at.most(3));",
-									"pm.test('더 받았을 금액은 양수', () => m.forEach(x => pm.expect(x.gain).to.be.above(0)));"
+									"pm.test('더 받았을 금액은 양수', () => m.forEach(x => pm.expect(x.gain).to.be.above(0)));",
+									"pm.test('가정은 함께 쓰기(add) 또는 바꾸기(swap)', () => m.forEach(x => pm.expect(['add', 'swap']).to.include(x.basis)));",
+									"pm.test('문구에 금액이 그대로 들어간다', () => m.forEach(x => pm.expect(x.message).to.include(x.gain.toLocaleString('en-US') + '원')));"
 								]
 							}
 						}

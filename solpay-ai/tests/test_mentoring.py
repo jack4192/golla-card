@@ -93,6 +93,35 @@ def test_하루에_한_번까지_같은_카드는_30일_동안_다시_추천하�
 def test_연말정산_놓친_혜택은_기존_카드의_구간을_지키는_만큼만_옮긴다(state):
     """1번 카드는 매달 40만 원으로 30만 원 구간을 넘는다. 새 카드(0.5%)로 옮길 수 있는 건 구간을 지키고 남는 10만 원뿐."""
     rows = [pay(101, 100_000, "CVS", at(m, d, 12)) for m in (7, 8, 9, 10) for d in (10, 11, 12, 13)]
-    out = missed_benefit(state, rows)
+    out = missed_benefit(state, rows, swap=False)                       # 함께 썼다고 보는 계산만
     card4 = next(m for m in out if m["card_id"] == 4)
     assert card4["months"] == 3 and card4["gain"] == 3 * 500           # 첫 달은 실적만, 이후 매달 10만 원 × 0.5%
+
+
+# 2026-11-19 사용자 결정: 가진 카드 하나를 그 신한카드로 바꿨다고 보는 계산도 하고 큰 쪽을 쓴다. 문구는 정해진 틀.
+def _year_rows(extra=()):
+    rows = [pay(101, 100_000, "CVS", at(m, d, 12)) for m in (7, 8, 9, 10) for d in (10, 11, 12, 13)]
+    for card, amount, category in extra:
+        rows += [pay(card, amount, category, at(m, 20, 12)) for m in (7, 8, 9, 10)]
+    return rows
+
+
+def test_연말정산은_가진_카드를_바꿨다고_보는_경우도_계산한다(state):
+    """카드 셋을 모두 쓴다. 어느 카드를 바꿔도 합이 같으면 가장 덜 쓰던 카드(103, 월 2천 원)를 바꾼 것으로 본다."""
+    rows = _year_rows([(102, 10_000, "REST"), (102, 10_000, "REST"), (103, 2_000, "TRANSIT")])
+    card4 = next(m for m in missed_benefit(state, rows) if m["card_id"] == 4)
+    assert card4["basis"] == "swap" and card4["replaces_user_card_id"] == 103 and card4["replaces"] == "국민 교통"
+    assert card4["gain"] == 3 * (4 * 500 + 2 * 50 + 10)                # 모든 결제 × 0.5%, 10원 미만 버림 (함께 쓰기는 1,500원)
+    assert card4["message"] == "그때 국민 교통 대신 이 카드를 쓰셨다면 3개월 동안 6,330원을 더 받으셨어요"
+
+
+def test_쓰지_않던_카드를_바꾼_셈이면_발급받았다면으로_말한다(state):
+    card4 = next(m for m in missed_benefit(state, _year_rows()) if m["card_id"] == 4)
+    assert card4["basis"] == "add" and card4["replaces"] is None and card4["gain"] == 3 * 4 * 500
+    assert card4["message"] == "그때 이 카드를 발급받으셨다면 3개월 동안 6,000원을 더 받으셨어요"
+
+
+def test_연말정산_문구는_12개월이면_1년이라고_한다():
+    from engine.recommend import missed_message
+    item = {"basis": "add", "replaces": None, "months": 12, "gain": 95_333}
+    assert missed_message(item) == "그때 이 카드를 발급받으셨다면 1년 동안 95,333원을 더 받으셨어요"

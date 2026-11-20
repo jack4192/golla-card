@@ -115,8 +115,19 @@ class Card:
     rewards: tuple[tuple[int, int], ...] = ()                   # (전월 실적 하한, 월 리워드)
     total_caps: tuple[tuple[int, int | None], ...] = ()         # (전월 실적 하한, 카드 월 통합 한도). 비면 없음
 
-    def benefits_for(self, category: str, brand: str | None = None) -> list[Benefit]:
-        return [b for b in self.benefits if b.matches(category, brand)]
+    def benefits_for(self, category: str, brand: str | None = None) -> tuple[Benefit, ...]:
+        """이 업종·브랜드에 걸리는 혜택. 카드는 바뀌지 않으므로 (업종, 브랜드)마다 한 번만 고른다
+        (2026-11-19: 월간 맞춤 방식 계산이 같은 매칭을 수백만 번 반복해 첫 배치 요청이 0.8초를 넘었다).
+        캐시는 데이터클래스 필드가 아니라 카드 비교·해시에 끼지 않는다."""
+        cache = self.__dict__.get("_benefits_for")
+        if cache is None:
+            cache = {}
+            object.__setattr__(self, "_benefits_for", cache)
+        key = (category, brand)
+        found = cache.get(key)
+        if found is None:
+            found = cache[key] = tuple(b for b in self.benefits if b.matches(category, brand))
+        return found
 
     def advertises(self, category: str) -> bool:
         """그 업종을 콕 집은 혜택이 있는지. 사람이 '이 카드 카페 할인되지'라고 아는 수준."""

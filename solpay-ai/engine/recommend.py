@@ -43,13 +43,15 @@ def candidates(state) -> list[Card]:
 
 
 def _simulate(state, rows: list[Payment], extra: Card | None, prev: dict[int, int], period, count_from,
-              threshold: int, slack: dict | None = None) -> tuple[int, dict]:
+              threshold: int, slack: dict | None = None, replace: dict[int, Card] | None = None) -> tuple[int, dict]:
     """결제를 그대로 두고 현장 결제의 카드만 다시 고른다. 기본은 가진 카드 중 가장 많이 주는 카드,
     새 카드(extra)는 그보다 threshold 원 이상 더 주고, 그 결제를 빼도 원래 카드가 넘던 실적 구간을 지킬 수 있을 때만
     쓴다 (slack: (기간, 카드) → 구간을 지키고 남는 실적). period(결제) 가 바뀌면 장부를 넘긴다.
+    replace: 가진 카드 → 그 자리에 대신 쓴 카드 (그 카드로 내던 결제를 모두 대신 쓴 카드로 낸다).
     (count_from 이후 혜택 합, (기간, 카드) → 그 기간 실적)"""
     catalog = state.catalog
     owned = {c.user_card_id: catalog.cards[c.card_id] for c in state.cards}
+    owned.update(replace or {})
     cards = dict(owned)
     if extra is not None:
         cards[-1] = extra
@@ -230,9 +232,13 @@ def _also(card: Card, category: str) -> bool:
     return any(b.also and category in b.also for b in card.benefits)
 
 
-def missed_benefit(state, rows: list[Payment], threshold: int = 300) -> list[dict]:
+def missed_benefit(state, rows: list[Payment], threshold: int = 300, swap: bool = True) -> list[dict]:
     """연말정산 안내용: 이 기간 결제에 각 신한카드가 있었다면 더 받았을 금액 (연회비 반영, 큰 순서).
-    결제는 그대로 두고 현장 결제만 다시 고른다 (가진 카드 중 최선, 새 카드는 threshold 원 이상 더 줄 때). 달마다 실적을 넘긴다."""
+    결제는 그대로 두고 현장 결제만 다시 고른다. 달마다 실적을 넘긴다. 두 가정 중 큰 쪽을 쓴다 (2026-11-19 사용자 결정):
+    - 함께 쓰기(add): 가진 카드 중 최선보다 threshold 원 이상 더 주고 기존 카드의 실적 구간을 지킬 때만 새 카드로 낸다.
+    - 바꾸기(swap): 가진 카드 하나를 새 카드로 바꿨다고 본다 (그 카드로 내던 결제가 모두 새 카드로 가 새 카드 실적이 찬다).
+      합이 같으면 가장 덜 쓰던 카드를 바꾼 것으로 보고, 그 카드를 이 기간에 전혀 안 썼으면 '함께 쓰기'로 말한다.
+      바꾼 카드의 연회비가 줄어드는 몫은 세지 않는다."""
     month = lambda p: (p.paid_at.year, p.paid_at.month)
     keys = sorted({month(p) for p in rows})
     if len(keys) < 2:
@@ -240,10 +246,33 @@ def missed_benefit(state, rows: list[Payment], threshold: int = 300) -> list[dic
     count_from, months = keys[1], len(keys) - 1          # 첫 달은 전월 실적을 몰라 실적만 쌓는다
     base, perfs = _simulate(state, rows, None, {}, month, count_from, threshold)
     slack = _slack(state, perfs)
+    spend = {c.user_card_id: 0 for c in state.cards}
+    for p in rows:
+        if p.user_card_id in spend:
+            spend[p.user_card_id] += p.amount
+    label = state.catalog.card_label
     out = []
     for card in candidates(state):
-        gain = int(_simulate(state, rows, card, {}, month, count_from, threshold, slack)[0] - base
-                   - card.annual_fee * months / 12)
-        out.append({"card_id": card.card_id, "card_name": state.catalog.card_label(card.card_id), "gain": gain,
-                    "months": months})
+        fee = card.annual_fee * months / 12
+        gain = int(_simulate(state, rows, card, {}, month, count_from, threshold, slack)[0] - base - fee)
+        item = {"card_id": card.card_id, "card_name": label(card.card_id), "gain": gain, "months": months,
+                "annual_fee": card.annual_fee, "basis": "add", "replaces_user_card_id": None, "replaces": None}
+        if swap and state.cards:
+            total, _, _, uc = max((_simulate(state, rows, None, {}, month, count_from, threshold,
+                                             replace={c.user_card_id: card})[0], -spend[c.user_card_id], c.display_order, c)
+                                  for c in state.cards)
+            swap_gain = int(total - base - fee)
+            if swap_gain > gain:
+                item["gain"] = swap_gain
+                if spend[uc.user_card_id] > 0:
+                    item.update(basis="swap", replaces_user_card_id=uc.user_card_id, replaces=label(uc.card_id))
+        item["message"] = missed_message(item)
+        out.append(item)
     return sorted(out, key=lambda x: -x["gain"])
+
+
+def missed_message(item: dict) -> str:
+    """연말정산 안내 문구 (정해진 틀, 2026-11-19 사용자 결정). 숫자는 엔진 계산값 그대로."""
+    who = f"{item['replaces']} 대신 이 카드를 쓰셨다면" if item["basis"] == "swap" else "이 카드를 발급받으셨다면"
+    span = "1년" if item["months"] == 12 else f"{item['months']}개월"
+    return f"그때 {who} {span} 동안 {item['gain']:,}원을 더 받으셨어요"

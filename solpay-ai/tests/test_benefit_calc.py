@@ -98,3 +98,17 @@ def test_가맹점을_모르면_내_브랜드_비중으로_기대값을_낸다(s
     mix = brand_mix(state, "CAFE", priors, params)
     assert mix == {"STARBUCKS": 1.0}
     assert brand_mix(state, "REST", priors, params) == {None: 1.0}
+
+
+def test_카드의_업종_브랜드별_혜택_목록은_한_번만_고른다(monkeypatch):
+    """2026-11-19 0.8초 문제: 월간 맞춤 방식 계산이 같은 (카드, 업종, 브랜드) 매칭을 수백만 번 반복했다."""
+    c = card([Benefit(1, "CAFE", "discount", rate=0.10, brands=frozenset({"STARBUCKS"})),
+              Benefit(2, "*", "discount", rate=0.01)])
+    calls = []
+    original = Benefit.matches
+    monkeypatch.setattr(Benefit, "matches", lambda self, cat, brand: calls.append(1) or original(self, cat, brand))
+    first = c.benefits_for("CAFE", "STARBUCKS")
+    assert [b.benefit_id for b in first] == [1, 2] and len(calls) == 2
+    assert list(c.benefits_for("CAFE", "STARBUCKS")) == list(first) and len(calls) == 2    # 두 번째는 다시 고르지 않는다
+    assert [b.benefit_id for b in c.benefits_for("CAFE", "EDIYA")] == [2] and len(calls) == 4
+    assert c == card(list(c.benefits))                                                  # 캐시는 카드 비교에 끼지 않는다
