@@ -45,6 +45,8 @@ import PrivacyDataModal from './components/PrivacyDataModal';
 import { getActiveWalletCard } from './data/cards';
 
 const SESSION_KEY = 'solpay_demo_session_v1';
+// 마지막으로 이메일 로그인한 계정(데모 계정 카드 자동 등록 판단용)
+const LOGIN_EMAIL_KEY = 'solpay_demo_login_email_v1';
 const ACCOUNT_KEY = 'solpay_demo_account_v1';
 const FULL_LOGOUT_KEY = 'solpay_demo_full_logout_v1';
 const FINISHED_KEY = 'solpay_demo_onboarding_v1';
@@ -219,7 +221,8 @@ export default function App() {
   const registeredPreviewCards = buildWallet({ owned: previewCardCodes }).filter(card =>
     !walletCards.some(owned => owned.id === card.id)
   );
-  const previewCards = previewWallet?.cards ?? [...walletCards, ...registeredPreviewCards];
+  const previewBase = [...walletCards, ...registeredPreviewCards];
+  const previewCards = previewWallet?.cards ?? (previewBase.length ? previewBase : buildWallet({ owned: DEMO_WALLET_CODES }));
   const previewCardId = previewWallet?.id ?? activeCardId ?? previewCards[0]?.id;
   const previewCard = getActiveWalletCard(previewCards, previewCardId);
 
@@ -445,6 +448,20 @@ export default function App() {
     setOnboardingComplete(completed);
     setRoutineMode('onboarding');
 
+    try {
+      const loginEmail = await DemoStore.getItemAsync(LOGIN_EMAIL_KEY);
+      // 기록이 없던 이전 버전 로그인은, 직접 가입한 계정이 없으면 데모 계정으로 봅니다.
+      const isDemoAccount = loginEmail === DEMO_EMAIL || (!loginEmail && !(await readDemoAccount()));
+      if (isDemoAccount) {
+        const preferences = await readPreferences();
+        if (preferences.owned.length === 0) {
+          await savePreferences({ ...preferences, owned: DEMO_WALLET_CODES });
+        }
+      }
+    } catch {
+      // 데모 카드를 못 넣어도 로그인은 계속 진행합니다.
+    }
+
     await reloadWallet();
 
     if (savedConsent?.termsAgreed !== true) {
@@ -493,16 +510,7 @@ export default function App() {
       setConsentDraft(null);
       setScheduleEditor({});
     }
-    if (address === DEMO_EMAIL && !customMatches) {
-      try {
-        const preferences = await readPreferences();
-        if (preferences.owned.length === 0) {
-          await savePreferences({ ...preferences, owned: DEMO_WALLET_CODES });
-        }
-      } catch {
-        // 데모 카드를 못 넣어도 로그인은 계속 진행합니다.
-      }
-    }
+    await DemoStore.setItemAsync(LOGIN_EMAIL_KEY, customMatches ? 'custom' : DEMO_EMAIL);
     await afterAuthentication({ firstSignupLogin });
   });
 

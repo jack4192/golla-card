@@ -28,6 +28,7 @@ const PERSONAL = [
 const ACCOUNT = [
   ['solpay_demo_account_v1', '가입 정보'],
   ['solpay_demo_session_v1', '로그인 상태'],
+  ['solpay_demo_login_email_v1', '마지막 로그인 계정'],
   ['solpay_demo_full_logout_v1', '로그아웃 상태'],
   ['solpay_demo_consent_v1', '서비스 안내 및 알림 선택'],
   ['solpay_demo_onboarding_v1', '가입 진행 상태'],
