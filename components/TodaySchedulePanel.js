@@ -7,7 +7,8 @@ import { evaluatePdfCard, PAYMENT_SCENARIOS } from '../data/paymentBenefits';
 import { benefitText } from '../utils/cardRecommendation';
 import { DAYS, routineLabel } from '../utils/routineDetails';
 import { isScheduleBenefitAt, matchesScheduleBenefit } from '../utils/schedulePayment';
-import { SAMPLE_PAYMENT_CARDS } from '../data/samplePayment';
+import { SCHEDULE_SAMPLES } from '../data/samplePayment';
+import { resolveWalletProduct } from './WalletProductCard';
 import SpecialScheduleModal from './SpecialScheduleModal';
 import { CATEGORIES, dailyBasicSchedule, dateKey, effectiveDetailedRoutine, eventBenefitCategories, eventEndDate, eventTimeCaption, eventTitle, isTodayConfirmed, makeSignals, readEvents, readProfile, shiftDate } from '../utils/routineData';
 
@@ -29,6 +30,71 @@ const categoryIcons = {
 };
 
 const hourLabel = hour => `${String(hour).padStart(2, '0')}:00`;
+const hourMs = 60 * 60 * 1000;
+const hourTicks = [0, 1, 2, 3];
+const chartPercent = ratio => `${ratio * 100}%`;
+const scheduleLabel = label => label.replace(/^\p{Extended_Pictographic}\uFE0F?\s+/u, '');
+const homeScheduleLimit = 3;
+
+function HomeScheduleRibbon({ clock, clockTime, start, rows, selected, onSelect, onOpenSchedule, emptyMessage }) {
+  const duration = 3 * hourMs;
+  const position = time => Math.min(1, Math.max(0, (time - start) / duration));
+  const cursor = position(clock);
+  const hiddenCount = Math.max(0, rows.length - homeScheduleLimit);
+
+  return <View style={styles.homeRibbon}>
+    <View style={styles.homeAxis} accessible accessibilityLabel={`지금 ${clockTime}`}>
+      <View style={styles.homeAxisLine} />
+      {hourTicks.map(tick => {
+        const hour = new Date(start.getTime() + tick * hourMs).getHours();
+        return <View key={tick} style={[styles.homeTick, { left: chartPercent(tick / 3) }]}>
+          <Text style={styles.homeTickLabel}>{hourLabel(hour)}</Text>
+          <View style={styles.homeTickMark} />
+        </View>;
+      })}
+      <View style={[styles.homeNow, { left: chartPercent(cursor) }]}>
+        <Text style={styles.homeNowText}>지금 {clockTime}</Text>
+      </View>
+      <View style={[styles.homeNowDot, { left: chartPercent(cursor) }]} />
+    </View>
+    {rows.slice(0, homeScheduleLimit).map(row => {
+      const left = position(row.startDate);
+      const width = position(row.endDate) - left;
+      const compact = width < 0.22;
+      const isSelected = selected?.key === row.key;
+      const label = scheduleLabel(row.label);
+      const tone = row.inProgress || isSelected ? '#1755C9' : '#6853A0';
+      const identity = <>
+        <Ionicons name={row.icon} size={14} color={tone} />
+        <Text style={[styles.homeEventText, { color: tone }]} numberOfLines={1}>
+          {compact ? `${label} · ${row.timeCaption}` : label}
+        </Text>
+      </>;
+      return <TouchableOpacity key={row.key} style={styles.homeEventRow} accessibilityRole="button"
+        accessibilityLabel={`${row.inProgress ? '진행 중' : '예정'} ${label} ${row.timeCaption}`}
+        aria-pressed={isSelected} accessibilityState={{ selected: isSelected }} onPress={() => onSelect(row)}>
+        <View style={[styles.homeEventBand, !row.inProgress && styles.homeUpcomingBand,
+          compact && styles.homeCompactBand, isSelected && styles.homeSelectedBand,
+          { left: chartPercent(left), width: chartPercent(width) }]}>
+          {!compact && identity}
+        </View>
+        {compact && <View style={[styles.homeEventCaption, isSelected && styles.homeSelectedCaption]}>{identity}</View>}
+      </TouchableOpacity>;
+    })}
+    {hiddenCount > 0 && <TouchableOpacity accessibilityRole="button" accessibilityLabel={`일정 ${hiddenCount}개 더 보기`}
+      style={styles.homeMoreSchedules} onPress={onOpenSchedule}>
+      <Text style={styles.blue}>+{hiddenCount}개</Text>
+      <Ionicons name="chevron-forward" size={14} color="#245DE5" />
+    </TouchableOpacity>}
+    {!rows.length && <Text style={styles.homeEmptyCaption}>{emptyMessage}</Text>}
+  </View>;
+}
+
+const toScheduleProduct = card => ({
+  card,
+  catalog: findCatalog40Product(card),
+  legacy: CSV_CARD_CATALOG.find(product => product.code === card.catalogCode),
+});
 
 function findScheduleCard(categories, products, now) {
   for (const { card, catalog, legacy } of products) {
@@ -64,10 +130,13 @@ export default function TodaySchedulePanel({
   onEditRoutine,
   onViewBenefits,
   onPay,
-  sampleActive = false,
+  onOpenCards,
+  onOpenSchedule,
+  sampleActive,
   onStartSample,
   onEndSample,
   cards = [],
+  selectedCard,
   home = false,
   disabled = false
 }) {
@@ -76,7 +145,8 @@ export default function TodaySchedulePanel({
   const [events, setEvents] = useState([]);
   const [profile, setProfile] = useState(null);
   const [confirmed, setConfirmed] = useState(false);
-  const [open, setOpen] = useState(false);
+  // null | 'manage'(일정 관리) | 'add'(일정 추가)
+  const [open, setOpen] = useState(null);
   const [selection, setSelection] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -142,44 +212,59 @@ export default function TodaySchedulePanel({
   ));
   const signals = makeSignals(profile, events, day).map(signal => CATEGORIES[signal.id].label);
   const refresh = () => setRevision(value => value + 1);
-  const products = cards.map(card => ({
-    card,
-    catalog: findCatalog40Product(card),
-    legacy: CSV_CARD_CATALOG.find(product => product.code === card.catalogCode),
-  }));
+  const products = cards.map(toScheduleProduct);
+  const selectedProduct = resolveWalletProduct(selectedCard);
+  const canPayWithSelected = cards.some(card => card.id === selectedCard?.id);
+  const sample = SCHEDULE_SAMPLES.find(item => item.id === sampleActive);
+  const sampleMatch = sample && findScheduleCard([sample.category], sample.cards.map(toScheduleProduct),
+    new Date(`${day}T${sample.start}:00`));
+  const sampleCard = sample && (sampleMatch?.card || sample.cards[0]);
   const timeline = [
     ...dailyBasicSchedule(profile, day).map(({ label, category, start, end }) => {
       const time = hourLabel(start);
+      const endTime = hourLabel(end);
+      const startDate = new Date(`${day}T${time}:00`);
+      const endDate = eventEndDate({ date: day, start: time, end: endTime });
       const inProgress = isCurrentDay && currentHour >= start && currentHour < end;
-      const matchTime = inProgress ? clock : new Date(`${day}T${time}:00`);
+      const matchTime = inProgress ? clock : startDate;
       return {
         key: `basic:${label}:${start}`,
         icon: categoryIcons[category] || 'restaurant-outline',
         label,
         time,
-        timeCaption: `${time}~${hourLabel(end)}`,
+        startDate,
+        endDate,
+        timeCaption: `${time}~${endTime}`,
         description: '평소 일과 · ' + (category ? CATEGORIES[category].label : '저장한 점심 시간'),
         inProgress,
         basic: true,
         match: category ? findScheduleCard([category], products, matchTime) : null,
       };
     }),
-    ...routines.map(row => ({
-      key:'routine:'+row.id, icon:categoryIcons[row.category] || 'time-outline', time:row.start,
-      label:routineLabel(row),
-      description:(row.nextDay?'다음 날 ':'')+row.end+'까지 · 평소 일과',
-      match:findScheduleCard([row.category], products),
-    })),
+    ...routines.map(row => {
+      const startDate = new Date(`${day}T${row.start}:00`);
+      const endDate = eventEndDate({ ...row, date: day });
+      const inProgress = isCurrentDay && clock >= startDate && clock < endDate;
+      return {
+        key: 'routine:' + row.id, icon: categoryIcons[row.category] || 'time-outline',
+        label: routineLabel(row), time: row.start, timeCaption: eventTimeCaption(row),
+        startDate, endDate,
+        description: '평소 일과', inProgress,
+        match: findScheduleCard([row.category], products, inProgress ? clock : startDate),
+      };
+    }),
     ...todayEvents.map(event => {
       const categories = eventBenefitCategories(event);
       const timed = Boolean(event.start && event.end);
       const startDate = timed ? new Date(`${event.date}T${event.start}:00`) : null;
-      const inProgress = timed && isCurrentDay && clock >= startDate && clock < eventEndDate(event);
+      const endDate = timed ? eventEndDate(event) : null;
+      const inProgress = timed && isCurrentDay && clock >= startDate && clock < endDate;
       return {
         key:'special:'+event.id, icon:categoryIcons[categories[0]] || 'calendar-outline',
         label:eventTitle(event),
         date:event.date,
         time:event.start,
+        startDate, endDate,
         timeCaption:eventTimeCaption(event),
         description:event.memo || (timed ? '특별 일정' : '특별 일정 · 시간 미지정'),
         inProgress,
@@ -190,14 +275,92 @@ export default function TodaySchedulePanel({
   const firstMatch = timeline.find(row => row.match);
   const currentMatch = timeline.find(row => row.date && row.inProgress && row.match)
     || timeline.find(row => row.inProgress && row.match);
-  const scope = home ? `${day}:${currentMatch?.key || currentHour}` : day;
-  const autoExpand = home ? currentMatch || timeline.find(row => !row.basic && row.match) : firstMatch;
-  const activeKey = selection?.scope === scope ? selection.key : autoExpand?.key;
+  const current = currentMatch || timeline.find(row => row.inProgress);
+  const clockTime = clock.toTimeString().slice(0, 5);
+  const payFor = row => onPay?.({
+    cardId: row.match.card.id,
+    category: row.match.category,
+    benefitName: row.match.benefitName,
+    pdfScenario: row.match.pdfScenario,
+    title: row.label,
+    date: row.inProgress ? day : row.date || day,
+    time: row.inProgress ? clockTime : row.time,
+  });
+  if (home) {
+    const ready = !disabled && !loading && !error;
+    const windowStart = new Date(clock);
+    windowStart.setMinutes(0, 0, 0);
+    const windowEnd = windowStart.getTime() + 3 * hourMs;
+    const windowRows = ready ? timeline.filter(row => row.startDate && row.startDate < windowEnd && row.endDate > clock)
+      .sort((a, b) => Number(b.inProgress) - Number(a.inProgress) || a.startDate - b.startDate) : [];
+    const defaultSchedule = windowRows.find(row => row.key === current?.key);
+    const rows = defaultSchedule
+      ? [defaultSchedule, ...windowRows.filter(row => row.key !== defaultSchedule.key)]
+      : windowRows;
+    const chosenSchedule = selection?.scope === day
+      ? rows.slice(0, homeScheduleLimit).find(row => row.key === selection.key)
+      : null;
+    const selectedSchedule = chosenSchedule ?? defaultSchedule;
+    const recommended = selectedSchedule?.match ? selectedSchedule : null;
+    const card = recommended?.match.card || selectedCard;
+    const artwork = recommended?.match.card.image || selectedProduct?.image;
+    const canPay = Boolean(recommended || canPayWithSelected);
+    const next = ready && (current || timeline.find(row => row.time >= clockTime) || timeline.find(row => !row.time));
+    const cardAction = card ? '다른 카드로 변경' : '카드 등록';
+    return <View style={styles.home}>
+      <Text accessibilityRole="header" style={styles.headline}>내 지갑</Text>
+      <View style={[styles.homeCard, styles.homeCardScheduled]}>
+        <HomeScheduleRibbon clock={clock} clockTime={clockTime} start={windowStart} rows={rows} selected={selectedSchedule}
+          onSelect={row => setSelection({ scope: day, key: row.key })} onOpenSchedule={onOpenSchedule}
+          emptyMessage={error || (loading && !disabled ? '일정을 불러오는 중이에요' : '이 시간대에 등록된 일정이 없어요')} />
+        {recommended && <View style={styles.homeRecommendation}>
+          <View style={styles.homeRecommendationIcon}>
+            <Ionicons name="sparkles" size={16} color="#245DE5" />
+          </View>
+          <Text accessibilityRole="header" style={styles.homeRecommendationTitle}>
+            {recommended.inProgress ? '지금 일정에 맞는 카드예요' : '다가오는 일정에 맞는 카드예요'}
+          </Text>
+        </View>}
+        {selectedSchedule && !recommended && <Text style={styles.homeFallback}>
+          {card ? '이 일정에는 평소 쓰시는 이 카드로 결제하는 걸 추천드려요.' : '카드를 등록하면 이 일정에 맞는 혜택을 확인할 수 있어요.'}
+        </Text>}
+        {artwork && <View style={styles.homeCardStage}>
+          <View pointerEvents="none" style={styles.homeCardHalo} />
+          <Image source={artwork} resizeMode="contain" fadeDuration={0}
+            style={[styles.homeArtwork, styles.homeScheduledArtwork]}
+            accessibilityLabel={card.name + ' 상품 이미지'} />
+        </View>}
+        <Text style={[styles.homeCardName, card && styles.homeCardCaption]}>{card?.name || '등록된 카드가 없습니다'}</Text>
+        {recommended && <Text style={styles.homeBenefit} numberOfLines={2}>{recommended.match.label}</Text>}
+      </View>
+      {card && <TouchableOpacity accessibilityRole="button" accessibilityLabel="이 카드로 결제"
+        accessibilityState={{ disabled: !canPay }}
+        disabled={!canPay} style={[styles.primary, !canPay && styles.homePayDisabled]}
+        onPress={() => recommended?.inProgress ? payFor(recommended) : onPay?.({ cardId: card.id })}>
+        <Ionicons name="qr-code-outline" size={19} color="#FFFFFF" />
+        <Text style={styles.white}>이 카드로 결제</Text>
+      </TouchableOpacity>}
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel={cardAction}
+        style={card ? styles.homeChangeCard : styles.primary} onPress={onOpenCards}>
+        {card && <Ionicons name="swap-horizontal-outline" size={19} color="#245DE5" accessible={false} />}
+        <Text style={card ? styles.blue : styles.white}>{cardAction}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="오늘의 일정 열기" style={styles.homeSchedule} onPress={onOpenSchedule}>
+        <Ionicons name="calendar-outline" size={21} color="#1854D8" />
+        <Text style={styles.title}>오늘의 일정</Text>
+        <Text style={styles.homeScheduleText} numberOfLines={1}>
+          {next ? [next.time, next.label].filter(Boolean).join(' ') : ready && !timeline.length ? '등록된 일정 없음' : '일정 보기'}
+        </Text>
+        <Ionicons name="chevron-forward" size={17} color="#62738D" />
+      </TouchableOpacity>
+    </View>;
+  }
+  const activeKey = selection?.scope === day ? selection.key : firstMatch?.key;
   return <View style={styles.panel}>
     <View style={styles.hero}>
       <View style={{flex:1}}>
         <Text accessibilityRole="header" style={styles.headline}>
-          {home ? currentMatch ? '지금 일과에 맞는\n카드를 추천해요' : firstMatch ? '오늘 일정에 맞춰\n카드를 준비했어요' : '오늘의 일정과\n카드 혜택을 확인해요' : '오늘의 일정'}
+          오늘의 일정
         </Text>
         <View style={styles.dateChip}>
           <Ionicons name="calendar-outline" size={17} color="#2152AF"/>
@@ -209,39 +372,36 @@ export default function TodaySchedulePanel({
     {disabled ? <Text style={styles.hint}>개발자 미리보기</Text>
       : loading ? <Text style={styles.hint}>일정을 불러오는 중이에요.</Text>
         : !!error ? <Text style={styles.hint}>{error}</Text>
-          : sampleActive ? <View style={styles.empty}>
+          : sample ? <View style={styles.empty}>
             <Text style={styles.blue}>예시 일정 · 저장되지 않아요</Text>
+            <View style={styles.sampleChoices}>
+              {SCHEDULE_SAMPLES.map(item => <TouchableOpacity key={item.id} accessibilityRole="button"
+                accessibilityState={{ selected: item.id === sample.id }}
+                style={[styles.sampleChoice, item.id === sample.id && styles.sampleSelected]}
+                onPress={() => onStartSample?.(item.id)}>
+                <Text style={styles.blue}>{item.caption}</Text>
+              </TouchableOpacity>)}
+            </View>
             <View style={styles.timelineButton}>
-              <View style={styles.entryIcon}><Ionicons name="storefront-outline" size={21} color="#2059C7" /></View>
-              <Text style={styles.title}>18:00 편의점</Text>
+              <View style={styles.entryIcon}><Ionicons name={categoryIcons[sample.category]} size={21} color="#2059C7" /></View>
+              <Text style={styles.title}>{sample.start}~{sample.end} {sample.title}</Text>
             </View>
             <View style={styles.recommendation}>
-              <Text style={styles.blue}>체험용 추천 카드</Text>
+              <Text style={styles.blue}>추천 카드</Text>
               <View style={styles.cardPreview}>
-                <Image source={SAMPLE_PAYMENT_CARDS[0].image} resizeMode="contain" style={styles.productImage} accessibilityLabel="BC 업턴 카드 상품 이미지" />
+                <Image source={sampleCard.image} resizeMode="contain" fadeDuration={0} style={styles.productImage} accessibilityLabel={sampleCard.name + ' 상품 이미지'} />
                 <View style={styles.entryText}>
-                  <Text style={styles.title}>{SAMPLE_PAYMENT_CARDS[0].name}</Text>
-                  <Text style={styles.offer}>CU 10,000원 결제 예시</Text>
+                  <Text style={styles.title}>{sampleCard.name}</Text>
+                  {!!sampleMatch && <Text style={styles.offer}>{sampleMatch.label}</Text>}
                 </View>
               </View>
-              <TouchableOpacity accessibilityRole="button" style={styles.primary} onPress={() => onPay?.({
-                cardId: SAMPLE_PAYMENT_CARDS[0].id,
-                category: 'convenience',
-                title: '편의점 · 예시 일정',
-                date: day,
-                time: '18:00',
-                sample: true,
-              })}>
-                <Text style={styles.white}>이 카드로 결제 체험</Text>
-              </TouchableOpacity>
             </View>
             <TouchableOpacity accessibilityRole="button" style={styles.secondary} onPress={onEndSample}>
-              <Text style={styles.blue}>체험 종료</Text>
+              <Text style={styles.blue}>예시 닫기</Text>
             </TouchableOpacity>
           </View> : timeline.length === 0 ? <View style={styles.empty}>
             <Text style={styles.title}>등록된 일정이 없어요</Text>
-            <Text style={styles.hint}>시간과 일과를 정해 특별 일정을 추가할 수 있어요.</Text>
-            {onStartSample && <TouchableOpacity accessibilityRole="button" style={styles.primary} onPress={onStartSample}>
+            {onStartSample && <TouchableOpacity accessibilityRole="button" style={styles.secondary} onPress={() => onStartSample(SCHEDULE_SAMPLES[0].id)}>
               <Text style={styles.white}>예시 일정 확인</Text>
             </TouchableOpacity>}
           </View> : <View style={styles.timeline}>
@@ -254,7 +414,7 @@ export default function TodaySchedulePanel({
                   accessibilityRole="button"
                   accessibilityState={{ expanded }}
                   style={styles.timelineButton}
-                  onPress={() => setSelection({ scope, key: expanded ? null : row.key })}
+                  onPress={() => setSelection({ scope: day, key: expanded ? null : row.key })}
                 >
                   <View style={styles.entryIcon}><Ionicons name={row.icon} size={21} color="#2059C7"/></View>
                   <View style={styles.entryText}>
@@ -265,7 +425,7 @@ export default function TodaySchedulePanel({
                   <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={expanded ? '#1858E8' : '#62738D'}/>
                 </TouchableOpacity>
                 {expanded && (match ? <View style={styles.recommendation}>
-                  <Text style={styles.blue}>{home && row.inProgress ? '지금 쓸 보유 카드' : '보유 카드 추천'}</Text>
+                  <Text style={styles.blue}>보유 카드 추천</Text>
                   <View style={styles.cardPreview}>
                     <Image source={match.card.image} resizeMode="contain" style={styles.productImage} accessibilityIgnoresInvertColors accessibilityLabel={match.card.name + ' 실제 카드 이미지'}/>
                     <View style={styles.entryText}>
@@ -273,33 +433,33 @@ export default function TodaySchedulePanel({
                       <Text style={styles.offer}>{match.label}</Text>
                     </View>
                   </View>
-                  <Text style={styles.hint}>실제 적용 여부는 가맹점과 카드 이용 조건에 따라 달라져요.</Text>
-                  {onPay && <TouchableOpacity accessibilityRole="button" style={styles.primary} onPress={() => onPay({
-                    cardId: match.card.id,
-                    category: match.category,
-                    benefitName: match.benefitName,
-                    pdfScenario: match.pdfScenario,
-                    title: row.label,
-                    date: row.inProgress ? day : row.date || day,
-                    time: row.inProgress ? clock.toTimeString().slice(0, 5) : row.time,
-                  })}>
+                  {onPay && <TouchableOpacity accessibilityRole="button" style={styles.primary} onPress={() => payFor(row)}>
                     <Text style={styles.white}>이 카드로 결제</Text>
                     <Ionicons name="chevron-forward" size={17} color="#FFFFFF"/>
                   </TouchableOpacity>}
-                </View> : <View style={styles.recommendation}>
-                  <Text style={styles.hint}>이 일정에 맞는 보유 카드 혜택을 확인하지 못했어요.</Text>
+                </View> : selectedCard && <View style={styles.recommendation}>
+                  <Text style={styles.blue}>지금 갖고 있는 카드가 적합합니다.</Text>
+                  <View style={styles.cardPreview}>
+                    {!!selectedProduct?.image && <Image source={selectedProduct.image} resizeMode="contain" fadeDuration={0} style={styles.productImage} />}
+                    <Text style={[styles.title, styles.entryText]}>{selectedCard.name}</Text>
+                  </View>
+                  {onPay && canPayWithSelected && <TouchableOpacity accessibilityRole="button" style={styles.primary}
+                    onPress={() => onPay({ cardId: selectedCard.id })}>
+                    <Text style={styles.white}>이 카드로 결제</Text>
+                  </TouchableOpacity>}
                 </View>)}
               </View>;
             })}
           </View>}
     {confirmed && <Text style={styles.hint}>오늘 일정 확인 완료</Text>}
     <View style={styles.row}>
-      <TouchableOpacity accessibilityRole="button" disabled={disabled} style={styles.secondary} onPress={() => onEditRoutine?.(day)}>
-        <Text style={styles.blue}>시간대별 일정 설정</Text>
+      <TouchableOpacity accessibilityRole="button" disabled={disabled} style={styles.secondary} onPress={() => setOpen('manage')}>
+        <Text style={styles.blue}>일정 관리</Text>
       </TouchableOpacity>
-      <TouchableOpacity accessibilityRole="button" disabled={disabled} style={styles.primary} onPress={() => setOpen(true)}>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="일정 추가" disabled={disabled}
+        style={styles.primary} onPress={() => setOpen('add')}>
         <Ionicons name="add" size={18} color="#FFFFFF"/>
-        <Text style={styles.white}>{!timeline.length && !sampleActive ? '내 일정 추가' : '특별 일정 등록·관리'}</Text>
+        <Text style={styles.white}>일정 추가</Text>
       </TouchableOpacity>
     </View>
 
@@ -312,13 +472,82 @@ export default function TodaySchedulePanel({
       <Ionicons name="chevron-forward" size={16} color="#365D77"/>
     </TouchableOpacity>
     {!!error && <TouchableOpacity disabled={disabled} onPress={refresh}><Text style={styles.blue}>다시 불러오기</Text></TouchableOpacity>}
-      <SpecialScheduleModal key={day} visible={open && !disabled} onClose={() => setOpen(false)} onChanged={refresh} onEditTimed={onEditRoutine} onConfirmed={() => {
+      <SpecialScheduleModal key={day} visible={!!open && !disabled} mode={open || 'manage'} onRequestAdd={() => setOpen('add')} onClose={() => setOpen(null)} onChanged={refresh} onEditTimed={onEditRoutine} onConfirmed={() => {
       setConfirmed(true);
       refresh();
     }} />
     </View>;
 }
 const styles = StyleSheet.create({
+  home:{gap:14},
+  homeCard:{alignItems:'center',gap:8,padding:20,borderRadius:22,backgroundColor:'#F1F6FE'},
+  homeCardScheduled:{padding:12,gap:10,borderRadius:28,borderWidth:1,borderColor:'#DDE9FF',backgroundColor:'#F5F8FF'},
+  homeRibbon:{
+    width:'100%',paddingTop:10,paddingBottom:8,borderRadius:19,borderWidth:1,
+    borderColor:'#E8EFFF',backgroundColor:'#FFFFFF'
+  },
+  homeAxis:{position:'relative',height:59,marginHorizontal:25},
+  homeEmptyCaption:{marginTop:5,paddingHorizontal:10,fontSize:12,lineHeight:17,textAlign:'center',color:'#526783'},
+  homeAxisLine:{position:'absolute',left:0,right:0,top:52,height:2,borderRadius:2,backgroundColor:'#D4E3FF'},
+  homeTick:{position:'absolute',top:31,width:46,marginLeft:-23,alignItems:'center',gap:4},
+  homeTickLabel:{fontSize:11,lineHeight:15,color:'#4B6284',fontWeight:'700',fontVariant:['tabular-nums']},
+  homeTickMark:{width:2,height:7,borderRadius:1,backgroundColor:'#AAC3F1'},
+  homeNow:{
+    position:'absolute',top:0,width:83,marginLeft:-17,minHeight:24,justifyContent:'center',alignItems:'center',
+    borderRadius:12,backgroundColor:'#1D55D9'
+  },
+  homeNowText:{fontSize:11,fontWeight:'800',color:'#FFFFFF',fontVariant:['tabular-nums']},
+  homeNowDot:{
+    position:'absolute',top:46,width:14,height:14,marginLeft:-7,borderWidth:3,borderColor:'#FFFFFF',
+    borderRadius:7,backgroundColor:'#245DE5',zIndex:1
+  },
+  homeEventRow:{position:'relative',height:44,marginHorizontal:25},
+  homeEventBand:{
+    position:'absolute',top:6,height:32,flexDirection:'row',alignItems:'center',justifyContent:'center',
+    gap:4,paddingHorizontal:4,borderRadius:14,backgroundColor:'#DCEAFF',overflow:'hidden'
+  },
+  homeCompactBand:{top:34,height:6,paddingHorizontal:0},
+  homeEventText:{flexShrink:1,color:'#153E92',fontSize:12,fontWeight:'800'},
+  homeUpcomingBand:{backgroundColor:'#F0EBFF'},
+  homeSelectedBand:{borderWidth:2,borderColor:'#245DE5',backgroundColor:'#DCEAFF'},
+  homeEventCaption:{
+    alignSelf:'center',maxWidth:'100%',flexDirection:'row',alignItems:'center',gap:4,paddingHorizontal:7,
+    height:26,marginTop:2,borderRadius:13,borderWidth:1,borderColor:'transparent'
+  },
+  homeSelectedCaption:{borderColor:'#245DE5',backgroundColor:'#EDF4FF'},
+  homeMoreSchedules:{alignSelf:'center',flexDirection:'row',alignItems:'center',gap:3,minHeight:44,paddingHorizontal:10},
+  homeFallback:{color:'#526783',fontSize:12,lineHeight:17,textAlign:'center',paddingHorizontal:8},
+  homeRecommendation:{alignSelf:'center',flexDirection:'row',alignItems:'center',justifyContent:'center',gap:7,paddingHorizontal:6},
+  homeRecommendationIcon:{
+    width:28,height:28,borderRadius:14,alignItems:'center',justifyContent:'center',backgroundColor:'#E1EDFF'
+  },
+  homeRecommendationTitle:{flexShrink:1,fontSize:18,lineHeight:24,fontWeight:'800',color:'#142D4E'},
+  homeBenefit:{
+    paddingHorizontal:10,paddingVertical:5,borderRadius:12,backgroundColor:'#E6F5F0',
+    color:'#165C50',fontSize:12,lineHeight:17,fontWeight:'700',textAlign:'center'
+  },
+  homeCardStage:{
+    width:'100%',alignItems:'center',justifyContent:'center',overflow:'hidden',padding:14,
+    borderRadius:20,backgroundColor:'#EBF2FF'
+  },
+  homeCardHalo:{
+    position:'absolute',width:'76%',maxWidth:400,height:'125%',borderRadius:999,backgroundColor:'#DEEAFF',
+    borderWidth:8,borderColor:'#E5EFFF'
+  },
+  homeArtwork:{width:'100%',maxWidth:360,aspectRatio:1.52,maxHeight:224},
+  homeScheduledArtwork:{maxHeight:178},
+  homePayDisabled:{opacity:0.55},
+  homeCardName:{fontSize:18,fontWeight:'800',color:'#142D4E',textAlign:'center'},
+  homeCardCaption:{fontSize:16,lineHeight:22,marginTop:2,marginBottom:2,paddingHorizontal:6},
+  homeChangeCard:{
+    minHeight:44,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:7,
+    borderRadius:16,borderWidth:1,borderColor:'#DCE7FB',backgroundColor:'#F2F6FF'
+  },
+  homeSchedule:{flexDirection:'row',alignItems:'center',gap:8,minHeight:56,padding:10},
+  homeScheduleText:{flex:1,minWidth:0,color:'#526783',fontSize:13,textAlign:'right'},
+  sampleChoices:{flexDirection:'row',flexWrap:'wrap',justifyContent:'center',gap:6},
+  sampleChoice:{minHeight:44,justifyContent:'center',paddingHorizontal:10,borderRadius:14},
+  sampleSelected:{backgroundColor:'#E2EDFF'},
   hero:{flexDirection:'row',alignItems:'center',gap:14,marginBottom:9},
   headline:{fontSize:33,lineHeight:41,letterSpacing:-1.2,fontWeight:'800',color:'#13213E'},
   dateChip:{alignSelf:'flex-start',flexDirection:'row',alignItems:'center',gap:7,backgroundColor:'#EDF4FF',borderRadius:13,paddingVertical:8,paddingHorizontal:10,marginTop:10},

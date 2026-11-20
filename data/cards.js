@@ -42,80 +42,6 @@ export const CARD_CATALOG = {
   },
 };
 
-// 기존 데모 지갑 3종은 유지. PDF에 대응하는 혜택 자료가 없어 계산에서는 '확인 불가'.
-const ORIGINAL_DEMO_CARDS = [
-  {
-    id: 'shinhan',
-    name: '신한 생활 신용카드',
-    number: '•••• 1234',
-    color: '#1459F5',
-    textColor: '#FFFFFF',
-    issuer: '신한카드',
-    reason: '카드 상품 정보를 확인할 수 없어 혜택을 계산할 수 없어요.',
-    category: '상품 정보 미확인',
-    isOwned: true,
-    isDemoOwned: true,
-  },
-  {
-    id: 'kb',
-    name: 'KB국민 카페·뷰티',
-    number: '•••• 5678',
-    color: '#FFCA4B',
-    textColor: '#263041',
-    issuer: 'KB국민카드',
-    reason: '카드 상품 정보를 확인할 수 없어 혜택을 계산할 수 없어요.',
-    category: '상품 정보 미확인',
-    isOwned: true,
-    isDemoOwned: true,
-  },
-  {
-    id: 'kpass',
-    name: '신한 K-패스 신용',
-    number: '•••• 9012',
-    color: '#087B69',
-    textColor: '#FFFFFF',
-    issuer: '신한카드',
-    reason: '카드 상품 정보를 확인할 수 없어 혜택을 계산할 수 없어요.',
-    category: '상품 정보 미확인',
-    isOwned: true,
-    isDemoOwned: true,
-  },
-];
-
-// 진짜 발급/연동한 카드가 아님! PDF 혜택 비교를 위한 가상 보유 카드.
-// 이전 세 장은 제거하지 않고 카드 탭/결제 탭에서 사용할 수 있도록 이어 붙임.
-const PDF_DEMO_META = [
-  ['focus', '#103E93', '#FFFFFF', '•••• 2001'],
-  ['gsall', '#275A44', '#FFFFFF', '•••• 2002'],
-  ['solmate', '#265AD4', '#FFFFFF', '•••• 2003'],
-  ['naver', '#13A46E', '#FFFFFF', '•••• 2004'],
-  ['starbucks', '#204C35', '#FFFFFF', '•••• 2005'],
-  ['yogi', '#F3B347', '#263041', '•••• 2006'],
-  ['chunsik', '#FFDE6D', '#263041', '•••• 2007'],
-  ['ryan', '#E5B45D', '#263041', '•••• 2008'],
-];
-
-export const PDF_DEMO_OWNED_CARDS = PDF_DEMO_META.map(
-  ([id, color, textColor, number]) => ({
-    ...CARD_CATALOG[id],
-    id,
-    issuer: '신한카드',
-    number,
-    color,
-    textColor,
-    category: '예시 지갑 카드',
-    reason: '상품 안내서에서 확인한 카드예요. 실제 보유 여부는 확인되지 않았어요.',
-    isOwned: true,
-    isDemoOwned: true,
-    pdfVerified: true,
-  })
-);
-
-export const DEMO_WALLET_CARDS = [
-  ...ORIGINAL_DEMO_CARDS,
-  ...PDF_DEMO_OWNED_CARDS,
-];
-
 // 추천 화면의 '카드 선택'은 카드 발급/보유 인증을 뜻하지 않음.
 export const createRecommendedWalletCard = (selection) => {
   const catalogCard = selection && CARD_CATALOG[selection.cardId];
@@ -155,4 +81,4 @@ export const upsertWalletCard = (cards, selectedCard) => {
 export const getActiveWalletCard = (cards, activeCardId) =>
   cards.find((item) => item.id === activeCardId) ||
   cards[0] ||
-  DEMO_WALLET_CARDS[0];
+  null;

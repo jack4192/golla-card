@@ -325,6 +325,11 @@ export async function readEvents() {
         !event.start || normalizeTime(event.start) !== event.start ||
         !event.end || normalizeEventEnd(event.end) !== event.end || event.start === event.end
       )) ||
+      // 상황 일정(types)은 시간이 선택 항목이지만, 있으면 시작·종료가 모두 올바라야 합니다.
+      (event.category === undefined && (event.start !== undefined || event.end !== undefined) && (
+        normalizeTime(event.start) !== event.start ||
+        normalizeEventEnd(event.end) !== event.end || event.start === event.end
+      )) ||
       (event.memo !== undefined && typeof event.memo !== 'string')
     );
 
@@ -380,7 +385,7 @@ export const saveEvent = input => writeEventRecord(async () => {
     if (start === end) throw Error('시작 시간과 종료 시간을 다르게 설정해주세요.');
     const title = String(input.title || '').trim();
     if (input.category === 'other' && (!title || title.length > ROUTINE_TITLE_LIMIT)) {
-      throw Error(`기타 일정의 제목을 ${ROUTINE_TITLE_LIMIT}자 이내로 입력해주세요.`);
+      throw Error(`일정 이름을 ${ROUTINE_TITLE_LIMIT}자 이내로 입력하거나 아래 항목을 골라주세요.`);
     }
     Object.assign(timing, { category: input.category, start, end, title: input.category === 'other' ? title : '' });
   }
@@ -391,6 +396,19 @@ export const saveEvent = input => writeEventRecord(async () => {
 
   if (!timed && !types.length) {
     throw Error('일정 종류를 선택해주세요.');
+  }
+
+  // 상황 일정의 시간(선택): 둘 다 비우면 하루 종일, 하나라도 쓰면 둘 다 올바라야 합니다.
+  let situationTime = null;
+  if (!timed && (input.start || input.end)) {
+    const start = normalizeTime(input.start || '');
+    const end = normalizeEventEnd(input.end || '');
+    if (!start || !end) throw Error('시작과 종료 시간을 09:30처럼 입력해주세요.');
+    if (start === end) throw Error('시작 시간과 종료 시간을 다르게 설정해주세요.');
+    situationTime = { start, end };
+  }
+  if (!timed && types.includes('other') && !String(input.memo || '').trim()) {
+    throw Error('기타를 고른 경우 메모에 어떤 일정인지 적어주세요.');
   }
 
   const events = await readEvents();
@@ -416,6 +434,11 @@ export const saveEvent = input => writeEventRecord(async () => {
     createdAt: old?.createdAt || now,
     updatedAt: now,
   };
+  if (!timed) {
+    delete event.start;
+    delete event.end;
+    if (situationTime) Object.assign(event, situationTime);
+  }
 
   await writeJson(EVENTS_KEY, [
     event,
@@ -458,8 +481,20 @@ const EVENT_BENEFITS = {
   refuel: ['fuel', '오늘 주유·충전'],
 };
 
+// 상황 종류가 카드 추천에서 어떤 업종 혜택으로 반영되는지(없으면 null)
+export function eventTypeBenefitLabel(type) {
+  const id = EVENT_BENEFITS[type]?.[0];
+  return id ? CATEGORIES[id]?.label || null : null;
+}
+
 export function eventBenefitCategories(event) {
-  if (event.category) return event.category === 'other' ? [] : [event.category];
+  if (event.category === 'other') {
+    const title = event.title || '';
+    if (/(?:시외|고속)\s*버스/.test(title)) return ['intercity'];
+    if (/(?:대중\s*교통|지하철|버스)/.test(title)) return ['transport'];
+    return /택시/.test(title) ? ['taxi'] : [];
+  }
+  if (event.category) return [event.category];
   return event.types.map(type => EVENT_BENEFITS[type]?.[0]).filter(Boolean);
 }
 

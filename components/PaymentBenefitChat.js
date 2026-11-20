@@ -124,7 +124,7 @@ export default function PaymentBenefitChat({ transaction, selected, baseline, di
 }
 
 const s = StyleSheet.create({
-  launcher: { position: 'absolute', bottom: __DEV__ ? 72 : 16, right: 16, width: 58, height: 58, borderRadius: 29, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#D7E3F7', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  launcher: { position: 'absolute', bottom: __DEV__ || Platform.OS === 'web' ? 72 : 16, right: 16, width: 58, height: 58, borderRadius: 29, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#D7E3F7', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   face: { width: 91, height: 51 },
   avatar: { width: 47, height: 47, borderRadius: 24, backgroundColor: '#EEF4FF', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   overlay: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', backgroundColor: '#1024488C' },

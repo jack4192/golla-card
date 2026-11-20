@@ -1,11 +1,11 @@
 import PaymentCardOrder from '../components/PaymentCardOrder';
 import PaymentBenefitChat from '../components/PaymentBenefitChat';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, AppState, Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 import makeQR from 'qrcode-generator';
 import JsBarcode from 'jsbarcode';
-import { CARD_CATALOG, DEMO_WALLET_CARDS } from '../data/cards';
+import { CARD_CATALOG } from '../data/cards';
 import { findCatalog40Product } from '../data/cardCatalog40';
 import { CARD_PRODUCTS } from '../data/cardRecommendationProducts';
 import { CSV_CARD_CATALOG } from '../data/cardCatalogCsv';
@@ -69,7 +69,8 @@ export function realProductCard(card) {
   };
 }
 export function realWalletCards(card, cards = []) {
-  const matched = [...(card ? [card] : []), ...cards].map(realProductCard).filter(Boolean);
+  const active = cards.find(item => item.id === card?.id);
+  const matched = [...(active ? [active] : []), ...cards].map(realProductCard).filter(Boolean);
   return Array.from(new Map(matched.map(item => [item.id, item])).values());
 }
 const unknown = (reason, name = null, condition) => ({
@@ -280,7 +281,7 @@ async function protectScreen() {
 }
 export default function PaymentScreen({
   card,
-  cards = DEMO_WALLET_CARDS,
+  cards = [],
   schedule,
   onSelectCard,
   onClose,
@@ -300,16 +301,14 @@ export default function PaymentScreen({
   const [receipt, setReceipt] = useState(null);
   const [imageError, setImageError] = useState(false);
   const [imageRetry, setImageRetry] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const mounted = useRef(true);
   const sequence = useRef(0);
   const current = useRef(null);
   const notified = useRef(null);
   const selected = options.find(item => item.id === selectedId) || options[0];
   const baseline = options.find(item => item.id === baselineId) || options[0];
-  const scheduleScenario = useMemo(() => {
-    const example = makeSchedulePaymentScenario(schedule);
-    return schedule?.sample ? { ...example, ...SCENARIOS.find(item => item.id === 'cu'), id: 'schedule' } : example;
-  }, [schedule]);
+  const scheduleScenario = useMemo(() => makeSchedulePaymentScenario(schedule), [schedule]);
   const scenario = scheduleScenario || SCENARIOS.find(item => item.id === scenarioId) || SCENARIOS[0];
   const contextKey = scenario.id + ':' + assume;
   const estimates = useMemo(() => {
@@ -469,12 +468,11 @@ export default function PaymentScreen({
   if (!selected) {
     return <View style={s.empty}>
         <Text style={s.title}>
-          등록된 실제 상품 카드가 없습니다.
+          {cards.length ? '결제에 사용할 수 있는 카드가 없습니다' : '등록된 카드가 없습니다'}
         </Text>
 
         <Text style={s.hint}>
-          기존 임의 상품은 제외했습니다.
-          카드 관리에서 실제 보유 상품을 등록해주세요.
+          카드 탭에서 보유 카드를 등록해주세요.
         </Text>
 
         <TouchableOpacity onPress={close}>
@@ -491,14 +489,10 @@ export default function PaymentScreen({
           <TouchableOpacity accessibilityRole="button" onPress={close}>
             <Text style={s.link}>← 돌아가기</Text>
           </TouchableOpacity>
-
-          <Text style={s.demo}>
-            실제 출금 없음
-          </Text>
         </View>
 
         <Text style={s.title}>
-          {receipt ? '예시 승인 결과' : '결제 체험'}
+          {receipt ? '예시 승인 결과' : '결제'}
         </Text>
 
         {scheduleScenario && <View style={s.scheduleContext}>
@@ -518,6 +512,20 @@ export default function PaymentScreen({
               </Text>
             </View>
 
+            {/* 이 QR로 결제할 카드 + 카드 변경 */}
+            <TouchableOpacity accessibilityRole="button" disabled={options.length < 2}
+              accessibilityLabel={'결제 카드 ' + selected.name + (options.length > 1 ? ', 눌러서 카드 변경' : '')}
+              onPress={() => setPickerOpen(true)} style={s.payCard}>
+              <Image source={typeof selected.image === 'string' ? { uri: selected.image } : selected.image} resizeMode="contain" style={s.payCardImage} />
+              <View style={s.payCardInfo}>
+                <Text style={s.payCardEyebrow}>결제 카드</Text>
+                <Text style={s.payCardName} numberOfLines={1}>{selected.name}</Text>
+              </View>
+              {options.length > 1 && <View style={s.changeCard}>
+                  <Text style={s.changeCardText}>카드 변경</Text>
+                </View>}
+            </TouchableOpacity>
+
             {generating ? <ActivityIndicator size="large" color="#245DE5" style={{
           padding: 35
         }} /> : payment && active ? <Codes value={payment.value} inactive={expired} /> : <Text style={s.hint}>
@@ -525,9 +533,7 @@ export default function PaymentScreen({
               </Text>}
 
             <Text style={s.hint}>
-              코드는 발급 후 60초 동안 표시돼요.
-              실제 매장에서 결제할 수 없습니다.
-              재발급하면 이전 코드는 폐기됩니다.
+              QR·바코드는 예시이며 실제 결제에 사용할 수 없어요.
             </Text>
 
             <TouchableOpacity accessibilityRole="button" disabled={generating || !active} onPress={issue} style={[s.secondary, generating && s.dim]}>
@@ -656,20 +662,7 @@ export default function PaymentScreen({
           아래에서 카드 선택 이유와 상세 혜택을 확인하세요 ↓
         </Text>
 
-        {schedule?.sample ? <View style={s.box}>
-          <Text style={s.heading}>체험용 결제 카드</Text>
-          <View style={s.chips}>
-            {options.map(item => <TouchableOpacity
-              key={item.id}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: item.id === selected.id }}
-              onPress={() => choose(item)}
-              style={[s.chip, item.id === selected.id && s.chipOn]}
-            >
-              <Text style={item.id === selected.id ? s.whiteSmall : s.chipText}>{item.name}</Text>
-            </TouchableOpacity>)}
-          </View>
-        </View> : <PaymentCardOrder cards={options} selectedId={selected.id} onSelect={choose} />}
+        <PaymentCardOrder cards={options} selectedId={selected.id} onSelect={choose} />
 
         <View style={s.box}>
           <Text style={s.heading}>카드 선정 이유</Text>
@@ -793,11 +786,32 @@ export default function PaymentScreen({
             </Text>}
         </View>
 
-        <Text style={s.hint}>
-          QR과 바코드에는 같은 코드가 들어 있어요.
-        </Text>
       </View>
     </ScrollView>
+    <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
+      <TouchableOpacity activeOpacity={1} accessibilityLabel="카드 선택 닫기" style={s.sheetBackdrop} onPress={() => setPickerOpen(false)}>
+        <TouchableOpacity activeOpacity={1} style={s.sheet}>
+          <Text style={s.heading}>결제할 카드 선택</Text>
+          <ScrollView style={s.sheetList}>
+            {options.map(item => {
+              const active = item.id === selected.id;
+              return <TouchableOpacity key={item.id} accessibilityRole="button" accessibilityState={{ selected: active }}
+                onPress={() => { choose(item); setPickerOpen(false); }} style={[s.sheetRow, active && s.sheetRowActive]}>
+                <Image source={typeof item.image === 'string' ? { uri: item.image } : item.image} resizeMode="contain" style={s.sheetImage} />
+                <View style={s.sheetInfo}>
+                  <Text style={s.sheetName} numberOfLines={1}>{item.name}</Text>
+                  <Text style={s.sheetIssuer}>{item.issuer} · {item.type}</Text>
+                </View>
+                {active && <Text style={s.link}>사용 중</Text>}
+              </TouchableOpacity>;
+            })}
+          </ScrollView>
+          <TouchableOpacity accessibilityRole="button" onPress={() => setPickerOpen(false)} style={s.sheetClose}>
+            <Text style={s.link}>닫기</Text>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
     <PaymentBenefitChat
       key={JSON.stringify([contextKey, selected.id, baseline.id])}
       transaction={scenario.merchant + ' · ' + won(scenario.amount) + ' 결제 예시'}
@@ -822,16 +836,110 @@ const s = StyleSheet.create({
     alignSelf: "center",
     gap: 18
   },
+  payCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 64,
+    padding: 10,
+    borderRadius: 16,
+    backgroundColor: '#F1F6FF',
+    borderWidth: 1,
+    borderColor: '#C9D9FF'
+  },
+  payCardImage: {
+    width: 64,
+    height: 42
+  },
+  payCardInfo: {
+    flex: 1,
+    gap: 2
+  },
+  payCardEyebrow: {
+    fontSize: 12,
+    color: '#5A6E89',
+    fontWeight: '600'
+  },
+  payCardName: {
+    fontSize: 15,
+    color: '#14213D',
+    fontWeight: '800'
+  },
+  changeCard: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    minHeight: 40,
+    justifyContent: 'center',
+    borderRadius: 999,
+    backgroundColor: '#245DE5'
+  },
+  changeCardText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800'
+  },
+  sheetBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(12, 22, 44, 0.45)'
+  },
+  sheet: {
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
+    maxHeight: '75%',
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 28,
+    gap: 12
+  },
+  sheetList: {
+    flexGrow: 0
+  },
+  sheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    marginBottom: 6
+  },
+  sheetRowActive: {
+    backgroundColor: '#F1F6FF',
+    borderColor: '#245DE5'
+  },
+  sheetImage: {
+    width: 64,
+    height: 42
+  },
+  sheetInfo: {
+    flex: 1,
+    gap: 2
+  },
+  sheetName: {
+    color: '#14213D',
+    fontSize: 15,
+    fontWeight: '700'
+  },
+  sheetIssuer: {
+    color: '#687B97',
+    fontSize: 12
+  },
+  sheetClose: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#F1F4F9'
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 8
-  },
-  demo: {
-    color: "#5A6E89",
-    fontSize: 12,
-    lineHeight: 20
   },
   title: {
     fontSize: 28,

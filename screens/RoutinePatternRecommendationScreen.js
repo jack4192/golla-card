@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Image, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { CARD_PRODUCTS } from '../data/cardRecommendationProducts';
+import { findCatalog40Product } from '../data/cardCatalog40';
 import { readEvents, readProfile } from '../utils/routineData';
 import { benefitText, emptyPreferences, money, rankRecommendations, readPreferences } from '../utils/cardRecommendation';
 import { restoreMyData, subscribeMyData } from '../utils/myDataService';
@@ -59,7 +60,7 @@ export function CardReveal({
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
-  const product = officialProduct(card.code);
+  const image = findCatalog40Product(card)?.image || officialProduct(card.code)?.image;
   useEffect(() => {
     setFailed(false);
     setLoading(true);
@@ -157,7 +158,7 @@ export function CardReveal({
         })
       }]
     }]}>
-        {product && !failed ? <Image key={card.code + ':' + retry} source={product.image} accessibilityLabel={card.name + ' 실제 상품 이미지'} style={s.image} resizeMode="contain" onLoad={() => setLoading(false)} onError={() => {
+        {image && !failed ? <Image key={card.code + ':' + retry} source={image} accessibilityLabel={card.name + ' 실제 상품 이미지'} style={s.image} resizeMode="contain" fadeDuration={0} onLoad={() => setLoading(false)} onError={() => {
         setLoading(false);
         setFailed(true);
       }} /> : <View style={s.imageError}>
@@ -179,7 +180,6 @@ export function CardReveal({
 
       {loading && !failed && <ActivityIndicator style={s.spinner} color="#245DE5" pointerEvents="none" />}
 
-      <View style={s.shadow} />
     </View>;
 }
 export default function RoutineRecommendationScreen({
@@ -269,7 +269,7 @@ export default function RoutineRecommendationScreen({
     // 기존에 수기로 입력한 실적·가정 금액은
     // 이 화면의 추천 계산에 사용하지 않습니다.
     const preferences = emptyPreferences();
-    preferences.owned = [...new Set([...input.saved.owned, ...(data?.cards || []).map(card => card.catalogCode).filter(Boolean)])];
+    preferences.owned = input.saved.owned;
     const rows = rankRecommendations(input.profile, input.events, preferences, now).filter(row => officialProduct(row.card.code));
     const unowned = rows.filter(row => !row.owned);
     return (unowned.length ? unowned : rows).slice(0, 3);
@@ -606,14 +606,6 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12
-  },
-  shadow: {
-    position: 'absolute',
-    bottom: 12,
-    width: 160,
-    height: 13,
-    backgroundColor: '#E6EDF8',
-    borderRadius: 90
   },
   spark: {
     position: 'absolute',

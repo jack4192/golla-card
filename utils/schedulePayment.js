@@ -23,6 +23,9 @@ const grocery = /대형마트|할인마트|이마트|롯데마트|하나로마�
 
 export function matchesScheduleBenefit(name, category) {
   const title = name.toLowerCase();
+  if (category === 'transport') {
+    return /대중\s*교통|지하철|버스/.test(title.replace(/(?:고속|시외)\s*버스/g, ''));
+  }
   if (category === 'shopping' && (onlineShopping.test(title) || grocery.test(title))) return true;
   return CATEGORIES[category]?.words.some(word => (
     /^[a-z0-9]+$/i.test(word)

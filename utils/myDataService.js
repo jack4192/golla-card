@@ -6,6 +6,8 @@ import { CSV_CARD_CATALOG } from '../data/cardCatalogCsv';
 import { CARD_PRODUCTS } from '../data/cardRecommendationProducts';
 
 export const MYDATA_KEY = 'solpay_mydata_import_v1';
+const sampleCardIds = new Set(Object.values(fixtures).flatMap(record => record.cards.map(card => card.id)));
+export const isMyDataSampleCardId = id => sampleCardIds.has(id);
 const profileLabel = label => label.replace(/데모/g, '예시');
 
 export const DEMO_USERS = Object.values(fixtures).map(
@@ -184,28 +186,6 @@ export function importMyData(
 
     return next;
   });
-}
-
-export function mergeImportedWallet(
-  existing,
-  data = snapshot
-) {
-  if (!data) return existing;
-
-  const names = new Set(
-    data.cards.map(card =>
-      normalize(card.name) + card.type
-    )
-  );
-
-  return [
-    ...data.cards,
-    ...existing.filter(card =>
-      card.isManuallyRegistered &&
-      !card.isImportedMyData &&
-      !names.has(normalize(card.name) + card.type)
-    ),
-  ];
 }
 
 export function findImportedCard(
