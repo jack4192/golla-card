@@ -71,7 +71,7 @@
 </head>
 <body>
 <header>
-  <h1>SOL페이 AI 테스트 <span class="muted small">카드 배치 · 챗봇 · 카드 추천 (개발용)</span></h1>
+  <h1>SOL페이 AI 테스트 <span class="muted small">카드 배치 · 챗봇 · 카드 추천 · 연말정산 (개발용)</span></h1>
   <div class="row">
     <label>사용자 <select id="user">
       <option value="1">test1</option><option value="2">test2</option><option value="3">test3</option>
@@ -94,6 +94,7 @@
   <button data-tab="rank" class="on">1. 카드 배치</button>
   <button data-tab="chat">2. 챗봇</button>
   <button data-tab="page">3. 카드 추천</button>
+  <button data-tab="missed">4. 연말정산</button>
 </nav>
 <main>
   <!-- 1. 카드 배치 -->
@@ -138,6 +139,16 @@
     </div>
     <div id="pageErr" class="err"></div>
     <div id="pageOut"></div>
+  </section>
+
+  <!-- 4. 연말정산 -->
+  <section class="tab" id="tab-missed">
+    <div class="row">
+      <button class="primary" id="missedBtn">놓친 혜택 보기</button>
+      <span class="muted small">위 날짜 기준 지난 365일 결제로 계산합니다 (첫 달은 실적만 쌓아 보통 11개월). 금액은 연회비를 뺀 값입니다.</span>
+    </div>
+    <div id="missedErr" class="err"></div>
+    <div id="missedOut"></div>
   </section>
 </main>
 
@@ -376,6 +387,24 @@ function evidence(p) {
   }
   return html || '<div class="muted">-</div>';
 }
+// ---------- 4. 연말정산 ----------
+async function openMissed() {
+  const t = performance.now();
+  const list = await api("GET", `/internal/users/${userId()}/missed-benefit?at=${encodeURIComponent(at())}`);
+  const ms = Math.round(performance.now() - t);
+  const body = list.length ? list.map((m, i) => `
+    <div class="cardbox"><div style="font-weight:700">${i + 1}. ${esc(m.card_name)}</div>
+      <div class="big" style="margin-top:6px">${won(m.gain)}</div>
+      <div class="sub">${esc(m.message)}</div>
+      <div class="small muted" style="margin-top:6px">
+        <span class="badge ${m.basis === "swap" ? "warn" : "ok"}">${m.basis === "swap" ? `${esc(m.replaces)} 대신 썼다면` : "함께 썼다면"}</span>
+        연회비 ${won(m.annual_fee)} · ${m.months}개월</div></div>`).join("")
+    : '<div class="cardbox sub">지난 1년 결제로는 더 받을 수 있었던 신한카드가 없어요. 지금 카드 조합이 잘 맞아요.</div>';
+  $("missedOut").innerHTML = `<div class="grid2 pagegrid"><div class="phone"><h3>연말정산 놓친 혜택</h3>
+      <div class="sub">지난 1년 결제 기준 · 연회비를 뺀 금액</div>${body}</div>
+    <div><h2>응답 <span class="muted small">${ms}ms</span></h2>${pre(list)}</div></div>`;
+}
+$("missedBtn").addEventListener("click", () => busy($("missedBtn"), "missedErr", openMissed));
 renderCtx();
 </script>
 </body>

@@ -5,7 +5,7 @@ DB 가 꺼져 있으면 건너뛴다 (저장소 루트에서 `docker compose up 
 """
 
 import json
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -143,6 +143,44 @@ def test_chat_draft_confirm_flow_through_api(db, service):
         assert ok.status_code == 200 and ok.json()["saved"] is True
         assert db.raw_rules(1)[0]["rule_type"] == "no_fill"
         assert http.post(f"/internal/rules/drafts/{draft_id}/confirm", json={"user_id": 1}).status_code == 409
+    db.reset()
+
+
+def test_store_reuses_one_server_connection(db):
+    """연결 풀: 쓸 때마다 새로 접속하지 않는다 (원격 공용 DB 에서 접속 비용이 0.8초 제한을 넘지 않게)."""
+    pids = set()
+    for _ in range(5):
+        with db._connect() as c:
+            pids.add(c.execute("select pg_backend_pid() as pid").fetchone()["pid"])
+    assert len(pids) == 1
+
+
+def test_close_releases_pooled_connections():
+    import psycopg
+    from engine.db_store import AppSchemaMissing, TeamDbPgStore
+    url = database_url(TEST_DB)
+    if not url:
+        pytest.skip("DB 계정이 없습니다 (루트 .env)")
+    try:
+        store = TeamDbPgStore(url)
+    except (psycopg.OperationalError, AppSchemaMissing) as e:
+        pytest.skip(f"테스트 DB 를 쓸 수 없습니다: {e}")
+    store.close()
+    with pytest.raises(Exception, match="closed"):
+        with store._connect():
+            pass
+
+
+def test_rank_context_does_not_delete_past_schedules(db):
+    """지난 일정은 하루 한 번 작업(engine/jobs.py)이 지운다. 결제 화면 요청은 DB 에 쓰지 않는다 (읽기 전용 계정 대비)."""
+    db.reset()
+    yesterday = AT.date() - timedelta(days=1)
+    item = ScheduleItem(1, 1, datetime.combine(yesterday, time(12), KST), datetime.combine(yesterday, time(13), KST),
+                        "CAFE", 6000)
+    db.put_schedule(1, yesterday, [item])
+    db.context(1, AT)
+    assert [s.category for s in db.schedules(1, yesterday)] == ["CAFE"]
+    assert db.purge_schedules(AT.date()) == 1
     db.reset()
 
 

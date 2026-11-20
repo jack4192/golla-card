@@ -3,10 +3,11 @@
 Spring 은 0.8초 안에 응답이 없으면 기본 순서로 결제화면을 구성한다.
 """
 
+import asyncio
 import hmac
 import json
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -18,6 +19,7 @@ from pydantic import BaseModel, Field
 from engine.category_model import CategoryModel
 from engine.ml import load as load_models
 from engine.domain import Payment, RankRequest
+from engine.jobs import daily_purge, purge_past_schedules
 from engine.loader import ARTIFACTS
 from engine.params import Params
 from engine.priors import Priors
@@ -201,7 +203,20 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         client = openai_client() if chat_client is _DEFAULT else chat_client
         app.state.chat = ChatAgent(app.state.service, client)
         app.state.page_writer = PageCopyWriter(client, CopySettings.from_env())
-        yield
+        store = app.state.service.store
+        purge = None
+        if getattr(store, "purge_daily", False):          # DB 저장소: 지난 일정은 요청 밖에서 지운다 (engine/jobs.py)
+            await asyncio.to_thread(purge_past_schedules, store)    # 첫 요청 전에 한 번
+            purge = asyncio.create_task(daily_purge(store))
+        try:
+            yield
+        finally:
+            if purge is not None:
+                purge.cancel()
+                with suppress(asyncio.CancelledError):
+                    await purge
+            if service is None and hasattr(store, "close"):   # 앱이 만든 저장소만 닫는다 (연결 풀 반납)
+                store.close()
 
     app = FastAPI(title="SOL페이 카드 배치 엔진", version="0.1.0", lifespan=lifespan)
 
