@@ -343,7 +343,7 @@ function showCard(rec) {
   show("rec");
 }
 $("recApply").onclick = () => { pendingToast = "카드 신청 화면으로 연결됩니다 (데모에서는 실제로 신청되지 않아요)."; show("pay"); };
-$("recLater").onclick = () => { pendingToast = "같은 카드는 30일 동안 다시 추천하지 않아요."; show("pay"); };
+$("recLater").onclick = () => { pendingToast = "같은 카드는 2주 동안 다시 추천하지 않아요."; show("pay"); };
 
 // ---------- 연말 결산 미리보기 ----------
 $("missedBtn").onclick = async () => {

@@ -6,7 +6,7 @@
 2) 방문  : 최근 하루 안에 특수 업종에서 결제했고, 그 업종 혜택이 있는 카드가 지난 30일 기준 월 3,000원 이상 이득일 때
 3) 반복  : 최근 4일 중 3일 이상 같은 업종에서 결제했고(예: 편의점), 그 업종 혜택이 있는 카드가 월 3,000원 이상 이득일 때
 4) 정기  : 마지막 추천 뒤 3일이 지났고, 어떤 카드든 월 3,000원 이상 이득일 때
-1)~3)은 3일 간격을 기다리지 않지만 하루에 한 번까지만, 같은 카드는 30일 안에 다시 추천하지 않는다.
+1)~3)은 3일 간격을 기다리지 않지만 하루에 한 번까지만, 같은 카드는 2주(recommend_same_card_days) 안에 다시 추천하지 않는다.
 
 '월 이득' = 지난 30일 결제를, 그 카드를 더 가졌다면 결제마다 가장 좋은 카드로 냈을 때의 혜택 − 지금 카드로 그렇게 냈을 때의
 혜택 − 연회비 ÷ 12. 새 카드의 전월 실적은 그 30일 동안 그 카드로 갔을 결제액으로 본다 (발급 첫 달은 실적 조건 때문에
@@ -232,13 +232,15 @@ def _also(card: Card, category: str) -> bool:
     return any(b.also and category in b.also for b in card.benefits)
 
 
-def missed_benefit(state, rows: list[Payment], threshold: int = 300, swap: bool = True) -> list[dict]:
+def missed_benefit(state, rows: list[Payment], threshold: int = 300, swap: bool = True,
+                   only: set[int] | None = None) -> list[dict]:
     """연말정산 안내용: 이 기간 결제에 각 신한카드가 있었다면 더 받았을 금액 (연회비 반영, 큰 순서).
     결제는 그대로 두고 현장 결제만 다시 고른다. 달마다 실적을 넘긴다. 두 가정 중 큰 쪽을 쓴다 (2026-11-19 사용자 결정):
     - 함께 쓰기(add): 가진 카드 중 최선보다 threshold 원 이상 더 주고 기존 카드의 실적 구간을 지킬 때만 새 카드로 낸다.
     - 바꾸기(swap): 가진 카드 하나를 새 카드로 바꿨다고 본다 (그 카드로 내던 결제가 모두 새 카드로 가 새 카드 실적이 찬다).
       합이 같으면 가장 덜 쓰던 카드를 바꾼 것으로 보고, 그 카드를 이 기간에 전혀 안 썼으면 '함께 쓰기'로 말한다.
-      바꾼 카드의 연회비가 줄어드는 몫은 세지 않는다."""
+      바꾼 카드의 연회비가 줄어드는 몫은 세지 않는다.
+    only: 이 card_id 들만 계산한다 (추천 페이지는 오늘 더 주는 카드만 본다). None 이면 후보 전부."""
     month = lambda p: (p.paid_at.year, p.paid_at.month)
     keys = sorted({month(p) for p in rows})
     if len(keys) < 2:
@@ -253,14 +255,17 @@ def missed_benefit(state, rows: list[Payment], threshold: int = 300, swap: bool 
     label = state.catalog.card_label
     out = []
     for card in candidates(state):
+        if only is not None and card.card_id not in only:
+            continue
         fee = card.annual_fee * months / 12
         gain = int(_simulate(state, rows, card, {}, month, count_from, threshold, slack)[0] - base - fee)
         item = {"card_id": card.card_id, "card_name": label(card.card_id), "gain": gain, "months": months,
                 "annual_fee": card.annual_fee, "basis": "add", "replaces_user_card_id": None, "replaces": None}
         if swap and state.cards:
-            total, _, _, uc = max((_simulate(state, rows, None, {}, month, count_from, threshold,
-                                             replace={c.user_card_id: card})[0], -spend[c.user_card_id], c.display_order, c)
-                                  for c in state.cards)
+            # 합 → 덜 쓰던 카드 → 표시 순서 → 카드 번호 (표시 순서까지 같아도 카드끼리 비교하지 않게)
+            total, _, _, _, uc = max((_simulate(state, rows, None, {}, month, count_from, threshold,
+                                                replace={c.user_card_id: card})[0], -spend[c.user_card_id],
+                                      c.display_order, c.user_card_id, c) for c in state.cards)
             swap_gain = int(total - base - fee)
             if swap_gain > gain:
                 item["gain"] = swap_gain

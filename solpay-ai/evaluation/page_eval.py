@@ -23,7 +23,9 @@ def _summary(page: dict) -> str:
     offers = (page.get("merchant") or {}).get("offers", [])
     parts = [f"탭 {page['tabs'] or '없음(건너뜀)'}", f"카드날 {page['card_day']}", f"기준 {page['source']}"]
     if card:
-        parts.append(f"카드 {card['card_name']} +{card['gain']:,}원 (연회비 {card['annual_fee']:,}원, 월 {card['monthly_gain']:,}원)")
+        year = (f"지난 {card['yearly_months']}개월 {card['yearly_gain']:,}원"
+                + (f" · {card['replaces']} 대신" if card.get("replaces") else "")) if card.get("yearly_gain") is not None else "1년 계산 없음"
+        parts.append(f"카드 {card['card_name']} [{card['keyword']}] 오늘 +{card['gain']:,}원 | {year} (연회비 {card['annual_fee']:,}원)")
     parts += [f"행사 {o['brand']} {o['total']:,}원" for o in offers]
     return " | ".join(parts)
 
