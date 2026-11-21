@@ -32,8 +32,9 @@ def report(total=5180, card=290, promotion=0, next_month=4890, tier_changes=None
             "strategy": {"current": "main_top", "label": "주력 카드 우선", "description": "구간 혜택이 가장 큰 주력 카드부터 채워요",
                          "chosen_by": "monthly", "chosen_by_label": "월간 맞춤 (지난 결제로 방식 비교)", "compare_months": 6,
                          "compare": [{"method": "main_top", "label": "주력 카드 우선", "benefit": 418100}],
-                         "base_card": {"user_card_id": 1, "name": "신한카드 Discount Plan", "target_tier": 400000,
-                                       "remaining": 351560}, "message": "엔진 안내 문구"},
+                         "base_card": {"user_card_id": 1, "name": "신한카드 Discount Plan", "tier_min": 1500000,
+                                       "remaining_to_keep": 1451560, "next_tier": 400000, "remaining_to_next": 351560},
+                         "message": "엔진 안내 문구"},
             "solpay_effect": effect_dict if effect else None,
             "effect_note": "참고용 추정"}
 

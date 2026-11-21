@@ -275,10 +275,11 @@ def test_monthly_report_형식과_캐시(report_svc):
             "base_card", "current_order", "message"} <= set(st)
     assert st["current_order"][0]["rank"] == 1 and st["current_order"][0]["name"] in {c["name"] for c in first["cards"]}
     assert isinstance(st["message"], str) and st["message"]
-    base = cards[st["base_card"]["user_card_id"]]
+    base = cards[st["base_card"]["user_card_id"]]           # 구간 칸은 그 카드의 this_month_tiers 그대로 (구간 지키기 문구와 같은 기준)
+    tier_keys = ("tier_min", "remaining_to_keep", "next_tier", "remaining_to_next")
     assert st["base_card"] == {"user_card_id": base["user_card_id"], "name": base["name"],
-                               "target_tier": base["this_month"]["next_tier"],
-                               "remaining": base["this_month"]["remaining_to_next"]}
+                               **{k: base["this_month"][k] for k in tier_keys}}
+    assert set(st["base_card"]) == {"user_card_id", "name", *tier_keys}
 
     ef = first["solpay_effect"]
     assert ef["month"] == "2026-09" and ef["placement_payments"] == 2 and first["effect_note"] is None
@@ -289,6 +290,16 @@ def test_monthly_report_형식과_캐시(report_svc):
 
     second = report_svc.monthly_report(1, at(10, 7, 20))
     assert second["cached"] is True and {**second, "cached": False} == first
+
+
+def test_monthly_report_지난달에_끝난_행사도_효과에_넣는다(report_svc):
+    # 9월에만 진행하고 끝난 행사: 10월 7일의 context 에는 없지만 지난달 효과에는 들어가야 한다
+    sept_only = (datetime(2026, 9, 1, tzinfo=KST), datetime(2026, 9, 30, 23, 59, tzinfo=KST))
+    report_svc.store.promotions = [Promotion(2, "카페", *sept_only, frozenset({10}), issuer="SHINHAN", amount=700,
+                                             title="9월 카페 700원")]
+    assert report_svc.store.context(1, at(10, 7)).promotions == []
+    ef = report_svc.monthly_report(1, at(10, 7))["solpay_effect"]
+    assert ef["actual"]["promotion"] == 700                    # 9/5 카페를 신한카드(101)로 냈다
 
 
 def test_monthly_report_월초_0시(report_svc):

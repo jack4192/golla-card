@@ -495,12 +495,13 @@ class PlacementService:
     def _last_month_effect(self, user_id: int, context, prev_start, this_start) -> dict | None:
         """지난달 SOL페이 효과 (engine.report.replay_month): 지난달 결제화면 결제를 그때 엔진의 1순위 카드로 냈다면.
         시작 상태는 지난달 1일 전 결제로 그때마다 새로 만든다 (월간 맞춤 방식도 지난달 기준, 늦게 들어온 결제 포함).
-        규칙은 지금 규칙, 일정·일정 팝업은 쓰지 않는다. 프로모션은 조건이 맞으면 받았다고 본다 (실제·추천 같은 조건)."""
+        규칙은 지금 규칙, 일정·일정 팝업은 쓰지 않는다. 프로모션은 조건이 맞으면 받았다고 본다 (실제·추천 같은 조건).
+        행사는 저장소 전체 목록에서 결제 시각에 진행 중인 것만 쓴다 (context 의 행사는 at 기준이라 지난달에 끝난 행사가 빠진다)."""
         from engine.report import replay_month
         before = replace(context, payments=[p for p in context.payments if p.paid_at < prev_start])
         payments = sorted((p for p in context.payments if prev_start <= p.paid_at < this_start),
                           key=lambda p: (p.paid_at, p.payment_id))
-        promotions = self._all_promotions(context)
+        promotions = list(getattr(self.store, "promotions", context.promotions)) + list(self.popup_promotions)
         card_of = {c.user_card_id: (c.issuer, c.card_id) for c in context.cards}
         last_base = None
 
