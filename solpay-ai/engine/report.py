@@ -25,6 +25,17 @@ def _has_tiers(tiers) -> bool:
     return any(t > 0 for t in tiers)
 
 
+def this_month_tiers(tiers: list[int], ledger: CardMonth) -> dict:
+    """이번 달 구간 칸. tier_min 은 지난달 실적으로 받는 구간 하한(없으면 None, 구간 0원짜리면 0),
+    remaining_to_keep 은 그 구간을 다음 달에도 받기까지 남은 금액(구간이 없거나 0이면 None),
+    next_tier 는 이번 달 실적 바로 위 구간, remaining_to_next 는 거기까지 남은 금액(없으면 0).
+    실적 조건 없는 카드의 None 처리는 부르는 쪽(card_rows)이 한다."""
+    held = max((t for t in tiers if t <= ledger.prev_perf), default=None)
+    nxt = next((t for t in tiers if t > ledger.perf), None)
+    return {"tier_min": held, "remaining_to_keep": max(held - ledger.perf, 0) if held else None,
+            "next_tier": nxt, "remaining_to_next": nxt - ledger.perf if nxt else 0}
+
+
 def tier_info(tiers: list[int], perf: int) -> dict:
     """첫 구간 달성 여부, 도달한 가장 높은 구간, 첫 구간까지 모자란 금액. 실적 조건이 없으면 모두 None."""
     if not _has_tiers(tiers):
@@ -50,11 +61,7 @@ def card_rows(now: UserState, prev: UserState, catalog: Catalog) -> list[dict]:
         st, old = now.ledger[uc.user_card_id], prev.ledger[uc.user_card_id]
         tiers = list(catalog.tiers[uc.card_id])
         if _has_tiers(tiers):
-            held = max((t for t in tiers if t <= st.prev_perf), default=None)
-            nxt = next((t for t in tiers if t > st.perf), None)
-            tier_fields = {"tier_min": held or None,
-                           "remaining_to_keep": max(held - st.perf, 0) if held else None,
-                           "next_tier": nxt, "remaining_to_next": nxt - st.perf if nxt else 0}
+            tier_fields = this_month_tiers(tiers, st)
         else:
             tier_fields = dict.fromkeys(("tier_min", "remaining_to_keep", "next_tier", "remaining_to_next"))
         out.append({
