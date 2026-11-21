@@ -85,8 +85,8 @@ class CopySettings:
     temperature: float = 0.4
 
     @classmethod
-    def from_env(cls) -> "CopySettings":
-        return cls(os.environ.get("OPENAI_MODEL", "gpt-4o-mini"), float(os.environ.get("PAGE_COPY_TIMEOUT_SEC", 8)))
+    def from_env(cls, timeout_env: str = "PAGE_COPY_TIMEOUT_SEC") -> "CopySettings":
+        return cls(os.environ.get("OPENAI_MODEL", "gpt-4o-mini"), float(os.environ.get(timeout_env, 8)))
 
 
 # ---------- 사실 ----------
@@ -489,6 +489,15 @@ def _type_problems(text: str, allowed: set[str]) -> list[str]:
 
 # ---------- OpenAI ----------
 class PageCopyWriter:
+    """프롬프트·스키마·검사·정해진 문구는 클래스 속성이라 다른 문구(월간 리포트 요약)가 상속해 바꿔 쓴다."""
+    system = SYSTEM
+    schema = SCHEMA
+    schema_name = "page_copy"
+    prompt_version = PROMPT_VERSION
+    settings_env = "PAGE_COPY_TIMEOUT_SEC"          # CopySettings.from_env(writer.settings_env)
+    check = staticmethod(check_copy)
+    template = staticmethod(template_copy)
+
     def __init__(self, client, settings: CopySettings | None = None):
         self.client = client
         self.settings = settings or CopySettings()
@@ -497,7 +506,7 @@ class PageCopyWriter:
         """(문구, "llm" / "template", 기록). 기록: ms, model, tokens_in, tokens_out, retries, reason(템플릿일 때)."""
         started = time.monotonic()
         deadline = started + self.settings.timeout_sec
-        log = {"model": self.settings.model, "prompt_version": PROMPT_VERSION, "tokens_in": 0, "tokens_out": 0,
+        log = {"model": self.settings.model, "prompt_version": self.prompt_version, "tokens_in": 0, "tokens_out": 0,
                "retries": 0}
 
         def done(copy: dict, source: str, reason: str | None = None):
@@ -507,8 +516,8 @@ class PageCopyWriter:
             return copy, source, log
 
         if self.client is None:
-            return done(template_copy(facts), "template", "no_api_key")
-        messages = [{"role": "system", "content": SYSTEM},
+            return done(self.template(facts), "template", "no_api_key")
+        messages = [{"role": "system", "content": self.system},
                     {"role": "user", "content": json.dumps(facts, ensure_ascii=False)}]
         try:
             reply = self._call(messages, deadline, log)
@@ -524,9 +533,9 @@ class PageCopyWriter:
                 if not problems:
                     return done(copy, "llm")
             log["problems"] = problems
-            return done(template_copy(facts), "template", "guard")
+            return done(self.template(facts), "template", "guard")
         except Exception as e:                      # OpenAI 장애·시간 초과·응답 형식 오류
-            return done(template_copy(facts), "template", type(e).__name__)
+            return done(self.template(facts), "template", type(e).__name__)
 
     def _call(self, messages: list[dict], deadline: float, log: dict) -> str:
         left = deadline - time.monotonic()
@@ -534,19 +543,18 @@ class PageCopyWriter:
             raise TimeoutError("제한 시간 초과")
         resp = self.client.chat.completions.create(
             model=self.settings.model, messages=messages, temperature=self.settings.temperature, timeout=left,
-            response_format={"type": "json_schema", "json_schema": {"name": "page_copy", "strict": True, "schema": SCHEMA}})
+            response_format={"type": "json_schema", "json_schema": {"name": self.schema_name, "strict": True, "schema": self.schema}})
         if getattr(resp, "usage", None) is not None:
             log["tokens_in"] += resp.usage.prompt_tokens or 0
             log["tokens_out"] += resp.usage.completion_tokens or 0
         return resp.choices[0].message.content or ""
 
-    @staticmethod
-    def _parse(reply: str, facts: dict) -> tuple[dict | None, list[str]]:
+    def _parse(self, reply: str, facts: dict) -> tuple[dict | None, list[str]]:
         try:
             copy = json.loads(reply)
         except json.JSONDecodeError:
             return None, ["JSON 형식이 아닙니다"]
-        return copy, check_copy(copy, facts)
+        return copy, self.check(copy, facts)
 
 
 def attach_copy(page: dict, copy: dict) -> dict:
