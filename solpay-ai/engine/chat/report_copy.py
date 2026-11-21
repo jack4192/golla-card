@@ -134,6 +134,12 @@ def check_copy(copy, facts: dict) -> list[str]:
         shown = {v for v, unit in guard.numbers_in_text(text) if unit == "원" and v > 0}
         if not any(guard._known(v, {float(-total)}) for v in shown):
             problems.append(f"덜 받은 금액 {-total:,}원을 쓰고 이유를 한 문장 덧붙이세요")
+        ef = facts["effect"]
+        words = ["구간", "실적", "프로모션",
+                 *(t["card"] for t in ef.get("tier_changes", [])),
+                 *(c[k] for c in ef.get("top_changes", []) for k in ("category", "why"))]
+        if not any(w and w in text for w in words):
+            problems.append("덜 받은 이유(실적 구간·업종 등)를 한 문장 덧붙이세요")
     return problems
 
 
