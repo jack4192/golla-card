@@ -1,6 +1,7 @@
-from tests.conftest import USER_CARDS, at, pay
+from tests.conftest import USER_CARDS, at, online, pay
 from engine.domain import User
-from engine.report import STRATEGY_DESC, STRATEGY_LABEL, card_rows, reason_group, tier_info, this_month_tiers
+from engine.report import (STRATEGY_DESC, STRATEGY_LABEL, card_rows, reason_group, replay_month, tier_info,
+                           this_month_tiers)
 from engine.state import UserState
 
 
@@ -116,3 +117,101 @@ def test_reason_group():
     assert reason_group("PROMOTION") == "프로모션" and reason_group("PROMOTION_CARD") == "프로모션"
     assert reason_group("PERFORMANCE") == reason_group("HOLD") == reason_group("BASE_CHANGED") == "실적 채우기"
     assert reason_group("TIME_BENEFIT") == "혜택 비교"
+
+
+# ---------- SOL페이 효과 (지난달) ----------
+
+def _warm(catalog, params, per_card):
+    """9월 실적만 넣고 10월로 넘기지 않은 상태를 만드는 start (replay_month 가 10월로 넘긴다)."""
+    def start():
+        s = UserState(User(1), USER_CARDS, catalog, params)
+        for uc, amount in per_card.items():
+            s.apply(online(uc, amount, at(9, 15)))
+        return s
+    return start
+
+
+def _no_promo(card, p):
+    return 0
+
+
+def test_replay_month_같은_카드면_차이_0(catalog, params):
+    payments = [pay(101, 10_000, "CAFE", at(10, 5)), online(101, 50_000, at(10, 6)), pay(101, 10_000, "CAFE", at(10, 8))]
+    out = replay_month(_warm(catalog, params, {101: 320_000}), payments, lambda view, p: (p.user_card_id, "TIME_BENEFIT"),
+                       lambda card, p: 300, catalog, "2026-10")
+    assert out["month"] == "2026-10" and out["placement_payments"] == 2 and out["changed_payments"] == 0
+    assert out["actual"] == out["recommended"] == {"card": 2_000, "promotion": 600, "next_month": 0}
+    assert out["diff"] == {"card": 0, "promotion": 0, "next_month": 0, "total": 0}
+    assert out["top_changes"] == [] and out["tier_changes"] == []
+
+
+def test_replay_month_덜_받으면_음수와_이유(catalog, params):
+    payments = [pay(101, 10_000, "CAFE", at(10, 5))]
+    out = replay_month(_warm(catalog, params, {101: 320_000}), payments, lambda view, p: (102, "PERFORMANCE"),
+                       _no_promo, catalog, "2026-10")
+    assert out["changed_payments"] == 1
+    assert out["actual"]["card"] == 1_000 and out["recommended"]["card"] == 0
+    assert out["diff"]["card"] == -1_000
+    assert out["diff"]["total"] == out["diff"]["card"] + out["diff"]["promotion"] + out["diff"]["next_month"] == -1_000
+    assert out["top_changes"][0] == {"day": "2026-10-05", "category": "카페", "amount": 10_000,
+                                     "actual_card": catalog.card_label(1), "recommended_card": catalog.card_label(2),
+                                     "diff": -1_000, "why": "실적 채우기"}
+
+
+def test_replay_month_온라인_결제는_바꾸지_않는다(catalog, params):
+    seen = []
+
+    def choose(view, p):
+        assert p.is_placement, "온라인 결제로 choose 를 불렀다"
+        seen.append(view.ledger[101].perf)
+        return 102, "TIME_BENEFIT"
+
+    def promo(card, p):
+        assert p.is_placement, "온라인 결제로 promo 를 불렀다"
+        return 0
+
+    payments = [online(101, 300_000, at(10, 2), synced_at=at(10, 6)),     # 6일에야 엔진이 안다
+                pay(101, 10_000, "CAFE", at(10, 5)), pay(101, 10_000, "CAFE", at(10, 8))]
+    out = replay_month(_warm(catalog, params, {101: 320_000}), payments, choose, promo, catalog, "2026-10")
+    assert seen == [0, 300_000]          # 5일엔 9월 실적이 아니라 10월 0원, 8일엔 동기화된 온라인 결제가 보인다
+    assert out["placement_payments"] == 2 and out["changed_payments"] == 2
+    assert out["tier_changes"] == []     # 온라인 30만 원은 추천에서도 101 에 남아 30만 구간이 같다
+    assert out["actual"] == {"card": 2_000, "promotion": 0, "next_month": 2_000}
+    assert out["recommended"] == {"card": 0, "promotion": 0, "next_month": 0}
+
+
+def test_replay_month_결제화면_결제가_없으면_None(catalog, params):
+    def choose(view, p):
+        raise AssertionError("choose 를 불렀다")
+    start = _warm(catalog, params, {101: 320_000})
+    assert replay_month(start, [online(101, 10_000, at(10, 3))], choose, _no_promo, catalog, "2026-10") is None
+    assert replay_month(start, [], choose, _no_promo, catalog, "2026-10") is None
+
+
+def test_replay_month_구간이_달라진_카드(catalog, params):
+    payments = [pay(101, 110_000, "TRANSIT", at(10, 5), merchant=20), pay(101, 110_000, "TRANSIT", at(10, 9), merchant=20)]
+    out = replay_month(_warm(catalog, params, {101: 320_000}), payments, lambda view, p: (103, "PERFORMANCE"),
+                       lambda card, p: 500 if card == 103 else 0, catalog, "2026-10")
+    assert out["tier_changes"] == [{"card": catalog.card_label(3), "first_tier": 200_000, "actual_perf": 0,
+                                    "recommended_perf": 220_000, "actual_tier": None, "recommended_tier": 200_000}]
+    # 10월 카드 혜택은 같고, 103 프로모션 500원 × 2, 11월 교통 5% (한도 5천)
+    assert out["diff"] == {"card": 0, "promotion": 1_000, "next_month": 5_000, "total": 6_000}
+    assert [c["diff"] for c in out["top_changes"]] == [500, 500]     # 결제별 차이 = 카드 혜택 + 프로모션
+    assert [c["day"] for c in out["top_changes"]] == ["2026-10-05", "2026-10-09"]
+
+
+def test_replay_month_이유는_차이_큰_순_3건(catalog, params):
+    start = _warm(catalog, params, {101: 320_000, 102: 320_000})
+    to_102 = lambda view, p: (102, "TIME_BENEFIT")
+    cafe = lambda amount, day: pay(101, amount, "CAFE", at(10, day))
+    rest = lambda amount, day: pay(101, amount, "REST", at(10, day), merchant=11)
+
+    more = replay_month(start, [rest(20_000, 3), cafe(10_000, 4), rest(30_000, 5)], to_102, _no_promo, catalog, "2026-10")
+    assert more["diff"]["total"] == 4_000
+    assert [c["diff"] for c in more["top_changes"]] == [3_000, 2_000, -1_000]     # 더 받은 결제 먼저
+
+    less = replay_month(start, [cafe(10_000, 3), cafe(30_000, 4), rest(20_000, 5), cafe(20_000, 6)], to_102, _no_promo,
+                        catalog, "2026-10")
+    assert less["diff"]["total"] == -4_000
+    assert [c["diff"] for c in less["top_changes"]] == [-3_000, -2_000, -1_000]   # 덜 받은 결제 먼저, 3건만
+    assert [c["category"] for c in less["top_changes"]] == ["카페"] * 3

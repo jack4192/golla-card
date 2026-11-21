@@ -1,8 +1,14 @@
 """월간 리포트: 카드별 이번 달·지난달 숫자. 숫자는 엔진 상태(원장)에서만 가져온다."""
+import heapq
+from collections.abc import Callable
+from dataclasses import replace
+
 from engine.benefit_calc import Card, CardMonth, cap_for, total_cap
 from engine.catalog import Catalog
+from engine.domain import Payment
 from engine.params import (BASE_ORDER_FIRST_TIER, BASE_ORDER_MAIN_TOP, BASE_ORDER_NONE, BASE_ORDER_TOP_TIER,
                            BASE_ORDER_VALUE)
+from engine.perf_value import month_benefit
 from engine.state import UserState
 
 STRATEGY_LABEL = {BASE_ORDER_FIRST_TIER: "첫 구간 우선", BASE_ORDER_MAIN_TOP: "주력 카드 우선",
@@ -92,3 +98,76 @@ def card_rows(now: UserState, prev: UserState, catalog: Catalog) -> list[dict]:
             "synced_note": uc.issuer != "SHINHAN",
         })
     return out
+
+
+def _next_month(state: UserState, assigned: dict[int, list[Payment]], catalog: Catalog) -> int:
+    """카드별로 지난달 결제를 지난달 실적 구간으로 이번 달에 똑같이 했다면 받을 혜택의 합 (월간 맞춤 방식과 같은 추정)."""
+    return sum(month_benefit(catalog.cards[uc.card_id], assigned[uc.user_card_id],
+                             state.ledger[uc.user_card_id].perf, catalog) for uc in state.cards)
+
+
+def _tier_changes(actual: UserState, recommended: UserState, catalog: Catalog) -> list[dict]:
+    """실제와 추천의 도달 구간(하한, 없으면 None)이 다른 카드."""
+    out = []
+    for uc in actual.cards:
+        tiers = list(catalog.tiers[uc.card_id])
+        a_perf, r_perf = actual.ledger[uc.user_card_id].perf, recommended.ledger[uc.user_card_id].perf
+        a, r = tier_info(tiers, a_perf), tier_info(tiers, r_perf)
+        if a["tier_reached"] != r["tier_reached"]:
+            out.append({"card": catalog.card_label(uc.card_id), "first_tier": a["first_tier"],
+                        "actual_perf": a_perf, "recommended_perf": r_perf,
+                        "actual_tier": a["tier_reached"], "recommended_tier": r["tier_reached"]})
+    return out
+
+
+def replay_month(start: Callable[[], UserState], payments: list[Payment],
+                 choose: Callable[[UserState, Payment], tuple[int, str]], promo: Callable[[int, Payment], int],
+                 catalog: Catalog, month: str) -> dict | None:
+    """지난달 SOL페이 효과: 지난달 결제(시간순)를 다시 흘려 결제화면 결제만 choose 가 고른 카드로 냈다면.
+    start() 는 지난달 1일 직전까지 반영한 새 상태를 돌려준다 (세 번 부른다: 실제·추천·엔진이 보는 상태).
+    엔진이 보는 상태는 결제화면 결제를 바로, 나머지는 visible_at 이후에 안다 (재생 평가 replay_user 와 같다).
+    choose(view, p) → (카드, 이유 코드), promo(카드, p) → 그 결제의 프로모션 (결제화면 결제만 부른다).
+    결제화면 결제가 없으면 None."""
+    if not any(p.is_placement for p in payments):
+        return None
+    actual, recommended, view = start(), start(), start()
+    for state in (actual, recommended, view):
+        state.roll_to(month)
+    card_of = actual.card_ids
+    sums = {"actual": {"card": 0, "promotion": 0}, "recommended": {"card": 0, "promotion": 0}}
+    assigned = {"actual": {uc: [] for uc in card_of}, "recommended": {uc: [] for uc in card_of}}
+    pending, changes, placements = [], [], 0
+    for seq, p in enumerate(payments):
+        while pending and pending[0][0] <= p.paid_at:
+            view.apply(heapq.heappop(pending)[2])
+        chosen, code = choose(view, p) if p.is_placement else (p.user_card_id, None)
+        moved = replace(p, user_card_id=chosen)
+        got = {"actual": actual.apply(p), "recommended": recommended.apply(moved)}
+        assigned["actual"][p.user_card_id].append(p)
+        assigned["recommended"][chosen].append(moved)
+        for side in sums:
+            sums[side]["card"] += got[side]
+        if not p.is_placement:
+            heapq.heappush(pending, (p.visible_at, seq, moved))
+            continue
+        placements += 1
+        view.apply(moved)
+        promo_a = promo(p.user_card_id, p)
+        promo_r = promo_a if chosen == p.user_card_id else promo(chosen, p)
+        sums["actual"]["promotion"] += promo_a
+        sums["recommended"]["promotion"] += promo_r
+        if chosen != p.user_card_id:
+            changes.append((got["recommended"] + promo_r - got["actual"] - promo_a, p, chosen, code))
+
+    sums["actual"]["next_month"] = _next_month(actual, assigned["actual"], catalog)
+    sums["recommended"]["next_month"] = _next_month(recommended, assigned["recommended"], catalog)
+    diff = {k: sums["recommended"][k] - sums["actual"][k] for k in ("card", "promotion", "next_month")}
+    diff["total"] = diff["card"] + diff["promotion"] + diff["next_month"]
+    changes.sort(key=lambda c: c[0], reverse=diff["total"] >= 0)      # 덜 받았으면 덜 받은 결제부터
+    top = [{"day": p.paid_at.date().isoformat(), "category": catalog.category_name(p.category), "amount": p.amount,
+            "actual_card": catalog.card_label(card_of[p.user_card_id]),
+            "recommended_card": catalog.card_label(card_of[chosen]), "diff": d, "why": reason_group(code)}
+           for d, p, chosen, code in changes[:3]]
+    return {"month": month, "placement_payments": placements, "changed_payments": len(changes),
+            "actual": sums["actual"], "recommended": sums["recommended"], "diff": diff,
+            "top_changes": top, "tier_changes": _tier_changes(actual, recommended, catalog)}
