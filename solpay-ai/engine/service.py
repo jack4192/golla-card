@@ -1,7 +1,7 @@
 """배치 엔진 진입점 (설계서 v4.1).
 하루 일정으로 상황 파악 → 사용자 규칙 → 일정 프로모션 카드 → 방식·기본 카드 → 점수 → 교체 → 문구."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from engine.catalog import Catalog
@@ -139,6 +139,8 @@ class PlacementService:
         self.popups: dict = {}
         # 맞춤 추천 페이지 결과 (사용자, 날짜) → 응답. 같은 날 다시 열면 그대로 준다 (재시작하면 다시 계산).
         self.pages: dict = {}
+        # 월간 리포트 (사용자, 날짜) → 응답. 리포트는 저장하지 않고 하루 단위 메모리 캐시만 둔다 (OpenAI 비용 절약).
+        self.reports: dict = {}
         self._popup_promotions: list[Promotion] | None = None
 
     @property
@@ -307,9 +309,10 @@ class PlacementService:
                 "used_card": used_card, "used_benefit": values.get(used_card) if used_card is not None else None,
                 "used_promotion": promos.get(used_card) if used_card is not None else None}
 
-    def preview(self, user_id: int, at, known: KnownPayment | None = None) -> RankResult:
-        """추천 기록을 남기지 않는 배치 (챗봇 설명·가정 계산용). known 이 있으면 업종 예측 없이 그 결제로 계산한다."""
-        context = self.store.context(user_id, at)
+    def preview(self, user_id: int, at, known: KnownPayment | None = None, context=None) -> RankResult:
+        """추천 기록을 남기지 않는 배치 (챗봇 설명·가정 계산용). known 이 있으면 업종 예측 없이 그 결제로 계산한다.
+        이미 읽은 context 가 있으면 다시 읽지 않는다."""
+        context = context or self.store.context(user_id, at)
         state = self.build_state(context, at)
         return self.engine.rank_state(state, RankRequest(user_id, at), context.rules, context.weights,
                                       self._all_promotions(context), context.last_base, known=known,
@@ -454,4 +457,67 @@ class PlacementService:
         state = self.build_state(context, at)
         rows = [p for p in context.payments if at - timedelta(days=days) <= p.paid_at < at]
         return [m for m in missed_benefit(state, rows, self.engine.params.switch_threshold) if m["gain"] > 0][:3]
+
+    # ---------- 월간 리포트 (설계서 2026-11-22-monthly-report-design.md) ----------
+    def monthly_report(self, user_id: int, at, writer=None) -> dict:
+        """이번 달(at 까지, 진행 중)·지난달(확정) 카드별 숫자, 배치 전략과 근거, 지난달 SOL페이 효과, 요약 문장.
+        숫자는 엔진이 정하고 writer(ReportCopyWriter)는 문장만 쓴다 (None 이면 정해진 문구).
+        저장하지 않고, 같은 날 다시 부르면 메모리에 둔 결과를 준다 (cached)."""
+        from engine.chat.report_copy import facts_of, template_copy
+        from engine.report import card_rows, month_starts, strategy_now, totals_of
+        key = (user_id, at.date())
+        if key in self.reports:
+            return {**self.reports[key], "cached": True}
+        context = self.store.context(user_id, at)
+        prev_start, this_start = month_starts(at)
+        month, prev_month = ym_of(this_start), ym_of(prev_start)
+        now = self.build_state(context, at)
+        now.roll_to(month)
+        # 지난달은 지금 보이는 결제 중 이번 달 1일 전 결제만으로 다시 만든다 (늦게 들어온 타사 결제 포함)
+        prev = self.build_state(replace(context, payments=[p for p in context.payments if p.paid_at < this_start]), at)
+        prev.roll_to(prev_month)
+        cards = card_rows(now, prev, self.engine.catalog)
+        strategy = {**self.strategy_info(user_id, at, context),
+                    **strategy_now(self.preview(user_id, at, context=context), cards)}
+        effect = self._last_month_effect(user_id, context, prev_start, this_start)
+        report = {"user_id": user_id, "at": at.isoformat(), "month": month, "prev_month": prev_month,
+                  "totals": totals_of(cards), "cards": cards, "strategy": strategy, "solpay_effect": effect,
+                  "effect_note": None if effect else "지난달 결제화면 결제가 없어 비교하지 않았어요"}
+        facts = facts_of(report)
+        if writer is not None:
+            copy, source, log = writer.write(facts)
+        else:
+            copy, source, log = template_copy(facts), "template", {"reason": "no_writer"}
+        result = {**report, "summary": copy, "copy_source": source, "copy_log": log}
+        self.reports[key] = result
+        return {**result, "cached": False}
+
+    def _last_month_effect(self, user_id: int, context, prev_start, this_start) -> dict | None:
+        """지난달 SOL페이 효과 (engine.report.replay_month): 지난달 결제화면 결제를 그때 엔진의 1순위 카드로 냈다면.
+        시작 상태는 지난달 1일 전 결제로 그때마다 새로 만든다 (월간 맞춤 방식도 지난달 기준, 늦게 들어온 결제 포함).
+        규칙은 지금 규칙, 일정·일정 팝업은 쓰지 않는다. 프로모션은 조건이 맞으면 받았다고 본다 (실제·추천 같은 조건)."""
+        from engine.report import replay_month
+        before = replace(context, payments=[p for p in context.payments if p.paid_at < prev_start])
+        payments = sorted((p for p in context.payments if prev_start <= p.paid_at < this_start),
+                          key=lambda p: (p.paid_at, p.payment_id))
+        promotions = self._all_promotions(context)
+        card_of = {c.user_card_id: (c.issuer, c.card_id) for c in context.cards}
+        last_base = None
+
+        def choose(view, p):
+            nonlocal last_base
+            result = self.engine.rank_state(view, RankRequest(user_id, p.paid_at), context.rules, context.weights,
+                                            [x for x in promotions if x.active(p.paid_at)], last_base)
+            last_base = result.base_card
+            return result.cards[0].user_card_id, result.reason_code
+
+        def promo(user_card_id, p):
+            if p.merchant_id is None:
+                return 0
+            issuer, card_id = card_of[user_card_id]
+            return max((x.value(p.merchant_id, issuer, card_id, p.amount, p.paid_at)
+                        for x in promotions if x.active(p.paid_at)), default=0)
+
+        return replay_month(lambda: self.build_state(before, prev_start), payments, choose, promo,
+                            self.engine.catalog, ym_of(prev_start))
 

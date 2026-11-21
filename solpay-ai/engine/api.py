@@ -199,10 +199,12 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
     async def lifespan(app: FastAPI):
         from engine.chat.agent import ChatAgent, openai_client
         from engine.chat.page_copy import CopySettings, PageCopyWriter
+        from engine.chat.report_copy import ReportCopyWriter
         app.state.service = service or build_service()
         client = openai_client() if chat_client is _DEFAULT else chat_client
         app.state.chat = ChatAgent(app.state.service, client)
         app.state.page_writer = PageCopyWriter(client, CopySettings.from_env())
+        app.state.report_writer = ReportCopyWriter(client, CopySettings.from_env(ReportCopyWriter.settings_env))
         store = app.state.service.store
         purge = None
         if getattr(store, "purge_daily", False):          # DB 저장소: 지난 일정은 요청 밖에서 지운다 (engine/jobs.py)
@@ -305,6 +307,18 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         except UnknownUser:
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
 
+    @app.get("/internal/users/{user_id}/monthly-report", dependencies=[Depends(check_token)])
+    def monthly_report(user_id: int, request: Request, at: datetime | None = None,
+                       svc: PlacementService = Depends(current)) -> dict:
+        """월간 카드 리포트. 이번 달(at 이 속한 달, at 까지)·지난달 카드별 실적·혜택, 배치 전략과 근거,
+        지난달 SOL페이 효과(결제화면 결제를 추천 1순위 카드로 냈다면: 카드 혜택·프로모션·이번 달 혜택 추정 차이와 이유),
+        요약 문장(summary). 숫자는 엔진, 문장은 OpenAI (실패하면 정해진 문구 copy_source=template). 같은 날 다시 부르면 cached=true."""
+        try:
+            return svc.monthly_report(user_id, (at or datetime.now(KST)).astimezone(KST),
+                                      request.app.state.report_writer)
+        except UnknownUser:
+            raise HTTPException(status_code=404, detail="없는 사용자입니다")
+
     @app.post("/internal/users/{user_id}/card-recommendation", dependencies=[Depends(check_token)])
     def card_recommendation(user_id: int, body: AtBody, svc: PlacementService = Depends(current)) -> dict:
         """신규 카드 추천. 계기(일정·특수 업종 방문·반복 소비·3일 간격)가 없거나 이득이 작으면 recommend=false."""
@@ -390,6 +404,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
             raise HTTPException(status_code=405, detail="운영 저장소는 초기화할 수 없습니다")
         svc.popups.clear()
         svc.pages.clear()
+        svc.reports.clear()
         return {"reset": True}
 
     @app.put("/internal/users/{user_id}/rules", dependencies=[Depends(check_token)])
