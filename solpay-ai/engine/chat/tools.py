@@ -12,13 +12,14 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from engine.benefit_calc import DAY_NAMES, cap_for, total_cap
+from engine.benefit_calc import DAY_NAMES
 from engine.chat.new_card import recommend_new_cards
 from engine.chat.search import find_cards, find_categories, find_merchants, norm
 from engine.domain import KnownPayment
 from engine.params import (BASE_ORDER_FIRST_TIER, BASE_ORDER_MAIN_TOP, BASE_ORDER_NONE, BASE_ORDER_TOP_TIER,
                            BASE_ORDER_VALUE)
 from engine.privacy import redact
+from engine.report import limits_of
 from engine.rules import RuleError, parse_rule, resolve
 from engine.slots import ym_of
 
@@ -329,18 +330,6 @@ class ToolBox:
             st, card = state.ledger[uc.user_card_id], self.catalog.cards[uc.card_id]
             tiers = list(self.catalog.tiers[uc.card_id])
             nxt = next((t for t in tiers if t > st.perf), None)
-            limits = []
-            total = total_cap(card, st.prev_perf)
-            if total is not None:
-                limits.append({"name": "카드 월 통합 한도", "used": st.discount, "limit": total,
-                               "left": max(total - st.discount, 0)})
-            for group in card.cap_tiers:
-                ok, cap = cap_for(card, group, st.prev_perf)
-                if not ok or cap is None:
-                    continue
-                label = next((b.name for b in card.benefits if b.cap_group == group), group)
-                used = st.cap_used.get(group, 0)
-                limits.append({"name": label, "used": used, "limit": cap, "left": max(cap - used, 0)})
             held = max((t for t in tiers if t <= st.prev_perf), default=None)
             rows.append({
                 "user_card_id": uc.user_card_id, "name": self.names[uc.user_card_id],
@@ -348,7 +337,7 @@ class ToolBox:
                 "this_month_tier_min": held,
                 "remaining_to_keep_tier": max(held - st.perf, 0) if held else None,
                 "next_tier_min": nxt, "remaining_to_next_tier": nxt - st.perf if nxt else 0,
-                "benefit_this_month": st.discount, "limits": limits,
+                "benefit_this_month": st.discount, "limits": limits_of(card, st),
                 "note": "다른 카드사 카드는 어제까지 결제 기준" if uc.issuer != "SHINHAN" else None,
             })
         self.blocks.append({"type": "card_status", "month": ym_of(self.at), "rows": rows})
