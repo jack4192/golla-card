@@ -2,10 +2,11 @@
 import heapq
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import datetime, timedelta
 
 from engine.benefit_calc import Card, CardMonth, cap_for, total_cap
 from engine.catalog import Catalog
-from engine.domain import Payment
+from engine.domain import Payment, RankResult
 from engine.params import (BASE_ORDER_FIRST_TIER, BASE_ORDER_MAIN_TOP, BASE_ORDER_NONE, BASE_ORDER_TOP_TIER,
                            BASE_ORDER_VALUE)
 from engine.perf_value import month_benefit
@@ -98,6 +99,33 @@ def card_rows(now: UserState, prev: UserState, catalog: Catalog) -> list[dict]:
             "synced_note": uc.issuer != "SHINHAN",
         })
     return out
+
+
+def month_starts(at: datetime) -> tuple[datetime, datetime]:
+    """(지난달 1일 0시, 이번 달 1일 0시). at 의 시간대를 그대로 쓴다."""
+    this = at.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return (this - timedelta(days=1)).replace(day=1), this
+
+
+def totals_of(rows: list[dict]) -> dict:
+    """카드별 혜택(카드사 혜택, 프로모션 제외)의 합."""
+    return {"this_month_benefit": sum(r["this_month"]["benefit"] for r in rows),
+            "prev_month_benefit": sum(r["prev_month"]["benefit"] for r in rows)}
+
+
+def strategy_now(result: RankResult, rows: list[dict]) -> dict:
+    """지금 결제 화면(기록을 남기지 않는 preview)에서 고른 것: 실적을 채우는 기본 카드와 그 카드의 이번 달 다음 구간·남은 금액
+    (최고 구간이면 target_tier None, remaining 0), 보여 주는 카드 순서, 1순위 카드 안내 문구."""
+    by_id = {r["user_card_id"]: r for r in rows}
+    base = by_id.get(result.base_card)
+    return {
+        "base_card": {"user_card_id": base["user_card_id"], "name": base["name"],
+                      "target_tier": base["this_month"]["next_tier"],
+                      "remaining": base["this_month"]["remaining_to_next"]} if base else None,
+        "current_order": [{"rank": c.rank, "user_card_id": c.user_card_id, "name": by_id[c.user_card_id]["name"]}
+                          for c in result.cards[:result.display_count]],
+        "message": result.cards[0].message if result.cards else "",
+    }
 
 
 def _next_month(state: UserState, assigned: dict[int, list[Payment]], catalog: Catalog) -> int:

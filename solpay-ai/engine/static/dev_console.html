@@ -66,12 +66,15 @@
   .pagegrid { grid-template-columns: 440px minmax(0, 1fr); }
   .pagegrid > div:last-child { overflow-x: auto; }
   @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
-  @media (max-width: 1000px) { .pagegrid { grid-template-columns: 1fr; } }
+  .reportgrid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+  .reportgrid > div { overflow-x: auto; }
+  td.plus { color: var(--ok); } td.minus { color: var(--err); }
+  @media (max-width: 1000px) { .pagegrid, .reportgrid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 <header>
-  <h1>SOL페이 AI 테스트 <span class="muted small">카드 배치 · 챗봇 · 카드 추천 · 연말정산 (개발용)</span></h1>
+  <h1>SOL페이 AI 테스트 <span class="muted small">카드 배치 · 챗봇 · 카드 추천 · 연말정산 · 월간 리포트 (개발용)</span></h1>
   <div class="row">
     <label>사용자 <select id="user">
       <option value="1">test1</option><option value="2">test2</option><option value="3">test3</option>
@@ -95,6 +98,7 @@
   <button data-tab="chat">2. 챗봇</button>
   <button data-tab="page">3. 카드 추천</button>
   <button data-tab="missed">4. 연말정산</button>
+  <button data-tab="report">5. 월간 리포트</button>
 </nav>
 <main>
   <!-- 1. 카드 배치 -->
@@ -149,6 +153,16 @@
     </div>
     <div id="missedErr" class="err"></div>
     <div id="missedOut"></div>
+  </section>
+
+  <!-- 5. 월간 리포트 -->
+  <section class="tab" id="tab-report">
+    <div class="row">
+      <button class="primary" id="reportBtn">월간 리포트 보기</button>
+      <span class="muted small">위 날짜·시각 기준 이번 달(그 시각까지)과 지난달. 숫자는 엔진, 요약 문장은 OpenAI (키가 없거나 검사에 걸리면 정해진 문구). 같은 날 다시 부르면 저장분을 줍니다.</span>
+    </div>
+    <div id="reportErr" class="err"></div>
+    <div id="reportOut"></div>
   </section>
 </main>
 
@@ -405,6 +419,80 @@ async function openMissed() {
     <div><h2>응답 <span class="muted small">${ms}ms</span></h2>${pre(list)}</div></div>`;
 }
 $("missedBtn").addEventListener("click", () => busy($("missedBtn"), "missedErr", openMissed));
+
+// ---------- 5. 월간 리포트 ----------
+const signed = (n) => (n > 0 ? "+" : "") + won(n);
+const diffCell = (n) => `<td class="num ${n > 0 ? "plus" : n < 0 ? "minus" : ""}">${signed(n)}</td>`;
+const tierText = (t) => (t == null ? "-" : won(t));
+async function openReport() {
+  const t = performance.now();
+  const r = await api("GET", `/internal/users/${userId()}/monthly-report?at=${encodeURIComponent(at())}`);
+  const ms = Math.round(performance.now() - t);
+  const log = r.copy_log || {};
+  const badges = `<div class="small" style="margin:10px 0">
+    <span class="badge">이번 달 ${esc(r.month)} · 지난달 ${esc(r.prev_month)}</span>
+    <span class="badge ${r.copy_source === "llm" ? "ok" : "warn"}">문구 ${esc(r.copy_source)}</span>
+    ${r.cached ? '<span class="badge warn">같은 날 저장분</span>' : ""}
+    <span class="badge">응답 ${ms}ms${log.ms != null ? ` (문구 ${log.ms}ms${log.retries ? ", 다시 씀" : ""})` : ""}</span>
+    ${log.reason ? `<span class="badge warn">${esc(log.reason)}</span>` : ""}</div>`;
+  const summary = `<div class="phone" style="margin-top:0"><div class="sub">요약 (앱 화면에 보일 문장)</div>
+    <h3>${esc(r.summary?.headline)}</h3><ul>${(r.summary?.points || []).map((p) => `<li>${esc(p)}</li>`).join("")}</ul></div>`;
+  $("reportOut").innerHTML = badges + `<div class="grid2 reportgrid"><div>${summary}
+      <h2>카드별 숫자 <span class="muted small">카드사 혜택만 (프로모션은 SOL페이 효과에만)</span></h2>${reportCards(r)}
+      <h2>카드 배치 전략</h2>${reportStrategy(r.strategy)}
+      <h2>지난달 SOL페이 효과 <span class="muted small">결제화면 결제를 추천 1순위 카드로 냈다면</span></h2>${reportEffect(r)}</div>
+    <div><h2>응답 <span class="muted small">${ms}ms</span></h2>${pre(r)}</div></div>`;
+}
+function reportCards(r) {
+  const next = (m) => (m.next_tier != null ? `${won(m.remaining_to_next)}<div class="muted small">${won(m.next_tier)} 구간</div>`
+    : m.tier_min == null && m.remaining_to_next == null ? '<span class="muted">실적 조건 없음</span>' : "최고 구간");
+  const first = (m) => (m.achieved == null ? '<span class="muted">-</span>'
+    : m.achieved ? `<span class="badge ok">달성</span><div class="muted small">${won(m.tier_reached)} 구간</div>`
+    : `<span class="badge warn">미달</span><div class="muted small">${won(m.first_tier)}까지 ${won(m.short_of_first)}</div>`);
+  return `<table><tr><th>카드</th><th class="num">이번 달 실적</th><th class="num">받은 혜택</th><th class="num">다음 구간까지</th>
+    <th class="num">지난달 실적</th><th class="num">지난달 혜택</th><th>첫 구간 달성</th></tr>` + r.cards.map((c) => `<tr>
+    <td>${esc(c.name)}<div class="muted small">${esc(c.issuer)}${c.synced_note ? " · 어제까지 기준" : ""}</div></td>
+    <td class="num">${won(c.this_month.perf)}<div class="muted small">${c.this_month.payments}건</div></td>
+    <td class="num">${won(c.this_month.benefit)}</td><td class="num">${next(c.this_month)}</td>
+    <td class="num">${won(c.prev_month.perf)}<div class="muted small">${c.prev_month.payments}건</div></td>
+    <td class="num">${won(c.prev_month.benefit)}</td><td>${first(c.prev_month)}</td></tr>`).join("") +
+    `<tr><th>합계</th><td></td><td class="num"><b>${won(r.totals.this_month_benefit)}</b></td><td></td><td></td>
+    <td class="num"><b>${won(r.totals.prev_month_benefit)}</b></td><td></td></tr></table>`;
+}
+function reportStrategy(s) {
+  const base = s.base_card;
+  const compare = s.compare?.length ? `<table style="margin-top:6px"><tr><th>방식</th><th class="num">최근 ${s.compare_months}개월 다시 돌린 혜택</th></tr>` +
+    s.compare.map((c) => `<tr class="${c.method === s.current ? "rank1" : ""}"><td>${esc(c.label)}</td><td class="num">${won(c.benefit)}</td></tr>`).join("") + "</table>"
+    : '<div class="muted small">방식 비교 없음</div>';
+  return `<div><span class="badge brand">${esc(s.label || s.current)}</span>${esc(s.description || "")}</div>
+    <div class="small" style="margin-top:4px">고른 근거: ${esc(s.chosen_by_label)}</div>${compare}
+    <div class="small" style="margin-top:8px">지금 채우는 카드: ${base ? `<b>${esc(base.name)}</b>${base.target_tier != null
+      ? ` · ${won(base.target_tier)} 구간까지 ${won(base.remaining)}` : " · 최고 구간"}` : "-"}</div>
+    <div class="small">결제 화면 순서: ${(s.current_order || []).map((c) => `${c.rank}. ${esc(c.name)}`).join(" / ") || "-"}</div>
+    ${s.message ? `<div class="small muted">안내 문구: ${esc(s.message)}</div>` : ""}`;
+}
+function reportEffect(r) {
+  const e = r.solpay_effect;
+  if (!e) return `<div class="muted">${esc(r.effect_note || "-")}</div>`;
+  const sum = (x) => x.card + x.promotion + x.next_month;
+  const rows = [["카드 혜택", "card"], ["프로모션", "promotion"], ["실적이 이번 달에 주는 혜택 (추정)", "next_month"]];
+  let html = `<div class="small">${esc(e.month)} 결제화면 결제 ${e.placement_payments}건 중 ${e.changed_payments}건의 카드가 달라짐</div>
+    <table><tr><th>구분</th><th class="num">실제</th><th class="num">추천대로</th><th class="num">차이</th></tr>` +
+    rows.map(([label, k]) => `<tr><td>${label}</td><td class="num">${won(e.actual[k])}</td><td class="num">${won(e.recommended[k])}</td>${diffCell(e.diff[k])}</tr>`).join("") +
+    `<tr><th>합계</th><td class="num"><b>${won(sum(e.actual))}</b></td><td class="num"><b>${won(sum(e.recommended))}</b></td>${diffCell(e.diff.total)}</tr></table>`;
+  if (e.top_changes?.length) {
+    html += `<h2>카드가 달라진 결제 (차이 큰 순 3건)</h2><table><tr><th>날짜</th><th>업종</th><th class="num">금액</th><th>실제 카드</th><th>추천 카드</th><th class="num">차이</th><th>이유</th></tr>` +
+      e.top_changes.map((c) => `<tr><td>${esc(c.day)}</td><td>${esc(c.category)}</td><td class="num">${won(c.amount)}</td>
+        <td>${esc(c.actual_card)}</td><td>${esc(c.recommended_card)}</td>${diffCell(c.diff)}<td>${esc(c.why)}</td></tr>`).join("") + "</table>";
+  }
+  if (e.tier_changes?.length) {
+    html += `<h2>도달 구간이 달라진 카드</h2><table><tr><th>카드</th><th class="num">첫 구간</th><th class="num">실제 실적</th><th class="num">추천 실적</th><th class="num">실제 구간</th><th class="num">추천 구간</th></tr>` +
+      e.tier_changes.map((t) => `<tr><td>${esc(t.card)}</td><td class="num">${tierText(t.first_tier)}</td><td class="num">${won(t.actual_perf)}</td>
+        <td class="num">${won(t.recommended_perf)}</td><td class="num">${tierText(t.actual_tier)}</td><td class="num">${tierText(t.recommended_tier)}</td></tr>`).join("") + "</table>";
+  }
+  return html;
+}
+$("reportBtn").addEventListener("click", () => busy($("reportBtn"), "reportErr", openReport));
 renderCtx();
 </script>
 </body>

@@ -215,3 +215,148 @@ def test_replay_month_이유는_차이_큰_순_3건(catalog, params):
     assert less["diff"]["total"] == -4_000
     assert [c["diff"] for c in less["top_changes"]] == [-3_000, -2_000, -1_000]   # 덜 받은 결제 먼저, 3건만
     assert [c["category"] for c in less["top_changes"]] == ["카페"] * 3
+
+
+# ---------- 서비스·API·캐시 (월간 리포트) ----------
+import csv
+import json
+import os
+from datetime import datetime
+
+import pytest
+from fastapi.testclient import TestClient
+
+from engine.api import create_app
+from engine.domain import Promotion
+from engine.loader import ARTIFACTS
+from engine.team_db import team_db_dir
+from tests.conftest import KST
+from tests.test_service_api import FakeStore
+
+SEP_OCT = (datetime(2026, 9, 1, tzinfo=KST), datetime(2026, 10, 31, 23, 59, tzinfo=KST))
+
+
+class ReportStore(FakeStore):
+    """8월 실적(9월 혜택용) → 9월: 결제화면 2건 + 온라인, 10월: 온라인 + 결제화면 1건. 9~10월 카페 행사 500원(신한)."""
+
+    def __init__(self):
+        super().__init__(User(1))
+        self.payments = [online(uc, 320_000, at(8, 15)) for uc in (101, 102)]
+        self.payments += [pay(101, 10_000, "CAFE", at(9, 5)), pay(102, 20_000, "REST", at(9, 10), merchant=11)]
+        self.payments += [online(uc, a, at(9, 15)) for uc, a in ((101, 600_000), (102, 400_000), (103, 300_000))]
+        self.payments += [online(uc, a, at(10, 1)) for uc, a in ((101, 600_000), (102, 400_000), (103, 300_000))]
+        self.payments += [pay(101, 10_000, "CAFE", at(10, 3))]
+        self.promotions = [Promotion(1, "카페", *SEP_OCT, frozenset({10}), issuer="SHINHAN", amount=500, title="카페 500원")]
+
+
+@pytest.fixture
+def report_svc(catalog, priors, params):
+    from engine.service import PlacementEngine, PlacementService
+    return PlacementService(ReportStore(), PlacementEngine(catalog, priors, params))
+
+
+def test_monthly_report_형식과_캐시(report_svc):
+    first = report_svc.monthly_report(1, at(10, 7))
+    assert {"user_id", "at", "month", "prev_month", "cached", "summary", "copy_source", "copy_log", "totals",
+            "cards", "strategy", "solpay_effect", "effect_note"} <= set(first)
+    assert (first["user_id"], first["month"], first["prev_month"]) == (1, "2026-10", "2026-09")
+    assert first["at"] == at(10, 7).isoformat()
+    assert first["copy_source"] == "template" and first["cached"] is False
+    assert first["summary"]["headline"] == "9월에 카드 혜택 3,000원을 받았어요." and first["summary"]["points"]
+
+    cards = {c["user_card_id"]: c for c in first["cards"]}
+    assert (cards[101]["this_month"]["perf"], cards[101]["this_month"]["benefit"]) == (610_000, 1_000)
+    assert (cards[101]["prev_month"]["perf"], cards[101]["prev_month"]["benefit"]) == (610_000, 1_000)
+    assert (cards[102]["prev_month"]["perf"], cards[102]["prev_month"]["benefit"]) == (420_000, 2_000)
+    assert first["totals"] == {"this_month_benefit": 1_000, "prev_month_benefit": 3_000}
+
+    st = first["strategy"]
+    assert {"current", "label", "description", "chosen_by", "chosen_by_label", "compare_months", "compare",
+            "base_card", "current_order", "message"} <= set(st)
+    assert st["current_order"][0]["rank"] == 1 and st["current_order"][0]["name"] in {c["name"] for c in first["cards"]}
+    assert isinstance(st["message"], str) and st["message"]
+    base = cards[st["base_card"]["user_card_id"]]
+    assert st["base_card"] == {"user_card_id": base["user_card_id"], "name": base["name"],
+                               "target_tier": base["this_month"]["next_tier"],
+                               "remaining": base["this_month"]["remaining_to_next"]}
+
+    ef = first["solpay_effect"]
+    assert ef["month"] == "2026-09" and ef["placement_payments"] == 2 and first["effect_note"] is None
+    assert ef["actual"]["promotion"] == 500                    # 9/5 카페를 신한카드(101)로 냈다
+    d = ef["diff"]
+    assert d["total"] == d["card"] + d["promotion"] + d["next_month"]
+    assert "promotion" not in json.dumps(first["cards"])        # 카드별 프로모션은 주지 않는다
+
+    second = report_svc.monthly_report(1, at(10, 7, 20))
+    assert second["cached"] is True and {**second, "cached": False} == first
+
+
+def test_monthly_report_월초_0시(report_svc):
+    r = report_svc.monthly_report(1, datetime(2026, 10, 1, 0, 0, tzinfo=KST))
+    assert (r["month"], r["prev_month"]) == ("2026-10", "2026-09")
+    assert all(c["this_month"]["perf"] == 0 and c["this_month"]["payments"] == 0 for c in r["cards"])
+    assert {c["user_card_id"]: c["prev_month"]["perf"] for c in r["cards"]} == {101: 610_000, 102: 420_000, 103: 300_000}
+    assert r["totals"] == {"this_month_benefit": 0, "prev_month_benefit": 3_000}
+
+
+def test_monthly_report_지난달_결제화면_결제가_없으면_효과_없음(catalog, priors, params):
+    svc = _service(catalog, priors, params)          # 9월 결제가 온라인뿐
+    r = svc.monthly_report(1, at(10, 7))
+    assert r["solpay_effect"] is None and r["effect_note"] == "지난달 결제화면 결제가 없어 비교하지 않았어요"
+    assert r["summary"]["headline"] and r["copy_source"] == "template"
+
+
+def test_monthly_report_문구_작성기는_하루_한_번(report_svc):
+    seen = []
+
+    class Writer:
+        def write(self, facts):
+            seen.append(facts)
+            return {"headline": "요약", "points": ["한 줄"]}, "llm", {"ms": 3}
+
+    first = report_svc.monthly_report(1, at(10, 7), Writer())
+    again = report_svc.monthly_report(1, at(10, 7, 22), Writer())
+    assert first["summary"] == {"headline": "요약", "points": ["한 줄"]} and first["copy_source"] == "llm"
+    assert again["cached"] is True and len(seen) == 1
+    assert "user_id" not in json.dumps(seen[0], ensure_ascii=False)
+    report_svc.monthly_report(1, at(10, 8), Writer())               # 날짜가 바뀌면 다시 계산
+    assert len(seen) == 2
+
+
+def test_api_404_와_응답(report_svc):
+    with TestClient(create_app(report_svc, chat_client=None)) as c:
+        missing = c.get("/internal/users/2/monthly-report", params={"at": at(10, 7).isoformat()})
+        r = c.get("/internal/users/1/monthly-report", params={"at": at(10, 7).isoformat()})
+        again = c.get("/internal/users/1/monthly-report", params={"at": at(10, 7, 15).isoformat()})
+        dev = c.get("/dev")
+    assert missing.status_code == 404
+    body = r.json()
+    assert r.status_code == 200 and body["month"] == "2026-10" and isinstance(body["cards"], list)
+    assert body["copy_source"] == "template" and body["copy_log"]["reason"] == "no_api_key"     # 앱의 작성기 (키 없음)
+    assert isinstance(body["summary"]["headline"], str) and again.json()["cached"] is True
+    assert dev.status_code == 200 and "monthly-report" in dev.text and "월간 리포트 보기" in dev.text
+
+
+# ---------- 팀 DB CSV (없으면 건너뜀) ----------
+
+@pytest.fixture(scope="module")
+def service(tmp_path_factory):
+    if not (team_db_dir() / "payments.csv").exists() or not (ARTIFACTS / "priors.json").exists():
+        pytest.skip("팀 DB CSV 또는 artifacts 가 없습니다")
+    os.environ["SOLPAY_STORE"] = "teamdb"
+    os.environ["SOLPAY_STRATEGY_DB"] = str(tmp_path_factory.mktemp("report") / "strategy.sqlite")
+    from engine.api import build_service
+    return build_service()
+
+
+def test_팀DB_1번_10월_숫자가_card_month_status_와_같다(service):
+    service.store.reset()
+    report = service.monthly_report(1, datetime(2026, 11, 5, 12, 0, tzinfo=KST))
+    with open(team_db_dir() / "card_month_status.csv", encoding="utf-8") as f:
+        want = {int(r["user_card_id"]): (int(r["perf"]), int(r["benefit_amount"]))
+                for r in csv.DictReader(f) if r["year_month"] == "2026-10"}
+    got = {c["user_card_id"]: (c["prev_month"]["perf"], c["prev_month"]["benefit"]) for c in report["cards"]}
+    assert len(got) == 3 and got == {uc: want[uc] for uc in got}
+    assert got[1] == (1_542_790, 43_220)                             # 신한카드 Discount Plan+
+    assert report["prev_month"] == "2026-10" and report["solpay_effect"]["month"] == "2026-10"
+    assert report["totals"]["prev_month_benefit"] == sum(v[1] for v in got.values())
