@@ -418,6 +418,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
             raise HTTPException(status_code=422, detail=str(e))
         except UnknownUser:
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
+        svc.forget_reports(user_id)                 # 규칙이 바뀌면 월간 리포트(전략·효과)를 다시 계산한다
         return {"saved": len(rules)}
 
     @app.post("/internal/chat", response_model=ChatResponse, dependencies=[Depends(check_token)])
@@ -473,6 +474,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         result = validate_rule(RuleValidateBody(user_id=body.user_id, rule=draft["rule"]), svc)
         rule_id = svc.store.add_rule(body.user_id, draft["rule"])
         svc.store.decide_draft(draft_id, "saved")
+        svc.forget_reports(body.user_id)
         return {"saved": True, "draft_id": draft_id, "rule_id": rule_id, "summary": result["summary"]}
 
     @app.post("/internal/rules/drafts/{draft_id}/cancel", dependencies=[Depends(check_token)])
@@ -493,6 +495,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
         except NotImplementedError:
             raise HTTPException(status_code=405, detail="운영 저장소에서는 Spring 이 결제를 저장합니다")
+        svc.forget_reports(body.user_id)            # 결제가 늘면 월간 리포트 숫자를 다시 계산한다
         return {"saved": True}
 
     return app

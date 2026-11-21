@@ -1,7 +1,7 @@
 from tests.conftest import USER_CARDS, at, online, pay
 from engine.domain import User
-from engine.report import (STRATEGY_DESC, STRATEGY_LABEL, card_rows, reason_group, replay_month, tier_info,
-                           this_month_tiers)
+from engine.report import (STRATEGY_DESC, STRATEGY_LABEL, card_rows, reason_group, replay_month, strategy_now,
+                           tier_info, this_month_tiers)
 from engine.state import UserState
 
 
@@ -193,11 +193,41 @@ def test_replay_month_구간이_달라진_카드(catalog, params):
     out = replay_month(_warm(catalog, params, {101: 320_000}), payments, lambda view, p: (103, "PERFORMANCE"),
                        lambda card, p: 500 if card == 103 else 0, catalog, "2026-10")
     assert out["tier_changes"] == [{"card": catalog.card_label(3), "first_tier": 200_000, "actual_perf": 0,
-                                    "recommended_perf": 220_000, "actual_tier": None, "recommended_tier": 200_000}]
+                                    "recommended_perf": 220_000, "actual_tier": None, "recommended_tier": 200_000,
+                                    "direction": "up"}]
     # 10월 카드 혜택은 같고, 103 프로모션 500원 × 2, 11월 교통 5% (한도 5천)
     assert out["diff"] == {"card": 0, "promotion": 1_000, "next_month": 5_000, "total": 6_000}
     assert [c["diff"] for c in out["top_changes"]] == [500, 500]     # 결제별 차이 = 카드 혜택 + 프로모션
     assert [c["day"] for c in out["top_changes"]] == ["2026-10-05", "2026-10-09"]
+
+
+def test_replay_month_구간이_내려간_카드와_차이_0원_결제(catalog, params):
+    # 실제로는 103 에 교통 22만 원 → 20만 원 구간, 추천은 101 로 옮겨 103 이 구간을 놓친다 (101 은 30만 원 구간에 못 미쳐 그대로)
+    payments = [pay(103, 110_000, "TRANSIT", at(10, 5), merchant=20), pay(103, 110_000, "TRANSIT", at(10, 9), merchant=20)]
+    out = replay_month(_warm(catalog, params, {101: 320_000}), payments, lambda view, p: (101, "PERFORMANCE"),
+                       _no_promo, catalog, "2026-10")
+    assert out["tier_changes"] == [{"card": catalog.card_label(3), "first_tier": 200_000, "actual_perf": 220_000,
+                                    "recommended_perf": 0, "actual_tier": 200_000, "recommended_tier": None,
+                                    "direction": "down"}]
+    assert out["diff"] == {"card": 0, "promotion": 0, "next_month": -5_000, "total": -5_000}
+    assert out["changed_payments"] == 2 and out["top_changes"] == []      # 차이 0원 결제는 이유로 보여 주지 않는다
+
+
+def test_replay_month_구간이_내려간_카드면_정해진_문구가_그_구간을_말한다(catalog, params):
+    from engine.chat.report_copy import check_copy, facts_of, template_copy
+    payments = [pay(103, 110_000, "TRANSIT", at(10, 5), merchant=20), pay(103, 110_000, "TRANSIT", at(10, 9), merchant=20)]
+    effect = replay_month(_warm(catalog, params, {101: 320_000}), payments, lambda view, p: (101, "PERFORMANCE"),
+                          _no_promo, catalog, "2026-10")
+    report = {"month": "2026-11", "prev_month": "2026-10", "totals": {"this_month_benefit": 0, "prev_month_benefit": 0},
+              "cards": [], "solpay_effect": effect,
+              "strategy": {"label": "첫 구간 우선", "description": STRATEGY_DESC["first_tier"], "chosen_by_label": "기본 방식",
+                           "compare_months": None, "base_card": None, "base_reason": None}}
+    f = facts_of(report)
+    copy = template_copy(f)
+    text = " ".join(copy["points"])
+    assert "5,000원 덜 받았어요" in text
+    assert f"추천대로였다면 {catalog.card_label(3)} 실적이 220,000원에서 0원으로 줄어 20만 원 구간을 놓쳤어요" in text
+    assert check_copy(copy, f) == []
 
 
 def test_replay_month_이유는_차이_큰_순_3건(catalog, params):
@@ -288,6 +318,8 @@ def test_monthly_report_형식과_캐시(report_svc):
     assert d["total"] == d["card"] + d["promotion"] + d["next_month"]
     assert "promotion" not in json.dumps(first["cards"])        # 카드별 프로모션은 주지 않는다
 
+    assert st["base_reason"] is None                       # 구간 지키기로 정한 기본 카드가 아니다 (V3, hold_tiers 끔)
+
     second = report_svc.monthly_report(1, at(10, 7, 20))
     assert second["cached"] is True and {**second, "cached": False} == first
 
@@ -348,6 +380,60 @@ def test_api_404_와_응답(report_svc):
     assert dev.status_code == 200 and "monthly-report" in dev.text and "월간 리포트 보기" in dev.text
 
 
+HOLD_REASON = "어느 방식이든 지난달 받은 구간을 지킬 수 있으면 그 카드를 먼저 채워요"
+
+
+def test_strategy_now_구간_지키기면_기본_카드_이유():
+    from engine.domain import RankedCard, RankResult
+    rows = [{"user_card_id": 101, "name": "A", "this_month": {"tier_min": 500_000, "remaining_to_keep": 400_000,
+                                                              "next_tier": 300_000, "remaining_to_next": 200_000}}]
+    held = RankResult([RankedCard(101, 1, 0, "A 50만 원 구간까지 400,000원 남았어요.")], 1, "HOLD", None, "pattern", "time",
+                      101, hold=True)
+    assert strategy_now(held, rows)["base_reason"] == HOLD_REASON
+    plain = RankResult([RankedCard(101, 1, 0, "")], 1, "PERFORMANCE", None, "pattern", "time", 101)
+    assert strategy_now(plain, rows)["base_reason"] is None
+
+
+class HoldStore(FakeStore):
+    """9월 101 카페 60만 원(50만 원 구간을 받는 중), 10월 1일 10만 원 → 10월 2일엔 구간 지키기로 101 이 기본 카드 (test_v41 과 같은 상황)."""
+
+    def __init__(self):
+        super().__init__(User(1))
+        self.payments = [pay(101, 20_000, "CAFE", at(9, d)) for d in range(1, 31)] + [pay(101, 100_000, "CAFE", at(10, 1))]
+
+
+def test_monthly_report_구간_지키기면_전략에_기본_카드_이유(catalog, priors):
+    from engine.params import Params
+    from engine.service import PlacementEngine, PlacementService
+    params = Params(base_order="first_tier")                # v4 기본값: 구간 지키기 켬
+    svc = PlacementService(HoldStore(), PlacementEngine(catalog, priors, params))
+    st = svc.monthly_report(1, at(10, 2))["strategy"]
+    assert st["base_card"]["user_card_id"] == 101 and st["base_card"]["remaining_to_keep"] == 400_000
+    assert st["base_reason"] == HOLD_REASON
+    assert svc.monthly_report(1, at(10, 2))["copy_source"] == "template"
+
+
+def test_결제를_더하면_그_사용자_리포트_캐시를_버린다(report_svc):
+    with TestClient(create_app(report_svc, chat_client=None)) as c:
+        q = {"at": at(10, 7).isoformat()}
+        first = c.get("/internal/users/1/monthly-report", params=q).json()
+        payment = {"payment_id": 9101, "user_id": 1, "user_card_id": 101, "category_code": "CAFE", "channel": "offline_qr",
+                   "card_select_mode": "manual", "amount": 50_000, "merchant_id": 10, "paid_at": "2026-10-07T09:00:00+09:00"}
+        assert c.post("/internal/payments", json=payment).json() == {"saved": True}
+        after = c.get("/internal/users/1/monthly-report", params=q).json()
+        assert c.put("/internal/users/1/rules", json=[]).json() == {"saved": 0}
+        after_rules = c.get("/internal/users/1/monthly-report", params=q).json()
+    assert first["cached"] is False and after["cached"] is False and after_rules["cached"] is False
+    perf = [next(x for x in r["cards"] if x["user_card_id"] == 101)["this_month"]["perf"] for r in (first, after)]
+    assert perf[1] == perf[0] + 50_000
+
+
+def test_forget_reports_는_그_사용자만_버린다(report_svc):
+    report_svc.reports = {(1, at(10, 7).date()): {}, (1, at(10, 8).date()): {}, (2, at(10, 7).date()): {}}
+    report_svc.forget_reports(1)
+    assert list(report_svc.reports) == [(2, at(10, 7).date())]
+
+
 # ---------- 팀 DB CSV (없으면 건너뜀) ----------
 
 @pytest.fixture(scope="module")
@@ -371,3 +457,4 @@ def test_팀DB_1번_10월_숫자가_card_month_status_와_같다(service):
     assert got[1] == (1_542_790, 43_220)                             # 신한카드 Discount Plan+
     assert report["prev_month"] == "2026-10" and report["solpay_effect"]["month"] == "2026-10"
     assert report["totals"]["prev_month_benefit"] == sum(v[1] for v in got.values())
+    assert report["solpay_effect"]["diff"] == {"card": 290, "promotion": 0, "next_month": 4890, "total": 5180}
