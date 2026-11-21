@@ -19,7 +19,7 @@ from engine.domain import KnownPayment
 from engine.params import (BASE_ORDER_FIRST_TIER, BASE_ORDER_MAIN_TOP, BASE_ORDER_NONE, BASE_ORDER_TOP_TIER,
                            BASE_ORDER_VALUE)
 from engine.privacy import redact
-from engine.report import limits_of
+from engine.report import limits_of, this_month_tiers
 from engine.rules import RuleError, parse_rule, resolve
 from engine.slots import ym_of
 
@@ -329,14 +329,13 @@ class ToolBox:
                 continue
             st, card = state.ledger[uc.user_card_id], self.catalog.cards[uc.card_id]
             tiers = list(self.catalog.tiers[uc.card_id])
-            nxt = next((t for t in tiers if t > st.perf), None)
-            held = max((t for t in tiers if t <= st.prev_perf), default=None)
+            tr = this_month_tiers(tiers, st)
             rows.append({
                 "user_card_id": uc.user_card_id, "name": self.names[uc.user_card_id],
                 "prev_month_perf": st.prev_perf, "this_month_perf": st.perf,
-                "this_month_tier_min": held,
-                "remaining_to_keep_tier": max(held - st.perf, 0) if held else None,
-                "next_tier_min": nxt, "remaining_to_next_tier": nxt - st.perf if nxt else 0,
+                "this_month_tier_min": tr["tier_min"],
+                "remaining_to_keep_tier": tr["remaining_to_keep"],
+                "next_tier_min": tr["next_tier"], "remaining_to_next_tier": tr["remaining_to_next"],
                 "benefit_this_month": st.discount, "limits": limits_of(card, st),
                 "note": "다른 카드사 카드는 어제까지 결제 기준" if uc.issuer != "SHINHAN" else None,
             })

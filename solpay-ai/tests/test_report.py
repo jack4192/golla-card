@@ -1,6 +1,6 @@
 from tests.conftest import USER_CARDS, at, pay
 from engine.domain import User
-from engine.report import card_rows, limits_of, tier_info
+from engine.report import card_rows, tier_info, this_month_tiers
 from engine.state import UserState
 
 
@@ -15,7 +15,8 @@ def test_tier_info():
 
 
 def _states(catalog, params):
-    sept = [pay(101, 320_000, "CAFE", at(9, 5)), pay(103, 150_000, "TRANSIT", at(9, 6), merchant=20)]
+    sept = [pay(101, 320_000, "CAFE", at(8, 5)),     # 8월 실적 32만 → 9월 혜택 10% (한도 1만)
+            pay(101, 320_000, "CAFE", at(9, 5)), pay(103, 150_000, "TRANSIT", at(9, 6), merchant=20)]
     now, prev = UserState(User(1), USER_CARDS, catalog, params), UserState(User(1), USER_CARDS, catalog, params)
     for p in sept:
         now.apply(p)
@@ -33,12 +34,12 @@ def test_card_rows_이번_달과_지난달(catalog, params):
 
     assert r101["name"] == catalog.card_label(1) and r101["card_id"] == 1 and r101["synced_note"] is False
     assert r101["prev_month"]["perf"] == 320_000 and r101["prev_month"]["achieved"] is True
-    assert r101["prev_month"]["payments"] == 1
+    assert r101["prev_month"]["payments"] == 1 and r101["prev_month"]["benefit"] == 10_000
     t = r101["this_month"]
     assert (t["perf"], t["payments"], t["tier_min"]) == (10_000, 1, 300_000)
     assert (t["next_tier"], t["remaining_to_next"], t["remaining_to_keep"]) == (300_000, 290_000, 290_000)
     assert t["benefit"] == now.ledger[101].discount == 1_000
-    assert t["limits"] == limits_of(catalog.cards[1], now.ledger[101])
+    assert t["limits"] == [{"name": "", "used": 1_000, "limit": 10_000, "left": 9_000}]
 
     assert r103["synced_note"] is True
     assert r103["prev_month"]["short_of_first"] == 50_000 and r103["prev_month"]["achieved"] is False
@@ -57,3 +58,11 @@ def test_무실적_카드는_구간_칸이_비어_있다(catalog, params):
     assert all(r["this_month"][k] is None for k in ("tier_min", "remaining_to_keep", "next_tier", "remaining_to_next"))
     assert r["prev_month"] == {"perf": 0, "benefit": 0, "payments": 0, "first_tier": None, "tier_reached": None,
                                "achieved": None, "short_of_first": None}
+
+
+def test_this_month_tiers_구간_0원_카드는_0_그대로(catalog, params):
+    now, _ = _states(catalog, params)
+    assert this_month_tiers([300_000, 500_000], now.ledger[101]) == {
+        "tier_min": 300_000, "remaining_to_keep": 290_000, "next_tier": 300_000, "remaining_to_next": 290_000}
+    assert this_month_tiers([0], now.ledger[101]) == {
+        "tier_min": 0, "remaining_to_keep": None, "next_tier": None, "remaining_to_next": 0}
