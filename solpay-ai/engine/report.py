@@ -22,6 +22,8 @@ STRATEGY_DESC = {BASE_ORDER_FIRST_TIER: "모든 카드의 첫 구간을 먼저 �
                  BASE_ORDER_TOP_TIER: "1번 카드의 최고 구간부터 채운다"}
 REASON_GROUP = {"RULE": "사용자 규칙", "PROMOTION": "프로모션", "PROMOTION_CARD": "프로모션",
                 "PERFORMANCE": "실적 채우기", "HOLD": "실적 채우기", "BASE_CHANGED": "실적 채우기"}
+# 기본 카드를 방식보다 먼저 정한 이유 (ranker.choose_base_card: 구간 지키기는 어느 방식이든 방식보다 앞선다)
+HOLD_REASON = "어느 방식이든 지난달 받은 구간을 지킬 수 있으면 그 카드를 먼저 채워요"
 
 
 def reason_group(code: str) -> str:
@@ -119,12 +121,14 @@ TIER_FIELDS = ("tier_min", "remaining_to_keep", "next_tier", "remaining_to_next"
 def strategy_now(result: RankResult, rows: list[dict]) -> dict:
     """지금 결제 화면(기록을 남기지 않는 preview)에서 고른 것: 실적을 채우는 기본 카드와 그 카드의 이번 달 구간 칸
     (this_month_tiers 그대로: 지금 구간 유지까지·다음 구간까지. 구간 지키기 안내 문구와 같은 기준),
+    기본 카드를 방식보다 먼저 정한 이유(base_reason: 구간 지키기면 HOLD_REASON, 아니면 None),
     보여 주는 카드 순서, 1순위 카드 안내 문구."""
     by_id = {r["user_card_id"]: r for r in rows}
     base = by_id.get(result.base_card)
     return {
         "base_card": {"user_card_id": base["user_card_id"], "name": base["name"],
                       **{k: base["this_month"][k] for k in TIER_FIELDS}} if base else None,
+        "base_reason": HOLD_REASON if base and (result.hold or result.reason_code == "HOLD") else None,
         "current_order": [{"rank": c.rank, "user_card_id": c.user_card_id, "name": by_id[c.user_card_id]["name"]}
                           for c in result.cards[:result.display_count]],
         "message": result.cards[0].message if result.cards else "",
@@ -138,7 +142,7 @@ def _next_month(state: UserState, assigned: dict[int, list[Payment]], catalog: C
 
 
 def _tier_changes(actual: UserState, recommended: UserState, catalog: Catalog) -> list[dict]:
-    """실제와 추천의 도달 구간(하한, 없으면 None)이 다른 카드."""
+    """실제와 추천의 도달 구간(하한, 없으면 None)이 다른 카드. direction: 추천대로면 더 높은 구간 up, 더 낮은 구간 down."""
     out = []
     for uc in actual.cards:
         tiers = list(catalog.tiers[uc.card_id])
@@ -147,7 +151,8 @@ def _tier_changes(actual: UserState, recommended: UserState, catalog: Catalog) -
         if a["tier_reached"] != r["tier_reached"]:
             out.append({"card": catalog.card_label(uc.card_id), "first_tier": a["first_tier"],
                         "actual_perf": a_perf, "recommended_perf": r_perf,
-                        "actual_tier": a["tier_reached"], "recommended_tier": r["tier_reached"]})
+                        "actual_tier": a["tier_reached"], "recommended_tier": r["tier_reached"],
+                        "direction": "up" if (r["tier_reached"] or 0) > (a["tier_reached"] or 0) else "down"})
     return out
 
 
@@ -194,11 +199,12 @@ def replay_month(start: Callable[[], UserState], payments: list[Payment],
     sums["recommended"]["next_month"] = _next_month(recommended, assigned["recommended"], catalog)
     diff = {k: sums["recommended"][k] - sums["actual"][k] for k in ("card", "promotion", "next_month")}
     diff["total"] = diff["card"] + diff["promotion"] + diff["next_month"]
-    changes.sort(key=lambda c: c[0], reverse=diff["total"] >= 0)      # 덜 받았으면 덜 받은 결제부터
+    shown = sorted((c for c in changes if c[0] != 0), key=lambda c: c[0],
+                   reverse=diff["total"] >= 0)                       # 차이 0원은 빼고, 덜 받았으면 덜 받은 결제부터
     top = [{"day": p.paid_at.date().isoformat(), "category": catalog.category_name(p.category), "amount": p.amount,
             "actual_card": catalog.card_label(card_of[p.user_card_id]),
             "recommended_card": catalog.card_label(card_of[chosen]), "diff": d, "why": reason_group(code)}
-           for d, p, chosen, code in changes[:3]]
+           for d, p, chosen, code in shown[:3]]
     return {"month": month, "placement_payments": placements, "changed_payments": len(changes),
             "actual": sums["actual"], "recommended": sums["recommended"], "diff": diff,
             "top_changes": top, "tier_changes": _tier_changes(actual, recommended, catalog)}

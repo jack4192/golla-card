@@ -16,8 +16,7 @@ from engine.benefit_calc import DAY_NAMES
 from engine.chat.new_card import recommend_new_cards
 from engine.chat.search import find_cards, find_categories, find_merchants, norm
 from engine.domain import KnownPayment
-from engine.params import (BASE_ORDER_FIRST_TIER, BASE_ORDER_MAIN_TOP, BASE_ORDER_NONE, BASE_ORDER_TOP_TIER,
-                           BASE_ORDER_VALUE)
+from engine.params import BASE_ORDER_FIRST_TIER, BASE_ORDER_MAIN_TOP, BASE_ORDER_NONE, BASE_ORDER_VALUE
 from engine.privacy import redact
 from engine.report import STRATEGY_LABEL, limits_of, this_month_tiers
 from engine.rules import RuleError, parse_rule

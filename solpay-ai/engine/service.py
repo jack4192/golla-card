@@ -89,6 +89,7 @@ class PlacementEngine:
                               "promotion": round(s.promotion, 1), "promotion_label": s.promotion_label,
                               "total": round(s.total, 1)}
                          for uc, s in decision.scores.items()},
+            hold=decision.hold,
         )
 
     def _promotion_card(self, state, req, eligible, scenarios, params, schedules, promo_offers,
@@ -364,6 +365,11 @@ class PlacementService:
         """일정이 바뀌면 그날 팝업의 프로모션 카드와 추천 페이지 결과를 버린다 (다음 호출에서 다시 계산)."""
         self.popups.pop((user_id, day), None)
         self.pages.pop((user_id, day), None)
+
+    def forget_reports(self, user_id: int) -> None:
+        """결제·규칙이 바뀌면 그 사용자의 월간 리포트 캐시를 모두 버린다 (결제·규칙은 그날 이후 리포트에 모두 영향을 준다)."""
+        for key in [k for k in self.reports if k[0] == user_id]:
+            del self.reports[key]
 
     # ---------- 맞춤 추천 페이지 (설계서 2026-11-19-recommendation-page-design.md) ----------
     def recommendation_page(self, user_id: int, at, writer=None) -> dict:

@@ -474,6 +474,7 @@ function reportStrategy(s) {
   return `<div><span class="badge brand">${esc(s.label || s.current)}</span>${esc(s.description || "")}</div>
     <div class="small" style="margin-top:4px">고른 근거: ${esc(s.chosen_by_label)}</div>${compare}
     <div class="small" style="margin-top:8px">지금 채우는 카드: ${base ? `<b>${esc(base.name)}</b> · ${baseTier(base)}` : "-"}</div>
+    ${s.base_reason ? `<div class="small muted">왜 이 카드: ${esc(s.base_reason)}</div>` : ""}
     <div class="small">결제 화면 순서: ${(s.current_order || []).map((c) => `${c.rank}. ${esc(c.name)}`).join(" / ") || "-"}</div>
     ${s.message ? `<div class="small muted">안내 문구: ${esc(s.message)}</div>` : ""}`;
 }
@@ -492,9 +493,10 @@ function reportEffect(r) {
         <td>${esc(c.actual_card)}</td><td>${esc(c.recommended_card)}</td>${diffCell(c.diff)}<td>${esc(c.why)}</td></tr>`).join("") + "</table>";
   }
   if (e.tier_changes?.length) {
-    html += `<h2>도달 구간이 달라진 카드</h2><table><tr><th>카드</th><th class="num">첫 구간</th><th class="num">실제 실적</th><th class="num">추천 실적</th><th class="num">실제 구간</th><th class="num">추천 구간</th></tr>` +
+    html += `<h2>도달 구간이 달라진 카드</h2><table><tr><th>카드</th><th class="num">첫 구간</th><th class="num">실제 실적</th><th class="num">추천 실적</th><th class="num">실제 구간</th><th class="num">추천 구간</th><th>추천대로면</th></tr>` +
       e.tier_changes.map((t) => `<tr><td>${esc(t.card)}</td><td class="num">${tierText(t.first_tier)}</td><td class="num">${won(t.actual_perf)}</td>
-        <td class="num">${won(t.recommended_perf)}</td><td class="num">${tierText(t.actual_tier)}</td><td class="num">${tierText(t.recommended_tier)}</td></tr>`).join("") + "</table>";
+        <td class="num">${won(t.recommended_perf)}</td><td class="num">${tierText(t.actual_tier)}</td><td class="num">${tierText(t.recommended_tier)}</td>
+        <td class="${t.direction === "up" ? "plus" : "minus"}">${t.direction === "up" ? "구간 올라감" : "구간 내려감"}</td></tr>`).join("") + "</table>";
   }
   return html;
 }

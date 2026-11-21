@@ -172,3 +172,4 @@ class RankResult:
     top_category: str | None = None
     scenarios: list[dict] = field(default_factory=list)
     card_scores: dict[int, dict] = field(default_factory=dict)
+    hold: bool = False                  # 기본 카드를 구간 지키기로 정했는지 (ranker.Decision.hold, 월간 리포트 base_reason)
