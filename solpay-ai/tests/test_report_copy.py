@@ -171,3 +171,20 @@ def test_설정_환경_변수(monkeypatch):
     s = CopySettings.from_env(ReportCopyWriter.settings_env)
     assert s.timeout_sec == 3 and s.model == "gpt-4o-mini"
     assert ReportCopyWriter.prompt_version == "2026-11-22.1" and PageCopyWriter.settings_env == "PAGE_COPY_TIMEOUT_SEC"
+
+
+def test_검사_음수인데_이유가_없다():
+    f = facts(total=-700, card=-700, next_month=0, tier_changes=KB_TIER)
+    amount_only = {"headline": "10월에 카드 혜택 47,070원을 받았어요.", "points": ["추천대로 냈다면 700원 덜 받았어요."]}
+    assert any("이유" in p for p in check_copy(amount_only, f))
+    with_reason = {"headline": amount_only["headline"],
+                   "points": ["추천대로 냈다면 700원 덜 받았어요.", "KB ALL 카드로 실적을 모았어요."]}
+    assert check_copy(with_reason, f) == []
+    by_category = {"headline": amount_only["headline"], "points": ["카페 결제에서 700원 덜 받았어요."]}
+    assert check_copy(by_category, f) == []
+
+
+def test_정해진_문구_덜_받은_모든_변형이_검사를_통과():
+    for kw in ({"tier_changes": KB_TIER}, {}, {"top_changes": []}):
+        f = facts(total=-700, card=-700, next_month=0, **kw)
+        assert check_copy(template_copy(f), f) == []
