@@ -113,15 +113,18 @@ def totals_of(rows: list[dict]) -> dict:
             "prev_month_benefit": sum(r["prev_month"]["benefit"] for r in rows)}
 
 
+TIER_FIELDS = ("tier_min", "remaining_to_keep", "next_tier", "remaining_to_next")
+
+
 def strategy_now(result: RankResult, rows: list[dict]) -> dict:
-    """지금 결제 화면(기록을 남기지 않는 preview)에서 고른 것: 실적을 채우는 기본 카드와 그 카드의 이번 달 다음 구간·남은 금액
-    (최고 구간이면 target_tier None, remaining 0), 보여 주는 카드 순서, 1순위 카드 안내 문구."""
+    """지금 결제 화면(기록을 남기지 않는 preview)에서 고른 것: 실적을 채우는 기본 카드와 그 카드의 이번 달 구간 칸
+    (this_month_tiers 그대로: 지금 구간 유지까지·다음 구간까지. 구간 지키기 안내 문구와 같은 기준),
+    보여 주는 카드 순서, 1순위 카드 안내 문구."""
     by_id = {r["user_card_id"]: r for r in rows}
     base = by_id.get(result.base_card)
     return {
         "base_card": {"user_card_id": base["user_card_id"], "name": base["name"],
-                      "target_tier": base["this_month"]["next_tier"],
-                      "remaining": base["this_month"]["remaining_to_next"]} if base else None,
+                      **{k: base["this_month"][k] for k in TIER_FIELDS}} if base else None,
         "current_order": [{"rank": c.rank, "user_card_id": c.user_card_id, "name": by_id[c.user_card_id]["name"]}
                           for c in result.cards[:result.display_count]],
         "message": result.cards[0].message if result.cards else "",

@@ -459,6 +459,13 @@ function reportCards(r) {
     `<tr><th>합계</th><td></td><td class="num"><b>${won(r.totals.this_month_benefit)}</b></td><td></td><td></td>
     <td class="num"><b>${won(r.totals.prev_month_benefit)}</b></td><td></td></tr></table>`;
 }
+function baseTier(b) {        // 구간 지키기 안내와 같은 기준: 지금 구간이 있으면 유지까지, 없으면 다음 구간까지
+  const next = b.next_tier != null ? `다음 구간 ${won(b.next_tier)}까지 ${won(b.remaining_to_next)}`
+    : b.remaining_to_next === 0 ? "최고 구간" : "-";
+  if (!b.tier_min) return next;
+  const keep = `지금 구간 ${won(b.tier_min)} 유지까지 ${won(b.remaining_to_keep)}`;
+  return b.remaining_to_keep > 0 ? keep : `${keep} · ${next}`;
+}
 function reportStrategy(s) {
   const base = s.base_card;
   const compare = s.compare?.length ? `<table style="margin-top:6px"><tr><th>방식</th><th class="num">최근 ${s.compare_months}개월 다시 돌린 혜택</th></tr>` +
@@ -466,8 +473,7 @@ function reportStrategy(s) {
     : '<div class="muted small">방식 비교 없음</div>';
   return `<div><span class="badge brand">${esc(s.label || s.current)}</span>${esc(s.description || "")}</div>
     <div class="small" style="margin-top:4px">고른 근거: ${esc(s.chosen_by_label)}</div>${compare}
-    <div class="small" style="margin-top:8px">지금 채우는 카드: ${base ? `<b>${esc(base.name)}</b>${base.target_tier != null
-      ? ` · ${won(base.target_tier)} 구간까지 ${won(base.remaining)}` : " · 최고 구간"}` : "-"}</div>
+    <div class="small" style="margin-top:8px">지금 채우는 카드: ${base ? `<b>${esc(base.name)}</b> · ${baseTier(base)}` : "-"}</div>
     <div class="small">결제 화면 순서: ${(s.current_order || []).map((c) => `${c.rank}. ${esc(c.name)}`).join(" / ") || "-"}</div>
     ${s.message ? `<div class="small muted">안내 문구: ${esc(s.message)}</div>` : ""}`;
 }
