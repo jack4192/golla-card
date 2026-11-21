@@ -1,6 +1,6 @@
 from tests.conftest import USER_CARDS, at, pay
 from engine.domain import User
-from engine.report import card_rows, tier_info, this_month_tiers
+from engine.report import STRATEGY_DESC, STRATEGY_LABEL, card_rows, reason_group, tier_info, this_month_tiers
 from engine.state import UserState
 
 
@@ -66,3 +66,53 @@ def test_this_month_tiers_구간_0원_카드는_0_그대로(catalog, params):
         "tier_min": 300_000, "remaining_to_keep": 290_000, "next_tier": 300_000, "remaining_to_next": 290_000}
     assert this_month_tiers([0], now.ledger[101]) == {
         "tier_min": 0, "remaining_to_keep": None, "next_tier": None, "remaining_to_next": 0}
+
+
+# ---------- 카드 배치 전략 근거 ----------
+
+def _service(catalog, priors, params):
+    from engine.service import PlacementEngine, PlacementService
+    from tests.test_service_api import FakeStore
+    return PlacementService(FakeStore(User(1)), PlacementEngine(catalog, priors, params))
+
+
+def test_strategy_info_규칙이_있으면_rule(catalog, priors, params):
+    svc = _service(catalog, priors, params)
+    svc.store.save_rules(1, [{"rule_type": "order", "settings": {"base_order": "none"}}])
+    out = svc.strategy_info(1, at(10, 7))
+    assert out["chosen_by"] == "rule" and out["current"] == "none" and out["label"] == "실적 안 채움"
+    assert out["description"] == STRATEGY_DESC["none"]
+    assert out["compare"] == [] and out["compare_months"] is None
+
+
+def test_strategy_info_월간_맞춤_꺼짐이면_default(catalog, priors, params):
+    svc = _service(catalog, priors, params.with_(adaptive_months=0))
+    out = svc.strategy_info(1, at(10, 7))
+    assert out["chosen_by"] == "default" and out["label"] == STRATEGY_LABEL[out["current"]]
+    assert out["chosen_by_label"] == "기본 방식" and out["compare"] == [] and out["compare_months"] is None
+
+
+def test_strategy_info_미리_읽은_context를_쓴다(catalog, priors, params):
+    svc = _service(catalog, priors, params)
+    context = svc.store.context(1, at(10, 7))
+    svc.store.context = lambda *a: (_ for _ in ()).throw(AssertionError("다시 읽음"))
+    assert svc.strategy_info(1, at(10, 7), context)["chosen_by"] in (
+        "monthly", "insufficient_history", "default", "user_confirmed")
+
+
+def test_strategy_info_월간_맞춤_비교는_혜택_큰_순(catalog, priors, params):
+    svc = _service(catalog, priors, params)
+    svc.monthly_strategy = lambda *a: {"strategy": "value", "status": "ready", "months": 3,
+                                       "scores": {"first_tier": 10_000.4, "value": 25_000.6, "main_top": 18_000}}
+    out = svc.strategy_info(1, at(10, 7))
+    assert out["chosen_by"] == "monthly" and out["label"] == "가치 최대" and out["compare_months"] == 3
+    assert out["compare"] == [{"method": "value", "label": "가치 최대", "benefit": 25_001},
+                              {"method": "main_top", "label": "주력 카드 우선", "benefit": 18_000},
+                              {"method": "first_tier", "label": "첫 구간 우선", "benefit": 10_000}]
+
+
+def test_reason_group():
+    assert reason_group("RULE") == "사용자 규칙"
+    assert reason_group("PROMOTION") == "프로모션" and reason_group("PROMOTION_CARD") == "프로모션"
+    assert reason_group("PERFORMANCE") == reason_group("HOLD") == reason_group("BASE_CHANGED") == "실적 채우기"
+    assert reason_group("TIME_BENEFIT") == "혜택 비교"

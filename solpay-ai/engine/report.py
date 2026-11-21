@@ -1,7 +1,25 @@
 """월간 리포트: 카드별 이번 달·지난달 숫자. 숫자는 엔진 상태(원장)에서만 가져온다."""
 from engine.benefit_calc import Card, CardMonth, cap_for, total_cap
 from engine.catalog import Catalog
+from engine.params import (BASE_ORDER_FIRST_TIER, BASE_ORDER_MAIN_TOP, BASE_ORDER_NONE, BASE_ORDER_TOP_TIER,
+                           BASE_ORDER_VALUE)
 from engine.state import UserState
+
+STRATEGY_LABEL = {BASE_ORDER_FIRST_TIER: "첫 구간 우선", BASE_ORDER_MAIN_TOP: "주력 카드 우선",
+                  BASE_ORDER_VALUE: "가치 최대", BASE_ORDER_NONE: "실적 안 채움",
+                  BASE_ORDER_TOP_TIER: "1번 카드 최고 구간 우선"}
+STRATEGY_DESC = {BASE_ORDER_FIRST_TIER: "모든 카드의 첫 구간을 먼저 채운다",
+                 BASE_ORDER_MAIN_TOP: "구간 혜택이 가장 큰 주력 카드의 높은 구간부터 채우고 남으면 다른 카드",
+                 BASE_ORDER_VALUE: "남은 예산 안에서 (구간 증분 혜택 − 포기하는 혜택) 합이 최대인 구간 조합",
+                 BASE_ORDER_NONE: "실적을 채우지 않고 결제마다 혜택률이 가장 높은 카드",
+                 BASE_ORDER_TOP_TIER: "1번 카드의 최고 구간부터 채운다"}
+REASON_GROUP = {"RULE": "사용자 규칙", "PROMOTION": "프로모션", "PROMOTION_CARD": "프로모션",
+                "PERFORMANCE": "실적 채우기", "HOLD": "실적 채우기", "BASE_CHANGED": "실적 채우기"}
+
+
+def reason_group(code: str) -> str:
+    """배치 이유 코드를 리포트의 묶음 이름으로 바꾼다 (규칙·프로모션·실적 채우기, 그 밖은 혜택 비교)."""
+    return REASON_GROUP.get(code, "혜택 비교")
 
 
 def limits_of(card: Card, ledger: CardMonth) -> list[dict]:

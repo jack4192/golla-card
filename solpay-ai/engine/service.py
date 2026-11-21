@@ -9,9 +9,10 @@ from engine.category_model import CategoryModel
 from engine.domain import KnownPayment, Promotion, RankRequest, RankResult, RankedCard, UserWeights, ScheduleItem
 from engine.ml import Models
 from engine.messages import PROMOTION_CARD, RULE, card_message, previous_base_filled, with_object_particle
-from engine.params import Params
+from engine.params import BASE_ORDER_FIRST_TIER, Params
 from engine.priors import Priors
 from engine.ranker import decide
+from engine.report import STRATEGY_DESC, STRATEGY_LABEL
 from engine.rules import Rule, resolve
 from engine.scenarios import MODE_SCHEDULE, active_schedule, build
 from engine.slots import ym_of
@@ -197,15 +198,38 @@ class PlacementService:
                                       at, fixed_strategy, self._strategy_promotions())
         return cache[key]
 
-    def monthly_strategy(self, user_id: int, at) -> dict:
-        """이번 달 맞춤 방식과 후보별 비교 점수 (월초 배치·챗봇 설명용)."""
-        context = self.store.context(user_id, at)
+    def monthly_strategy(self, user_id: int, at, context=None) -> dict:
+        """이번 달 맞춤 방식과 후보별 비교 점수 (월초 배치·챗봇 설명용). 이미 읽은 context 가 있으면 다시 읽지 않는다."""
+        context = context or self.store.context(user_id, at)
         stored = getattr(self.store, "strategy_store", None)
         selection = stored.get(user_id) if stored is not None else None
         fixed = selection["strategy"] if selection else (context.weights.base_order if context.weights else None)
         if (selection and selection.get("source") == "confirmed") or (selection is None and fixed):
             return {"strategy": fixed, "status": "user_confirmed", "scores": {}}
         return self._monthly(context, fixed, at)
+
+    def strategy_info(self, user_id: int, at, context=None) -> dict:
+        """지금 쓰는 배치 방식과 고른 이유 (챗봇 설명·월간 리포트 공용).
+        chosen_by: rule(사용자 규칙) · user_confirmed · monthly(월간 맞춤) · insufficient_history · default."""
+        context = context or self.store.context(user_id, at)
+        outcome = resolve(list(context.rules), context.cards, at, self.engine.params)
+        scores, months = {}, None
+        if outcome.order_rule is not None:
+            current, chosen_by, chosen_by_label = outcome.order_rule.base_order, "rule", "사용자 설정 (규칙)"
+        else:
+            info = self.monthly_strategy(user_id, at, context)
+            current = info.get("strategy") or BASE_ORDER_FIRST_TIER
+            chosen_by, chosen_by_label = {
+                "user_confirmed": ("user_confirmed", "사용자 확정"),
+                "ready": ("monthly", "월간 맞춤 (지난 결제로 방식 비교)"),
+                "insufficient_history": ("insufficient_history", "결제 이력이 짧아 기본 방식")}.get(
+                info.get("status"), ("default", "기본 방식"))
+            scores, months = info.get("scores") or {}, info.get("months")
+        compare = sorted(({"method": k, "label": STRATEGY_LABEL.get(k, k), "benefit": int(round(v))}
+                          for k, v in scores.items()), key=lambda x: -x["benefit"])
+        return {"current": current, "label": STRATEGY_LABEL.get(current), "description": STRATEGY_DESC.get(current),
+                "chosen_by": chosen_by, "chosen_by_label": chosen_by_label,
+                "compare_months": months if scores else None, "compare": compare}
 
     def _loss_guard(self, context, state) -> bool:
         """손해 방지 판단은 사용자·달마다 한 번 계산해 둔다 (지난달까지의 결제만 쓰므로 달 안에서는 같다)."""
