@@ -8,7 +8,7 @@ from engine.catalog import Catalog
 from engine.category_model import CategoryModel
 from engine.domain import KnownPayment, Promotion, RankRequest, RankResult, RankedCard, UserWeights, ScheduleItem
 from engine.ml import Models
-from engine.messages import PROMOTION_CARD, RULE, card_message, with_object_particle
+from engine.messages import PROMOTION_CARD, RULE, card_message, previous_base_filled, with_object_particle
 from engine.params import Params
 from engine.priors import Priors
 from engine.ranker import decide
@@ -67,7 +67,9 @@ class PlacementEngine:
                 return promo
 
         decision = decide(state, eligible, scenarios, req.at, params, promotions, schedules, outcome.no_fill or set())
-        base_changed = last_base is not None and last_base != decision.base
+        # '앞 카드 실적을 채워 …' 는 직전 기본 카드가 이번 달 구간을 실제로 채웠을 때만 (달이 바뀐 첫 화면·고정 규칙 뒤에는 내지 않는다)
+        base_changed = (last_base is not None and last_base != decision.base
+                        and previous_base_filled(state, self.catalog, last_base, params))
         shown = [decision.first] + ([decision.second] if decision.second is not None else [])
         messages = {uc: card_message(state, self.catalog, decision, scenarios, uc, req.at, params, base_changed)
                     for uc in shown}
