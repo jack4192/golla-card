@@ -19,13 +19,10 @@ from engine.domain import KnownPayment
 from engine.params import (BASE_ORDER_FIRST_TIER, BASE_ORDER_MAIN_TOP, BASE_ORDER_NONE, BASE_ORDER_TOP_TIER,
                            BASE_ORDER_VALUE)
 from engine.privacy import redact
-from engine.report import limits_of, this_month_tiers
-from engine.rules import RuleError, parse_rule, resolve
+from engine.report import STRATEGY_LABEL, limits_of, this_month_tiers
+from engine.rules import RuleError, parse_rule
 from engine.slots import ym_of
 
-STRATEGY_LABEL = {BASE_ORDER_FIRST_TIER: "첫 구간 우선", BASE_ORDER_MAIN_TOP: "주력 카드 우선",
-                  BASE_ORDER_VALUE: "가치 최대", BASE_ORDER_NONE: "실적 안 채움",
-                  BASE_ORDER_TOP_TIER: "1번 카드 최고 구간 우선"}
 RULE_LABEL = {"force": "먼저 보여 주기", "exclude": "추천에서 빼기", "no_fill": "실적 채우지 않기",
               "order": "실적 채우기 방식", "preference": "실적 중시 정도"}
 DAY_KO = {"mon": "월", "tue": "화", "wed": "수", "thu": "목", "fri": "금", "sat": "토", "sun": "일",
@@ -256,18 +253,11 @@ class ToolBox:
         }
 
     def _month_strategy(self) -> dict:
-        outcome = resolve(list(self.context.rules), self.cards, self.at, self.service.engine.params)
-        if outcome.order_rule is not None:
-            return {"current": STRATEGY_LABEL.get(outcome.order_rule.base_order), "chosen_by": "사용자 설정 (규칙)"}
-        info = self.service.monthly_strategy(self.user_id, self.at)
-        out = {"current": STRATEGY_LABEL.get(info.get("strategy"), "첫 구간 우선"),
-               "chosen_by": {"user_confirmed": "사용자 확정", "ready": "월간 맞춤 (지난 결제로 방식 비교)",
-                             "insufficient_history": "결제 이력이 짧아 기본 방식",
-                             "off": "기본 방식"}.get(info.get("status"), "기본 방식")}
-        if info.get("scores"):
-            out["compare_months"] = info.get("months")
-            out["compare"] = sorted(({"method": STRATEGY_LABEL.get(k, k), "benefit": int(round(v))}
-                                     for k, v in info["scores"].items()), key=lambda x: -x["benefit"])
+        info = self.service.strategy_info(self.user_id, self.at, self.context)
+        out = {"current": info["label"], "chosen_by": info["chosen_by_label"]}
+        if info["compare"]:
+            out["compare_months"] = info["compare_months"]
+            out["compare"] = [{"method": c["label"], "benefit": c["benefit"]} for c in info["compare"]]
         return out
 
     # ---------- 2. 가정 계산 ----------
