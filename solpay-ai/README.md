@@ -126,6 +126,21 @@ uv run uvicorn engine.api:app --port 8000
 
 브라우저에서 http://127.0.0.1:8000/docs 를 열면 API 를 직접 호출할 수 있다.
 
+안내 문구 (`reason_code`, `engine/messages.py`, 2026-11-21 수정):
+
+| `reason_code` | 문구 |
+|---|---|
+| `GENERAL_BENEFIT`·`AMOUNT_BENEFIT`·`TIME_BENEFIT` | "카페에서 결제하면 10% 할인을 받을 수 있어요!" (금액·시간 조건이 있으면 함께) |
+| `HOLD` | "○○ 40만 원 구간까지 70,000원 남았어요. 채우면 다음 달에도 지금 혜택을 받아요" |
+| `PERFORMANCE` | "○○ 실적 달성까지 80,000원 남았어요!" |
+| `PROMOTION` | "올리브영 마이샵 25%로 약 150원을 더 받을 수 있어요!" 금액이 100원(`Params.promo_message_min`) 미만이면 내지 않고 카드 혜택 문구를 쓴다 |
+| `PROMOTION_CARD` | 일정 팝업에서 추천한 행사의 카드 |
+| `REPEAT` | "평일 아침에는 보통 대중교통에서 결제하셔서 이 카드를 먼저 보여 드려요" |
+| `BASE_CHANGED` | "앞 카드 실적을 채워 오늘부터 ○○를 먼저 보여 드려요" 직전 기본 카드가 이번 달 구간을 실제로 채웠을 때만 |
+| `HABIT` | "보통 지금 시간대에 이 카드로 계산하셨어요!" 최근 두 달 그 시간대에 그 카드를 가장 많이, 3번 이상 썼을 때만 |
+| `NEUTRAL` | "지금은 카드마다 혜택 차이가 크지 않아요." 말할 혜택이 없고 습관 문구도 사실이 아닐 때 (새 코드) |
+| `RULE` | "설정하신 대로 ○○를 먼저 보여 드려요" |
+
 ```bash
 curl -s -X POST http://127.0.0.1:8000/internal/rank -H 'Content-Type: application/json' -d '{"user_id": 1, "lat": 37.4979, "lng": 127.0276, "accuracy_m": 20, "at": "2026-11-05T12:20:00+09:00"}'
 ```

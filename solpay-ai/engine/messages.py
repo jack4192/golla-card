@@ -3,13 +3,14 @@
 문구는 이미 쓰기로 한 결제의 카드 선택만 돕는다. 소비를 늘리라는 표현은 쓰지 않는다.
 """
 
+from collections import Counter
 from dataclasses import dataclass
 
 from engine.benefit_calc import SOLPAY, Benefit, evaluate
 from engine.catalog import Catalog
 from engine.ranker import CardScore, Decision
 from engine.scenarios import Scenario, ScenarioSet
-from engine.slots import slot_label
+from engine.slots import slot_label, slot_of
 from engine.state import UserState
 
 RULE = "RULE"
@@ -21,11 +22,13 @@ PROMOTION = "PROMOTION"
 BASE_CHANGED = "BASE_CHANGED"
 REPEAT = "REPEAT"
 HABIT = "HABIT"
+NEUTRAL = "NEUTRAL"                 # 혜택으로 말할 것이 없고 습관 문구도 사실이 아닐 때
 HOLD = "HOLD"                       # v4 구간 지키기로 기본 카드가 된 경우
 PROMOTION_CARD = "PROMOTION_CARD"   # 일정 팝업에서 추천한 프로모션의 신한카드
 
 KIND = {"discount": "할인", "cashback": "캐시백", "point": "적립"}
 HOME_ISSUER = "SHINHAN"
+HABIT_MIN = 3                       # 이 시간대에 이 카드로 이만큼은 결제했어야 '보통 이 카드로'라고 말한다
 
 
 @dataclass
@@ -39,6 +42,13 @@ def with_object_particle(word: str) -> str:
     last = word[-1] if word else ""
     has_final = "가" <= last <= "힣" and (ord(last) - ord("가")) % 28 > 0
     return f"{word}{'을' if has_final else '를'}"
+
+
+def with_direction_particle(word: str) -> str:
+    """받침이 있으면 '으로', 받침이 없거나 ㄹ 받침이면 '로'를 붙인다 ('500원으로', '25%로')."""
+    last = word[-1] if word else ""
+    final = (ord(last) - ord("가")) % 28 if "가" <= last <= "힣" else 0
+    return f"{word}{'로' if final in (0, 8) else '으로'}"
 
 
 def benefit_text(b: Benefit, prev_perf: int) -> str:
@@ -126,7 +136,39 @@ def _dominant(score: CardScore, base: CardScore, params) -> str:
 
 def _promotion_message(score: CardScore) -> Message:
     name = score.promotion_label or "이 매장 이벤트"
-    return Message(PROMOTION, f"{name}로 약 {int(round(score.promotion, -1)):,}원을 더 받을 수 있어요!")
+    return Message(PROMOTION, f"{with_direction_particle(name)} 약 {int(round(score.promotion, -1)):,}원을 더 받을 수 있어요!")
+
+
+def _shows_promotion(score: CardScore, params) -> bool:
+    """행사 문구를 낼 만한지: 문구에 적힐 금액(10원 단위로 맞춘 기대 금액)이 promo_message_min 이상일 때만
+    (2026-11-21 사용자 결정). 기대 금액은 그 가게에 갈 확률을 곱한 값이라 작으면 '약 30원' 같은 문구가 된다."""
+    return score.promotion > 0 and int(round(score.promotion, -1)) >= params.promo_message_min
+
+
+def _fallback_message(state: UserState, user_card_id: int, at, params) -> Message:
+    """혜택으로 말할 것이 없을 때. 최근 두 달(지난달과 이번 달) 이 시간대 현장 결제에서 이 카드를 가장 많이,
+    HABIT_MIN 번 이상 썼을 때만 습관 문구를 쓰고, 아니면 혜택 차이가 없다고 그대로 말한다 (2026-11-21 사용자 결정.
+    1년 재생에서 습관 문구의 1순위 카드가 실제로 쓰던 카드와 같은 경우는 54%였다)."""
+    slot = slot_of(at, params)
+    used = Counter(p.user_card_id for p in (*state.prev_rows, *state.cur_rows)
+                   if p.is_placement and p.paid_at < at and slot_of(p.paid_at, params) == slot)
+    if used[user_card_id] >= HABIT_MIN and used[user_card_id] == max(used.values()):
+        return Message(HABIT, "보통 지금 시간대에 이 카드로 계산하셨어요!")
+    return Message(NEUTRAL, "지금은 카드마다 혜택 차이가 크지 않아요.")
+
+
+def previous_base_filled(state: UserState, catalog: Catalog, last_base: int, params) -> bool:
+    """직전 기본 카드가 이번 달 실적 구간을 실제로 채웠는지 ('앞 카드 실적을 채워 …' 문구를 낼 수 있는지).
+    이번 달 실적이 그 카드의 첫 구간 이상이고, 구간 지키기를 쓰면 지난달 받던 구간 이상이어야 한다.
+    구간이 없는 카드, 이번 달 실적이 모자란 카드(달이 바뀐 첫 화면, 고정 규칙으로 잠깐 앞에 온 카드)는 아니다
+    (2026-11-21 사용자 결정. 1년 재생에서 이 문구의 14.6%가 달이 바뀐 첫 화면이었다)."""
+    card_id = state.card_ids.get(last_base)
+    tiers = catalog.tiers.get(card_id, ()) if card_id is not None else ()
+    if not tiers or last_base not in state.ledger:
+        return False
+    st = state.ledger[last_base]
+    held = max((t for t in tiers if t <= st.prev_perf), default=tiers[0]) if params.hold_tiers else tiers[0]
+    return st.perf >= max(tiers[0], held)
 
 
 def card_message(state: UserState, catalog: Catalog, decision: Decision, scenarios: ScenarioSet, user_card_id: int,
@@ -141,26 +183,26 @@ def card_message(state: UserState, catalog: Catalog, decision: Decision, scenari
                 return _hold_message(state, catalog, user_card_id, card_row.card_id, card_row.issuer)
             if decision.threshold > 0 and decision.gain > 0:   # 더 주는 카드가 있지만 실적 때문에 기본 카드를 유지
                 return _performance_message(state, catalog, user_card_id, card_row.card_id, card_row.issuer)
-            if score.promotion > 0 and score.promotion >= score.immediate:   # 기본 카드의 행사가 가장 큰 경우 (v4.2)
+            if _shows_promotion(score, params) and score.promotion >= score.immediate:   # 기본 카드의 행사가 가장 큰 경우 (v4.2)
                 return _promotion_message(score)
             message = _benefit_message(state, catalog, user_card_id, card_row.card_id, scenarios.scenarios, at)
-            return message or Message(HABIT, "보통 지금 시간대에 이 카드로 계산하셨어요!")
-        if score.promotion > 0 and score.promotion >= max(score.immediate, score.performance):
+            return message or _fallback_message(state, user_card_id, at, params)
+        if _shows_promotion(score, params) and score.promotion >= max(score.immediate, score.performance):
             return _promotion_message(score)         # 기본 카드를 유지했지만 이 매장 이벤트가 가장 큰 경우
         if score.performance > score.immediate:      # 실적을 채우려고 기본 카드가 된 경우
             return _performance_message(state, catalog, user_card_id, card_row.card_id, card_row.issuer)
         message = _benefit_message(state, catalog, user_card_id, card_row.card_id, scenarios.scenarios, at)
-        return message or Message(HABIT, "보통 지금 시간대에 이 카드로 계산하셨어요!")
+        return message or _fallback_message(state, user_card_id, at, params)
     if user_card_id == decision.first and decision.repeat_applied and decision.swap_reason != "performance":
         name = catalog.category_name(decision_category(scenarios))
         return Message(REPEAT, f"{slot_label(scenarios.slot)}에는 보통 {name}에서 결제하셔서 이 카드를 먼저 보여 드려요")
     dominant = _dominant(score, decision.scores[decision.base], params)
     if dominant == "performance" and score.performance > 0:
         return _performance_message(state, catalog, user_card_id, card_row.card_id, card_row.issuer)
-    if dominant == "promotion" and score.promotion > 0:
+    if dominant == "promotion" and _shows_promotion(score, params):
         return _promotion_message(score)
     message = _benefit_message(state, catalog, user_card_id, card_row.card_id, scenarios.scenarios, at)
-    return message or Message(HABIT, "보통 지금 시간대에 이 카드로 계산하셨어요!")
+    return message or _fallback_message(state, user_card_id, at, params)
 
 
 def decision_category(scenarios: ScenarioSet) -> str:
