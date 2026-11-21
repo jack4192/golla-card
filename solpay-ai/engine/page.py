@@ -2,6 +2,10 @@
 
 일정을 저장하거나 건너뛰면 뜨는 페이지다. 무엇을 보여 줄지는 엔진이 정하고, 문구는 engine.chat.page_copy 가 쓴다.
 
+카드 고르기 (2026-11-21 사용자 결정): 오늘 항목에서 보유 카드보다 더 주는 카드 중, 지난 1년 소비로 따져 연회비를 빼고도
+이득인 카드만 남긴다. 그중 오늘 일정 업종·브랜드를 콕 집은 혜택(음식점 10% 할인 등)이 있는 카드를 먼저 보고, 1년 순이득이 가장 큰 카드.
+화면의 큰 글씨는 오늘 일정에서 받는 혜택 키워드('음식점 10% 할인')이고, 1년 순이득(연말정산 놓친 혜택과 같은 숫자)은 그 아래 한 줄이다.
+
 표시 규칙 (2026-11-19 사용자 결정):
   카드날     : 카드 탭 + 가맹점 탭 (있는 것만, 카드 먼저)
   카드날 아님: 가맹점 탭. 프로모션이 없으면 카드 탭
@@ -13,6 +17,7 @@
 """
 
 import math
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from collections.abc import Callable
@@ -22,9 +27,10 @@ from statistics import median
 from engine.benefit_calc import SOLPAY, Card, CardMonth, evaluate
 from engine.catalog import Catalog
 from engine.domain import Payment, ScheduleItem
+from engine.messages import KIND
 from engine.params import Params
 from engine.popup import PromotionOffer, promotion_offers
-from engine.recommend import candidates, monthly_gain
+from engine.recommend import candidates, missed_benefit
 
 CYCLE = "page_cycle"            # 카드날에 보여 준 카드
 FALLBACK = "page_fallback"      # 프로모션이 없어 대신 보여 준 카드 (3일 주기에 세지 않는다)
@@ -113,6 +119,8 @@ class CardPickItem:
     min_prev: int               # 그 혜택의 전월 실적 조건
     value: int                  # 후보 카드 혜택 (첫 실적 구간을 채웠다고 볼 때)
     owned_value: int            # 보유 카드 중 가장 큰 혜택 (이번 달 실제 장부)
+    keyword: str = ""           # 화면에 보여 줄 혜택 키워드: '음식점 10% 할인', '스타벅스 10% 할인', '모든 가맹점 1.5% 할인'
+    specific: bool = False      # 이 업종·브랜드를 콕 집은 혜택인지 (모든 가맹점 혜택이면 False)
 
     @property
     def gain(self) -> int:
@@ -125,12 +133,47 @@ class CardPick:
     card_name: str
     annual_fee: int
     items: tuple[CardPickItem, ...]
-    monthly_gain: int           # 지난 30일 결제로 본 월 이득 (연회비 반영, 참고값)
     first_month_note: str | None
+    # 지난 1년 결제에 이 카드가 있었다면 더 받았을 금액 (연회비 뺌, 연말정산 놓친 혜택과 같은 계산). 화면의 큰 금액.
+    # 결제 이력이 두 달 미만이라 계산할 수 없으면(또는 Params.page_yearly=False) 모두 None
+    yearly_gain: int | None = None
+    yearly_months: int | None = None    # 계산한 개월 수 (첫 달은 실적만 쌓아 보통 11~12)
+    yearly_basis: str | None = None     # add: 함께 썼다면 / swap: 가진 카드 하나 대신 썼다면
+    replaces: str | None = None         # swap 일 때 대신 쓴 것으로 본 보유 카드 이름
 
     @property
     def gain(self) -> int:
         return sum(i.gain for i in self.items)
+
+    @property
+    def keywords(self) -> list[str]:
+        """오늘 항목별 혜택 키워드 (대표 항목 먼저, 같은 말은 한 번)."""
+        return list(dict.fromkeys(i.keyword for i in self.items if i.keyword))
+
+
+def short_category(name: str) -> str:
+    """업종 이름의 짧은 표기: '카페/커피전문점' → '카페', '대중교통(버스/지하철)' → '대중교통'."""
+    return re.split(r"[/(]", name)[0].strip()
+
+
+def benefit_keyword(b, category: str, brand: str | None, catalog: Catalog) -> tuple[str, bool]:
+    """(혜택 키워드, 이 업종·브랜드를 콕 집은 혜택인지). '음식점 10% 할인' 처럼 어디서 + 얼마 + 혜택 종류.
+    브랜드 한정 혜택이면 브랜드, 업종 혜택이면 업종(짧은 표기), 국내 전 가맹점 혜택이면 '모든 가맹점'."""
+    short = short_category(catalog.category_name(category))
+    if b.targets is not None:
+        where = short if any(c == category and target is None for c, target in b.targets) else (brand or short)
+    elif b.brands is not None:
+        where = brand or short
+    else:
+        where = "모든 가맹점" if b.category == "*" else short
+    if b.per_liter is not None:
+        what = f"ℓ당 {b.per_liter:,}원"
+    elif b.amount is not None:
+        what = f"{b.amount:,}원"
+    else:
+        what = f"{(b.rate or 0) * 100:g}%"
+    specific = b.targets is not None or b.brands is not None or b.category != "*"
+    return f"{where} {what} {KIND.get(b.type, '혜택')}", specific
 
 
 def _covered_brands(card: Card, category: str) -> list[str]:
@@ -156,15 +199,32 @@ def _item_gain(state, card: Card, item: ScheduleItem, brands: list[str | None], 
         if value - have <= 0 or (best is not None and value - have <= best.gain):
             continue
         name = (b.name if b is not None and b.name else "") or f"{catalog.category_name(item.category)} 혜택"
+        keyword, specific = benefit_keyword(b, item.category, brand, catalog) if b is not None else (name, False)
         best = CardPickItem(item.item_id, item.start, item.end, item.category, item.amount, brand, name,
-                            b.type if b is not None else "", b.min_prev if b is not None else 0, value, have)
+                            b.type if b is not None else "", b.min_prev if b is not None else 0, value, have,
+                            keyword, specific)
     return best
+
+
+def yearly_gains(state, payments: list[Payment], card_ids: set[int], at: datetime, params: Params) -> dict[int, dict] | None:
+    """card_id → 연말정산 놓친 혜택과 같은 계산 결과 (gain 은 연회비를 뺀 1년 순이득).
+    지난 page_history_days 일 결제가 두 달에 못 미치면 계산할 수 없어 None."""
+    since = at - timedelta(days=params.page_history_days)
+    rows = [p for p in payments if since <= p.paid_at < at]
+    if len({(p.paid_at.year, p.paid_at.month) for p in rows}) < 2:
+        return None
+    return {m["card_id"]: m for m in missed_benefit(state, rows, params.switch_threshold, only=card_ids)}
 
 
 def pick_card(state, payments: list[Payment], items: list[ScheduleItem], history: list[dict], at: datetime,
               params: Params) -> CardPick | None:
-    """아직 없는 신한카드 중 오늘 항목에서 보유 카드보다 더 주는 금액 합이 가장 큰 카드 (0원이면 추천하지 않는다).
-    같으면 연회비가 낮은 카드, 그다음 card_id. 30일 안에 추천한 카드(오늘 기록 제외)와 자격 제한 카드는 뺀다."""
+    """아직 없는 신한카드 중 오늘 항목에서 보유 카드보다 더 주는 카드(0원이면 후보가 아니다)를 모으고,
+    그중 지난 1년 소비로 따져 연회비를 빼고도 이득인 카드만 남긴다 (남는 카드가 없으면 추천하지 않는다).
+    남은 카드 가운데 오늘 일정 업종·브랜드를 콕 집은 혜택이 있는 카드를 먼저 보고(page_schedule_first, 없으면 나머지에서),
+    1년 순이득이 가장 큰 카드를 고른다. 같으면 오늘 더 받는 금액이 큰 카드, 그다음 card_id (2026-11-21 사용자 결정).
+    결제 이력이 두 달 미만이거나 page_yearly=False 면 1년 계산 없이: 오늘 더 받는 금액 큰 순 → 연회비 낮은 순 → card_id.
+    항목은 대표 항목이 맨 앞에 오게 둔다: 일정 업종 혜택 먼저, 그다음 더 받는 금액이 큰 순.
+    2주(recommend_same_card_days) 안에 추천한 카드(오늘 기록 제외)와 자격 제한 카드는 뺀다."""
     catalog = state.catalog
     blocked = recently_recommended(history, at, params)
     owned = [(uc, catalog.cards[uc.card_id]) for uc in state.cards if not uc.excluded]
@@ -180,16 +240,28 @@ def pick_card(state, payments: list[Payment], items: list[ScheduleItem], history
             if row is not None:
                 rows.append(row)
         if rows:
+            rows.sort(key=lambda r: (not r.specific, -r.gain, r.start))      # 대표 항목이 맨 앞
             found.append((sum(r.gain for r in rows), card, tuple(rows)))
     if not found:
         return None
-    _, card, rows = min(found, key=lambda f: (-f[0], f[1].annual_fee, f[1].card_id))
-    rows60 = [p for p in payments if at - timedelta(days=60) <= p.paid_at < at]
-    monthly = monthly_gain(state, rows60, card, at, params.switch_threshold)[0]
-    top = max(rows, key=lambda r: r.gain)
+    yearly = yearly_gains(state, payments, {card.card_id for _, card, _ in found}, at, params) if params.page_yearly else None
+    if yearly is not None:
+        found = [f for f in found if yearly[f[1].card_id]["gain"] > params.page_min_yearly]
+        if not found:
+            return None
+    if params.page_schedule_first:                    # 오늘 일정 업종 혜택이 있는 카드 먼저. 없으면 나머지에서 고른다
+        found = [f for f in found if any(r.specific for r in f[2])] or found
+    if yearly is None:
+        _, card, rows = min(found, key=lambda f: (-f[0], f[1].annual_fee, f[1].card_id))
+        year = {}
+    else:
+        _, card, rows = min(found, key=lambda f: (-yearly[f[1].card_id]["gain"], -f[0], f[1].card_id))
+        year = yearly[card.card_id]
+    top = rows[0]
     first = evaluate(card, top.category, top.amount, CardMonth(prev_perf=0), top.start, top.brand, SOLPAY)[0]
-    return CardPick(card.card_id, catalog.card_label(card.card_id), card.annual_fee, rows, monthly,
-                    FIRST_MONTH_NOTE if first < top.value else None)
+    return CardPick(card.card_id, catalog.card_label(card.card_id), card.annual_fee, rows,
+                    FIRST_MONTH_NOTE if first < top.value else None,
+                    year.get("gain"), year.get("months"), year.get("basis"), year.get("replaces"))
 
 
 # ---------- 페이지 ----------
@@ -210,12 +282,18 @@ class Page:
         card = None
         if self.card is not None:
             c = self.card
-            card = {"card_id": c.card_id, "card_name": c.card_name, "annual_fee": c.annual_fee, "gain": c.gain,
-                    "show_amount": c.gain >= params.page_amount_min,     # 작으면 화면에 금액 대신 혜택 이름
-                    "monthly_gain": c.monthly_gain, "first_month_note": c.first_month_note,
+            card = {"card_id": c.card_id, "card_name": c.card_name, "annual_fee": c.annual_fee,
+                    # 화면의 큰 글씨: 대표 항목(items[0])에서 받는 혜택. keywords 는 오늘 항목별 키워드 (대표 먼저)
+                    "keyword": c.items[0].keyword, "keywords": c.keywords,
+                    "gain": c.gain,
+                    "show_amount": c.gain >= params.page_amount_min,     # 오늘 혜택 금액(원)을 문구에 쓰는지. 작으면 키워드만
+                    # 큰 글씨 아래 한 줄: 지난 1년 소비라면 더 받았을 금액 (연회비 뺌). 이력이 짧으면 None
+                    "yearly_gain": c.yearly_gain, "yearly_months": c.yearly_months,
+                    "yearly_basis": c.yearly_basis, "replaces": c.replaces, "first_month_note": c.first_month_note,
                     "items": [{"item_id": i.item_id, "start": i.start.isoformat(), "end": i.end.isoformat(),
                                "category": i.category, "category_name": names(i.category), "amount": i.amount,
                                "brand": i.brand, "benefit": i.benefit, "benefit_type": i.benefit_type,
+                               "keyword": i.keyword, "specific": i.specific,
                                "min_prev": i.min_prev, "value": i.value,
                                "owned_value": i.owned_value, "gain": i.gain} for i in c.items]}
         merchant = None

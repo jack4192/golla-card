@@ -354,9 +354,7 @@ function cardTab(c) {
   return `<h3>${esc(copy.title)}</h3><div class="sub">${esc(copy.summary)}</div>
     <div class="cardbox"><div style="text-align:center;font-weight:700">${esc(c.card_name)}</div>
       <div class="sub">신한카드 · 연회비 ${won(c.annual_fee)}</div>
-      ${c.show_amount === false
-        ? `<div class="big" style="margin-top:10px;font-size:18px">${esc(copy.amount_label)}</div><div class="label">받을 수 있는 혜택 (오늘 더 받는 금액이 작아 금액은 숨김)</div>`
-        : `<div class="big" style="margin-top:10px">${won(c.gain)}</div><div class="label">${esc(copy.amount_label)}</div>`}
+      <div class="big" style="margin-top:10px;font-size:22px">${esc(c.keyword)}</div><div class="label">${esc(copy.amount_label)}</div>
       <ul>${(copy.reasons || []).map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div>
     <div class="row" style="justify-content:center;margin-top:10px"><button class="primary" style="width:100%">카드 신청 (시연)</button></div>`;
 }
@@ -373,7 +371,9 @@ function evidence(p) {
   let html = "";
   if (p.card) {
     const c = p.card;
-    html += `<div class="small"><b>${esc(c.card_name)}</b> · 오늘 더 받는 금액 ${won(c.gain)} · 지난 30일 월 이득(연회비 반영) ${won(c.monthly_gain)}
+    const year = c.yearly_gain == null ? "1년 계산 없음 (결제 이력 두 달 미만)"
+      : `지난 ${c.yearly_months}개월 소비라면 ${won(c.yearly_gain)} 더 (연회비 뺌${c.replaces ? `, ${esc(c.replaces)} 대신 썼을 때` : ", 함께 썼을 때"})`;
+    html += `<div class="small"><b>${esc(c.card_name)}</b> · 오늘 혜택 ${esc((c.keywords || []).join(", "))} · 오늘 더 받는 금액 ${won(c.gain)}${c.show_amount ? "" : " (작아서 금액은 숨김)"} · ${year}
       ${c.first_month_note ? `<div class="muted">${esc(c.first_month_note)}</div>` : ""}</div>
       <table><tr><th>시각</th><th>업종</th><th>브랜드</th><th>혜택</th><th class="num">새 카드</th><th class="num">지금 카드</th><th class="num">더 받음</th></tr>` +
       c.items.map((i) => `<tr><td>${esc(i.start.slice(11, 16))}~${esc(i.end.slice(11, 16))}</td><td>${esc(i.category_name)}</td>

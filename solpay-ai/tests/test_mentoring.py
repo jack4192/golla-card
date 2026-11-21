@@ -81,12 +81,13 @@ def test_같은_업종_반복이면_그_업종_카드를_추천한다(state, par
     assert rec is None or rec.trigger in ("repeat", "regular")
 
 
-def test_하루에_한_번까지_같은_카드는_30일_동안_다시_추천하지_않는다(state, params):
+def test_하루에_한_번까지_같은_카드는_2주_동안_다시_추천하지_않는다(state, params):
     item = ScheduleItem(1, 1, at(10, 7, 12), at(10, 7, 14), "CVS", 1_000_000)
     p = params.with_(special_categories=("CVS",))
     assert recommend(_ready(state), [], [item], [{"at": at(10, 7, 0), "card_id": 9}], at(10, 7, 8), p) is None
     assert recommend(state, [], [item], [{"at": at(10, 1, 0), "card_id": 4}], at(10, 7, 8), p) is None
-    assert recommend(state, [], [item], [{"at": at(9, 20, 0), "card_id": 4}], at(10, 7, 8), p) is None
+    assert recommend(state, [], [item], [{"at": at(9, 24, 0), "card_id": 4}], at(10, 7, 8), p) is None          # 13일 8시간 전
+    assert recommend(state, [], [item], [{"at": at(9, 23, 0), "card_id": 4}], at(10, 7, 8), p) is not None      # 14일 8시간 전
     assert recommend(state, [], [item], [{"at": at(9, 1, 0), "card_id": 4}], at(10, 7, 8), p) is not None
 
 
@@ -125,3 +126,20 @@ def test_연말정산_문구는_12개월이면_1년이라고_한다():
     from engine.recommend import missed_message
     item = {"basis": "add", "replaces": None, "months": 12, "gain": 95_333}
     assert missed_message(item) == "그때 이 카드를 발급받으셨다면 1년 동안 95,333원을 더 받으셨어요"
+
+
+# 2026-11-21: 추천 페이지가 오늘 더 주는 카드만 1년 계산을 한다
+def test_연말정산_계산은_고른_카드만_할_수_있다(state):
+    rows = _year_rows()
+    everything = missed_benefit(state, rows)
+    assert len(everything) > 0 and missed_benefit(state, rows, only={4}) == [m for m in everything if m["card_id"] == 4]
+    assert missed_benefit(state, rows, only=set()) == []
+
+
+def test_표시_순서가_같고_쓰지_않은_카드가_둘이어도_계산한다(catalog, params):
+    """user_card_details 행이 없는 카드는 표시 순서가 모두 99 다. 바꿀 카드를 고를 때 순서까지 같으면 카드 번호로 정한다."""
+    from engine.domain import User, UserCard
+    from engine.state import UserState
+    cards = [UserCard(101, 1, "SHINHAN", 99), UserCard(102, 2, "SHINHAN", 99), UserCard(103, 3, "KB", 99)]
+    card4 = next(m for m in missed_benefit(UserState(User(1), cards, catalog, params), _year_rows()) if m["card_id"] == 4)
+    assert card4["gain"] == 3 * 4 * 500 and card4["basis"] == "add"
