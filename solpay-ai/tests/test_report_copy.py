@@ -408,6 +408,96 @@ def test_검사_형식():
     assert check_copy("문자열", facts())
 
 
+# ---------- 카드별 숫자 검사·문장 모양 (2026-11-22 사용자 결정: 카드별 숫자 검사) ----------
+NO_TIER = dict(first_tier=None, tier_reached=None, achieved=None, short_of_first=None)
+
+
+def report23():
+    """23번 모양 (2026-11-05): BC 케이퍼스트 카드·Simple Plan 은 실적 조건이 없고, SOL트래블 체크만 첫 구간 300,000원이 있다."""
+    r = report(total=-14_500, card=5_470, promotion=-25_440, next_month=5_470)
+    r["totals"] = {"this_month_benefit": 2110, "prev_month_benefit": 21110}
+    bc = _card("BC 케이퍼스트 카드", 1950, 12070, perf=1151700, **NO_TIER)
+    sol = _card("신한카드 SOL트래블 체크", 10, 80, perf=581500, first_tier=300000, tier_reached=300000)
+    simple = _card("신한카드 Simple Plan", 150, 8960, perf=908950, **NO_TIER)
+    for c, perf in ((bc, 200800), (simple, 15800)):
+        c["this_month"].update(perf=perf, tier_min=None, remaining_to_keep=None, next_tier=None, remaining_to_next=None)
+    sol["this_month"].update(perf=138350, tier_min=300000, remaining_to_keep=161650, next_tier=300000, remaining_to_next=161650)
+    r["cards"] = [bc, sol, simple]
+    return r
+
+
+def ai(*points, headline="10월에 카드 혜택 21,110원을 받았어요."):
+    return {"headline": headline, "points": list(points)}
+
+
+def test_사실_실적_조건_없는_카드에는_구간_숫자가_없다():
+    cards = {c["name"]: c for c in facts_of(report23())["cards"]}
+    assert cards["BC 케이퍼스트 카드"] == {"name": "BC 케이퍼스트 카드", "prev_month_benefit": 12070,
+                                     "prev_month_perf": 1151700, "this_month_benefit": 1950}
+    assert cards["신한카드 SOL트래블 체크"]["first_tier"] == 300000
+    r = report23()                                                     # 이번 달 칸에 구간이 잘못 들어와도 넣지 않는다
+    r["cards"][0]["this_month"].update(next_tier=300000, remaining_to_next=99200)
+    assert "next_tier" not in facts_of(r)["cards"][0] and "remaining_to_next" not in facts_of(r)["cards"][0]
+
+
+def test_검사_카드_이름이_나온_문장은_그_카드_숫자만():
+    f = facts_of(report23())
+    # 23번 실제 출력: 300,000원은 SOL트래블 체크의 첫 구간 (BC 케이퍼스트 카드는 실적 조건이 없다). 숫자는 사실에 있어 전체 검사는 통과했다
+    wrong = ai("BC 케이퍼스트 카드 지난달 실적은 1,151,700원으로 첫 구간 300,000원을 넘겼어요.")
+    problems = check_copy(wrong, f)
+    assert len(problems) == 1 and "300,000원" in problems[0] and "BC 케이퍼스트 카드" in problems[0]
+    assert check_copy(ai("BC 케이퍼스트 카드 지난달 실적은 1,151,700원, 혜택은 12,070원이었어요."), f) == []
+    assert check_copy(ai("신한카드 SOL트래블 체크 지난달 실적은 581,500원으로 첫 구간 300,000원을 넘겼어요."), f) == []
+    assert check_copy(ai("BC 케이퍼스트 카드 지난달 혜택은 약 1만 원이었어요."), f) == []          # 반올림 허용은 그대로
+    assert check_copy(ai("BC 케이퍼스트 카드 혜택은 21,110원이었어요."), f)                          # 합계도 그 카드 값이 아니다
+
+
+def test_검사_카드_두_장이_나온_문장은_두_카드_숫자를_쓸_수_있다():
+    f = facts_of(report23())
+    assert check_copy(ai("BC 케이퍼스트 카드는 12,070원, 신한카드 SOL트래블 체크는 80원을 받았어요."), f) == []
+    assert check_copy(ai("BC 케이퍼스트 카드와 신한카드 SOL트래블 체크 혜택은 합쳐 8,960원 정도예요."), f)   # Simple Plan 값
+
+
+def test_검사_카드_이름이_없는_문장은_전체_사실로():
+    f = facts_of(report23())
+    assert check_copy(ai("지난달 첫 구간 300,000원을 넘긴 카드가 있어요."), f) == []
+    # 쉼표로 이은 뒤 문장은 따로 본다: 카드 이름이 없으니 전체 사실로
+    assert check_copy(ai("신한카드 SOL트래블 체크 지난달 실적은 581,500원이었어요, 지난달 혜택은 모두 21,110원이에요."), f) == []
+
+
+def test_검사_이번_달_다음_구간은_이번_달을_붙인다():
+    f = facts_of(report23())
+    problems = check_copy(ai("신한카드 SOL트래블 체크 다음 구간 300,000원까지 161,650원 남았어요."), f)
+    assert any("이번 달" in p for p in problems)
+    assert check_copy(ai("이번 달 신한카드 SOL트래블 체크 다음 구간 300,000원까지 161,650원 남았어요."), f) == []
+
+
+def test_검사_요점은_짧은_문장_1_2개():
+    f = facts_of(report23())
+    three = ai("BC 케이퍼스트 카드 혜택은 12,070원이었어요. 신한카드 SOL트래블 체크 혜택은 80원이었어요. "
+               "신한카드 Simple Plan 혜택은 8,960원이었어요.")
+    assert any("1~2" in p for p in check_copy(three, f))
+    long_one = ai("신한카드 SOL트래블 체크 지난달 실적은 581,500원으로 첫 구간 300,000원을 넘겼고 " + "혜택도 받았고 " * 12 + "좋았어요.")
+    assert len(long_one["points"][0]) > 120 and any("120자" in p for p in check_copy(long_one, f))
+    two = ai("BC 케이퍼스트 카드 혜택은 12,070원이었어요. 신한카드 SOL트래블 체크 혜택은 80원이었어요.")
+    assert check_copy(two, f) == []
+
+
+def test_검사_금액은_천_단위_쉼표():
+    f = facts_of(report23())
+    problems = check_copy(ai("BC 케이퍼스트 카드 지난달 실적은 1151700원이었어요."), f)
+    assert any("쉼표" in p and "1151700" in p for p in problems)
+    assert check_copy(ai("2026년 10월 BC 케이퍼스트 카드 혜택은 12,070원이었어요."), f) == []       # 연도는 금액이 아니다
+
+
+def test_정해진_문구는_새_검사도_통과():
+    for r in (report23(), report(), report(effect=False)):
+        assert check_copy(template_copy(facts_of(r)), facts_of(r)) == []
+    long_name = report()
+    long_name["cards"][0]["name"] = "삼성월렛 하나 트래블로그 체크카드 (아주 긴 이름을 가진 시험용 카드 상품)"
+    assert check_copy(template_copy(facts_of(long_name)), facts_of(long_name)) == []
+
+
 # ---------- 작성기 ----------
 
 def test_writer_좋은_답이면_llm():
@@ -420,7 +510,7 @@ def test_writer_좋은_답이면_llm():
     assert set(schema["properties"]) == {"headline", "points"} and schema["properties"]["points"]["maxItems"] == 2
     sent = json.loads(req["messages"][1]["content"])
     assert "effect" not in sent and "strategy" not in sent and sent["prev_month_benefit"] == 47070
-    assert log["prompt_version"] == "2026-11-22.4"
+    assert log["prompt_version"] == "2026-11-22.5"
 
 
 def test_writer_효과_표현을_쓰면_다시_쓰고_정해진_문구():
@@ -462,7 +552,7 @@ def test_설정_환경_변수(monkeypatch):
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
     s = CopySettings.from_env(ReportCopyWriter.settings_env)
     assert s.timeout_sec == 3 and s.model == "gpt-4o-mini"
-    assert ReportCopyWriter.prompt_version == "2026-11-22.4" and PageCopyWriter.settings_env == "PAGE_COPY_TIMEOUT_SEC"
+    assert ReportCopyWriter.prompt_version == "2026-11-22.5" and PageCopyWriter.settings_env == "PAGE_COPY_TIMEOUT_SEC"
 
 
 def test_프롬프트에_실제_카드_이름과_금액_예시가_없다():
@@ -471,5 +561,6 @@ def test_프롬프트에_실제_카드_이름과_금액_예시가_없다():
         assert word not in SYSTEM, word
     for word in ("주력 카드 우선", "실적 안 채움", "base_reason", "strategy."):
         assert word not in SYSTEM, word                              # 전략 사실은 보내지 않는다
-    assert not re.search(r"\d,\d{3}", SYSTEM)                      # 예시 금액은 자리표시로만
+    assert not re.search(r"\d,\d{3}", SYSTEM) and not re.search(r"\d{4,}", SYSTEM)   # 예시 금액은 자리표시로만
+    assert "이번 달 {name} 다음 구간" in SYSTEM and "쉼표" in SYSTEM and "120자" in SYSTEM
     assert "추천" in SYSTEM and "방식" in SYSTEM and "채우" in SYSTEM  # 효과·전략 표현은 쓰지 말라고 말한다
