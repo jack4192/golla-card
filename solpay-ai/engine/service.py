@@ -467,9 +467,10 @@ class PlacementService:
     # ---------- 월간 리포트 (설계서 2026-11-22-monthly-report-design.md) ----------
     def monthly_report(self, user_id: int, at, writer=None) -> dict:
         """이번 달(at 까지, 진행 중)·지난달(확정) 카드별 숫자, 배치 전략과 근거, 지난달 SOL페이 효과, 요약 문장.
-        숫자는 엔진이 정하고 writer(ReportCopyWriter)는 문장만 쓴다 (None 이면 정해진 문구).
+        숫자는 엔진이 정하고 writer(ReportCopyWriter)는 제목·카드·전략 요점만 쓴다 (None 이면 정해진 문구).
+        SOL페이 효과 문장과 그 이유는 엔진이 쓴다 (summary.effect, report_copy.effect_lines. 2026-11-22 저녁 사용자 결정).
         저장하지 않고, 같은 날 다시 부르면 메모리에 둔 결과를 준다 (cached)."""
-        from engine.chat.report_copy import facts_of, template_copy
+        from engine.chat.report_copy import effect_lines, facts_of, template_copy
         from engine.report import card_rows, month_starts, strategy_now, totals_of
         key = (user_id, at.date())
         if key in self.reports:
@@ -494,7 +495,8 @@ class PlacementService:
             copy, source, log = writer.write(facts)
         else:
             copy, source, log = template_copy(facts), "template", {"reason": "no_writer"}
-        result = {**report, "summary": copy, "copy_source": source, "copy_log": log}
+        summary = {"headline": copy["headline"], "effect": effect_lines(report), "points": copy["points"]}
+        result = {**report, "summary": summary, "copy_source": source, "copy_log": log}
         self.reports[key] = result
         return {**result, "cached": False}
 
