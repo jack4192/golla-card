@@ -60,7 +60,8 @@ class PlacementEngine:
             ranked = [RankedCard(first, 1, round(decision.scores[first].total), text)]
             others = [c.user_card_id for c in eligible if c.user_card_id != first]
             ranked += [RankedCard(uc, i + 2, 0, "") for i, uc in enumerate(others)]
-            return RankResult(ranked, 1, RULE, outcome.forced_rule.rule_id, version, "forced", first)
+            return RankResult(ranked, 1, RULE, outcome.forced_rule.rule_id, version, "forced", first,
+                              base_source="forced")
 
         if promo_offers and params.engine != "v3":
             promo = self._promotion_card(state, req, eligible, scenarios, params, schedules, promo_offers, last_base)
@@ -89,7 +90,7 @@ class PlacementEngine:
                               "promotion": round(s.promotion, 1), "promotion_label": s.promotion_label,
                               "total": round(s.total, 1)}
                          for uc, s in decision.scores.items()},
-            hold=decision.hold,
+            hold=decision.hold, base_source=decision.base_source,
         )
 
     def _promotion_card(self, state, req, eligible, scenarios, params, schedules, promo_offers,
@@ -113,7 +114,8 @@ class PlacementEngine:
                                   last_base if last_base is not None else uc,
                                   top_category=item.category,
                                   scenarios=[{"category": s.category, "prob": round(s.prob, 3), "amounts": list(s.amounts)}
-                                             for s in scenarios.scenarios])
+                                             for s in scenarios.scenarios],
+                                  base_source="promotion")
         return None
 
     def _params_for(self, weights: UserWeights | None) -> Params:
@@ -467,10 +469,11 @@ class PlacementService:
     # ---------- 월간 리포트 (설계서 2026-11-22-monthly-report-design.md) ----------
     def monthly_report(self, user_id: int, at, writer=None) -> dict:
         """이번 달(at 까지, 진행 중)·지난달(확정) 카드별 숫자, 배치 전략과 근거, 지난달 SOL페이 효과, 요약 문장.
-        숫자는 엔진이 정하고 writer(ReportCopyWriter)는 제목·카드·전략 요점만 쓴다 (None 이면 정해진 문구).
-        SOL페이 효과 문장과 그 이유는 엔진이 쓴다 (summary.effect, report_copy.effect_lines. 2026-11-22 저녁 사용자 결정).
+        숫자는 엔진이 정하고 writer(ReportCopyWriter)는 제목과 카드 숫자 요점만 쓴다 (None 이면 정해진 문구).
+        SOL페이 효과 문장·이유(summary.effect, report_copy.effect_lines)와 배치 전략 문장(summary.strategy, strategy_lines)은
+        엔진이 쓴다 (2026-11-22 사용자 결정).
         저장하지 않고, 같은 날 다시 부르면 메모리에 둔 결과를 준다 (cached)."""
-        from engine.chat.report_copy import effect_lines, facts_of, template_copy
+        from engine.chat.report_copy import effect_lines, facts_of, strategy_lines, template_copy
         from engine.report import card_rows, month_starts, strategy_now, totals_of
         key = (user_id, at.date())
         if key in self.reports:
@@ -495,7 +498,8 @@ class PlacementService:
             copy, source, log = writer.write(facts)
         else:
             copy, source, log = template_copy(facts), "template", {"reason": "no_writer"}
-        summary = {"headline": copy["headline"], "effect": effect_lines(report), "points": copy["points"]}
+        summary = {"headline": copy["headline"], "effect": effect_lines(report), "strategy": strategy_lines(report),
+                   "points": copy["points"]}
         result = {**report, "summary": summary, "copy_source": source, "copy_log": log}
         self.reports[key] = result
         return {**result, "cached": False}

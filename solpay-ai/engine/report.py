@@ -121,7 +121,7 @@ TIER_FIELDS = ("tier_min", "remaining_to_keep", "next_tier", "remaining_to_next"
 def strategy_now(result: RankResult, rows: list[dict]) -> dict:
     """지금 결제 화면(기록을 남기지 않는 preview)에서 고른 것: 실적을 채우는 기본 카드와 그 카드의 이번 달 구간 칸
     (this_month_tiers 그대로: 지금 구간 유지까지·다음 구간까지. 구간 지키기 안내 문구와 같은 기준),
-    기본 카드를 방식보다 먼저 정한 이유(base_reason: 구간 지키기면 HOLD_REASON, 아니면 None),
+    기본 카드를 방식보다 먼저 정한 이유(base_reason: 구간 지키기면 HOLD_REASON, 아니면 None), 기본 카드를 정한 단계(base_source),
     보여 주는 카드 순서, 1순위 카드 안내 문구."""
     by_id = {r["user_card_id"]: r for r in rows}
     base = by_id.get(result.base_card)
@@ -129,6 +129,7 @@ def strategy_now(result: RankResult, rows: list[dict]) -> dict:
         "base_card": {"user_card_id": base["user_card_id"], "name": base["name"],
                       **{k: base["this_month"][k] for k in TIER_FIELDS}} if base else None,
         "base_reason": HOLD_REASON if base and (result.hold or result.reason_code == "HOLD") else None,
+        "base_source": result.base_source,              # 기본 카드를 정한 단계 (RankResult.base_source, 전략 문장)
         "current_order": [{"rank": c.rank, "user_card_id": c.user_card_id, "name": by_id[c.user_card_id]["name"]}
                           for c in result.cards[:result.display_count]],
         "message": result.cards[0].message if result.cards else "",

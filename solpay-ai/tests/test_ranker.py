@@ -289,3 +289,37 @@ def test_일정이_향후_실적_가치에_반영된다(catalog, params):
     without = decide(state, cards, scenarios, when, settings, [])
     with_schedule = decide(state, cards, scenarios, when, settings, [], [later])
     assert with_schedule.scores[101].performance > without.scores[101].performance
+
+
+# ---------- 기본 카드를 정한 단계 (월간 리포트의 전략 문장이 엔진이 하는 일과 맞도록) ----------
+from engine.ranker import choose_base
+
+
+def test_choose_base_는_choose_base_card_와_같은_카드와_정한_단계를_준다(state, params, catalog):
+    from engine.params import BASE_ORDER_NONE
+    from tests.test_v41 import fresh_state
+    ready(state)
+    plan = month_plan(state)
+    budget = budget_at(plan, at(10, 2))
+    assert choose_base(state, state.cards, plan, budget, params) == (base_of(state, params), "strategy")
+    # 실적 안 채움: 방식이 고르는 카드가 없어 혜택률 1위(없으면 1번) 카드 = 채우지 않는다
+    none = params.with_(base_order=BASE_ORDER_NONE)
+    assert choose_base(state, state.cards, plan, budget, none) == (choose_base_card(state, state.cards, plan, budget, none),
+                                                                     "nothing")
+    # 손해 방지: 실적 채우기를 멈춘다
+    state.loss_guard = True
+    assert choose_base(state, state.cards, plan, budget, params)[1] == "loss_guard"
+    # 구간 지키기는 어느 방식보다 먼저 (실적 안 채움이어도)
+    v4_none = Params(base_order=BASE_ORDER_NONE)
+    held = fresh_state(catalog, v4_none, [pay(101, 20_000, "CAFE", at(9, d)) for d in range(1, 31)])
+    held.apply(pay(101, 100_000, "CAFE", at(10, 1)))
+    plan = month_plan(held)
+    assert choose_base(held, held.cards, plan, budget_at(plan, at(10, 2)), v4_none) == (101, "hold")
+
+
+def test_decide_는_기본_카드를_정한_단계를_남긴다(state, params):
+    ready(state)
+    s = scen(("CAFE", 1.0, (5_000,)))
+    assert decide(state, state.cards, s, at(10, 2), params, []).base_source == "strategy"
+    v4 = Params(base_order="first_tier")
+    assert decide(state, state.cards, s, at(10, 2), v4, [], no_fill={101, 102, 103}).base_source == "no_fill"
