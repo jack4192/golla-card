@@ -1,11 +1,39 @@
-import React, { useState } from 'react';
-import { Image, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Platform, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { resolveWalletProduct } from './WalletProductCard';
+
+// 카드가 덱에서 차지하는 자리(0=맨 앞, 1·2=뒤에 겹친 카드, -1=이전 카드가 나갈 자리)에 따른 모양
+const SLOTS = [-2, -1, 0, 1, 2, 3, 4];
+const SLOT_STYLE = {
+  translateX: [-160, -120, 0, 14, 26, 36, 40],
+  translateY: [0, 0, 0, -9, -18, -27, -30],
+  rotate: ['-12deg', '-8deg', '0deg', '5deg', '9deg', '13deg', '14deg'],
+  opacity: [0, 0, 1, 0.55, 0.55, 0, 0],
+};
+const clampSlot = offset => Math.max(-2, Math.min(4, offset));
 
 export default function WalletDeck({cards, selected, onSelect, canPay, onPay, highlight, status, onDetails}) {
   const [listOpen,setListOpen] = useState(false);
   const index = cards.findIndex(item => item.id === selected?.id);
+  // 카드마다 자리 값을 가지고, 카드를 바꾸면 앞·뒤 카드가 함께 부드럽게 이동합니다.
+  const slots = useRef({}).current;
+  const deckCards = index < 0 ? [] : cards
+    .map((card, i) => ({ card, product: resolveWalletProduct(card), offset: i - index }))
+    .filter(item => item.product?.image && item.offset >= -2 && item.offset <= 4);
+  deckCards.forEach(({ card, offset }) => {
+    if (!slots[card.id]) slots[card.id] = new Animated.Value(clampSlot(offset));
+  });
+  const deckKey = deckCards.map(item => item.card.id + ':' + item.offset).join('|');
+  useEffect(() => {
+    deckCards.forEach(({ card, offset }) => {
+      Animated.timing(slots[card.id], {
+        toValue: clampSlot(offset),
+        duration: 320,
+        useNativeDriver: Platform.OS !== 'web',
+      }).start();
+    });
+  }, [deckKey]);
   const move = offset => {
     const next = cards[index + offset];
     if (next) onSelect(next.id);
@@ -19,8 +47,6 @@ export default function WalletDeck({cards, selected, onSelect, canPay, onPay, hi
     <Text style={styles.caption}>등록된 카드가 없습니다</Text>
   </View>;
   const product = resolveWalletProduct(selected);
-  const backs = cards.filter(card => card.id !== selected.id)
-    .map(resolveWalletProduct).filter(item => item?.image).slice(0, 2);
   return <View style={styles.wallet}>
     <View style={styles.stage}>
     <TouchableOpacity accessibilityRole="button" accessibilityState={{expanded:listOpen}} onPress={() => setListOpen(!listOpen)} style={styles.countButton}>
@@ -33,10 +59,22 @@ export default function WalletDeck({cards, selected, onSelect, canPay, onPay, hi
     </TouchableOpacity>)}</View>}
     <Text style={styles.heading}>내 지갑</Text>
     <View {...swipe.panHandlers} style={styles.deck}>
-      {product?.image ? <Image source={product.image} accessibilityLabel={selected.name} resizeMode="contain"
-        fadeDuration={0} style={[styles.image, styles.frontCard]} /> : <Text style={[styles.caption, styles.frontCard]}>상품 이미지 확인 필요</Text>}
-      {backs.slice().reverse().map((item,i) => <Image key={i} accessible={false}
-        source={item.image} resizeMode="contain" fadeDuration={0} style={[styles.image, {opacity:0.55,transform:[{translateX:26-i*12},{translateY:-18+i*9},{rotate:(9-i*4)+'deg'}]}]} />)}
+      {!product?.image && <Text style={[styles.caption, styles.frontCard]}>상품 이미지 확인 필요</Text>}
+      {deckCards.map(({ card, product: item, offset }) => {
+        const value = slots[card.id];
+        const front = offset === 0;
+        return <Animated.Image key={card.id} accessible={front} accessibilityLabel={front ? selected.name : undefined}
+          source={item.image} resizeMode="contain" fadeDuration={0}
+          style={[styles.image, {
+            zIndex: front ? 4 : offset === 1 ? 3 : offset === 2 ? 2 : 1,
+            opacity: value.interpolate({ inputRange: SLOTS, outputRange: SLOT_STYLE.opacity }),
+            transform: [
+              { translateX: value.interpolate({ inputRange: SLOTS, outputRange: SLOT_STYLE.translateX }) },
+              { translateY: value.interpolate({ inputRange: SLOTS, outputRange: SLOT_STYLE.translateY }) },
+              { rotate: value.interpolate({ inputRange: SLOTS, outputRange: SLOT_STYLE.rotate }) },
+            ],
+          }]} />;
+      })}
     </View>
     <View style={styles.controls}>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="이전 카드" disabled={index===0} onPress={() => move(-1)} style={styles.arrow}><Text style={[styles.action,index===0&&styles.dim]}>‹</Text></TouchableOpacity>

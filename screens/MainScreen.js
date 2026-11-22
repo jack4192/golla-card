@@ -2,6 +2,7 @@ import BenefitReport from '../components/BenefitReport';
 import { CARD_CATALOG_40, findCatalog40Product } from '../data/cardCatalog40';
 import { PROMOTION_BRANDS } from '../data/promotionBrands';
 import { PROMOTIONS, activePromotions } from '../data/promotions';
+import PinDotsInput from '../components/PinDotsInput';
 import { MYSHOP_LOGOS } from '../data/myshopLogos';
 import WalletDeck from '../components/WalletDeck';
 import RecommendationLaunchPopup from '../components/RecommendationLaunchPopup';
@@ -288,6 +289,9 @@ export default function MainScreen({
     confirm: ''
   });
   const [pinSaving, setPinSaving] = useState(false);
+  // 간편비밀번호 변경: 0 현재 → 1 새 번호 → 2 새 번호 확인 (한 상자 안에서 진행)
+  const [pinStep, setPinStep] = useState(0);
+  const [pinMsg, setPinMsg] = useState('');
   const [hasPin, setHasPin] = useState(false);
   const [appNotice, setAppNotice] = useState(true);
   const [vibrationOn, setVibrationOn] = useState(true);
@@ -338,21 +342,56 @@ export default function MainScreen({
       setSettingsBusy(false);
     }
   };
-  const closePinChange = () => {
-    if (pinSaving) return;
+  const resetPinChange = () => {
     setPinForm({
       old: '',
       next: '',
       confirm: ''
     });
+    setPinStep(0);
+    setPinMsg('');
+  };
+  const closePinChange = () => {
+    if (pinSaving) return;
+    resetPinChange();
     setPinChangeOpen(false);
   };
-  const saveChangedPin = async () => {
+  const PIN_STEPS = [['old', '현재 간편비밀번호', '현재 사용 중인 6자리를 입력해주세요.'], ['next', '새 간편비밀번호', '새로 사용할 6자리를 입력해주세요.'], ['confirm', '새 간편비밀번호 확인', '새 번호를 한 번 더 입력해주세요.']];
+  // 6자리가 채워지면 자동으로 다음 단계로 넘어갑니다.
+  const onPinDigits = value => {
+    if (pinSaving) return;
+    const digits = value.replace(/\D/g, '').slice(0, 6);
+    const key = PIN_STEPS[pinStep][0];
+    setPinForm(previous => ({ ...previous, [key]: digits }));
+    setPinMsg('');
+    if (digits.length < 6) return;
+    if (pinStep === 0) {
+      setPinStep(1);
+      return;
+    }
+    if (pinStep === 1) {
+      if (digits === pinForm.old) {
+        setPinMsg('현재와 다른 번호를 입력해주세요.');
+        setPinForm(previous => ({ ...previous, next: '' }));
+        return;
+      }
+      setPinStep(2);
+      return;
+    }
+    if (digits !== pinForm.next) {
+      setPinMsg('새 번호가 서로 달라요. 새 간편비밀번호부터 다시 입력해주세요.');
+      setPinForm(previous => ({ ...previous, next: '', confirm: '' }));
+      setPinStep(1);
+      return;
+    }
+    saveChangedPin(digits);
+  };
+  const saveChangedPin = async confirmValue => {
     const {
       old,
-      next,
-      confirm
+      next
     } = pinForm;
+    const confirm = confirmValue ?? pinForm.confirm;
     if (![old, next, confirm].every(v => /^\d{6}$/.test(v))) {
       Alert.alert('입력 확인', '현재·새·확인 간편비밀번호를 각각 6자리로 입력해주세요.');
       return;
@@ -421,14 +460,11 @@ export default function MainScreen({
       }));
       await SecureStore.deleteItemAsync(PIN_ATTEMPTS_KEY);
       setPinChangeOpen(false);
-      setPinForm({
-        old: '',
-        next: '',
-        confirm: ''
-      });
+      resetPinChange();
       Alert.alert('변경 완료', '다음 로그인부터 새 6자리 간편비밀번호를 사용해요.');
     } catch (error) {
       Alert.alert('변경 실패', error?.message || '다시 시도해주세요.');
+      resetPinChange();
     } finally {
       setPinSaving(false);
     }
@@ -468,6 +504,14 @@ export default function MainScreen({
       setRegisteringCard(false);
     }
   };
+  // 화면(탭)에 맞춘 인사말·추천 질문
+  const CHAT_BY_TAB = {
+    home: ['오늘 일정에 맞는 카드', '내 카드 정보', '진행 중인 프로모션'],
+    schedule: ['일정은 어떻게 추가해?', '오늘 일정에 맞는 카드', '내 카드 정보'],
+    benefits: ['진행 중인 프로모션', '혜택은 어디서 봐?', '내 카드 정보'],
+    cards: ['내 카드 정보', '카드 등록은 어떻게 해?', '결제 카드 바꾸는 법'],
+  };
+  const chatQuick = CHAT_BY_TAB[tab] || CHAT_BY_TAB.home;
   const openChat = () => {
     if (typeof onOpenChat === 'function') {
       onOpenChat({
@@ -476,9 +520,10 @@ export default function MainScreen({
       });
       return;
     }
+    const where = { home: '홈', schedule: '오늘의 일정', benefits: '혜택', cards: '카드' }[tab] || '홈';
     setChatMessages([{
       role: 'bot',
-      text: currentCard ? `${currentCard.name}의 상품 정보와 혜택을 안내해드려요.` : '카드 상품이나 혜택에 대해 물어보세요.'
+      text: `안녕하세요, SOL 카드 도우미예요. ${where} 화면에서 궁금한 점을 물어보세요.` + (currentCard ? ` 지금 결제 카드는 ${currentCard.name}예요.` : '')
     }]);
     setChatInput('');
     setChatVisible(true);
@@ -486,17 +531,30 @@ export default function MainScreen({
   const askBot = (question = chatInput) => {
     const q = String(question).trim();
     if (!q) return;
-    let answer = '선택한 카드의 상품 정보와 혜택을 안내해드려요.';
-    if (/추천/.test(q)) {
-      answer = '맞춤 카드는 홈의 ‘오늘의 카드 추천’에서 확인할 수 있어요.';
-    } else if (/현재 카드|카드 정보|이유|왜/.test(q)) {
-      answer = currentCard ? `${currentCard.name}: ${currentCard.reason}` : '등록된 카드가 없습니다.';
-    } else if (/혜택|할인|적립/.test(q)) {
-      answer = '혜택 탭에서 이벤트·마이샵 31개를 확인할 수 있어요. 각 항목을 누르면 결제 조건과 기간이 나와요.';
+    let answer = '카드 정보, 진행 중인 프로모션, 일정 등록 방법을 안내해드려요. 아래 추천 질문을 눌러보세요.';
+    if (/프로모션|이벤트|진행/.test(q)) {
+      const list = activePromotions();
+      answer = list.length
+        ? `지금 진행 중인 프로모션이 ${list.length}개 있어요. 예: ${[...new Set(list.map(item => item.merchant))].slice(0, 3).join(', ')}. 혜택 탭에서 각 항목을 누르면 결제 조건과 기간을 볼 수 있어요.`
+        : '지금 진행 중인 프로모션이 없어요.';
+    } else if (/일정.*(추가|등록|어떻게)|어떻게.*일정/.test(q)) {
+      answer = '오늘의 일정 탭에서 [+ 일정 추가]를 누르면 반차·회식 같은 일정이나 카페·편의점 같은 장소 일정을 등록할 수 있어요. 등록한 일정에 맞는 카드는 홈에서 추천해드려요.';
+    } else if (/일정|추천/.test(q)) {
+      answer = currentCard
+        ? `홈의 '오늘의 일정'에서 지금 일정에 맞는 카드를 추천해드려요. 일정이 없으면 현재 결제 카드(${currentCard.name})를 보여드려요.`
+        : '카드를 먼저 등록하면 일정에 맞는 카드를 추천해드려요. 카드 탭에서 등록해보세요.';
+    } else if (/등록/.test(q)) {
+      answer = '카드 탭의 카드 상품에서 원하는 카드를 열어 내 카드로 등록할 수 있어요.';
+    } else if (/바꾸|변경|순서/.test(q)) {
+      answer = '결제 탭 위쪽의 [카드 변경]이나 아래 \'내 카드\' 목록에서 카드를 누르면 결제 카드가 바뀌어요. 목록의 ☰를 끌면 순서도 바꿀 수 있어요.';
+    } else if (/내 카드|카드 정보|현재 카드|이유|왜/.test(q)) {
+      answer = walletCards.length
+        ? `내 카드는 ${walletCards.length}장이에요: ${walletCards.map(card => card.name).join(', ')}.` + (currentCard ? ` 지금 결제 카드는 ${currentCard.name}예요.` : '')
+        : '등록된 카드가 없어요. 카드 탭에서 등록해보세요.';
+    } else if (/혜택|할인|적립|어디/.test(q)) {
+      answer = '혜택 탭에서 진행 중인 이벤트와 마이샵을 확인할 수 있어요. 항목을 누르면 결제 조건과 기간이 나와요.';
     } else if (/실적|한도/.test(q)) {
-      answer = '전월 실적·남은 혜택 한도는 실제 금융 데이터가 연결되지 않아 확인할 수 없어요.';
-    } else if (/규칙/.test(q)) {
-      answer = '자동 결제 규칙을 바꿔도 카드 추천 순위는 그대로예요.';
+      answer = '전월 실적과 남은 혜택 한도는 실제 금융 데이터가 연결되지 않아 확인할 수 없어요.';
     }
     setChatMessages(items => [...items, {
       role: 'user',
@@ -799,7 +857,7 @@ export default function MainScreen({
       })}
         </View>}
 
-      {(__DEV__ || Platform.OS === 'web') && <View style={styles.devClearance} />}
+      {Platform.OS === 'web' && <View style={styles.devClearance} />}
 
       <Modal visible={exitOpen} transparent animationType="fade" onRequestClose={() => setExitOpen(false)}>
         <View style={styles.modalOverlay}>
@@ -826,19 +884,16 @@ export default function MainScreen({
             <Text style={styles.pinModalTitle}>
               간편비밀번호 변경
             </Text>
-            <Text style={styles.pinModalDesc}>
-              현재 번호와 새 번호를 각각 6자리로 입력해주세요.
-            </Text>
+            <Text style={styles.pinStepText}>{pinStep + 1} / 3 단계</Text>
+            <Text style={styles.pinInputLabel}>{PIN_STEPS[pinStep][1]}</Text>
+            <Text style={styles.pinModalDesc}>{PIN_STEPS[pinStep][2]}</Text>
 
-            {[['old', '현재 간편비밀번호'], ['next', '새 간편비밀번호'], ['confirm', '새 간편비밀번호 확인']].map(([key, label]) => <View key={key} style={styles.pinInputSection}>
-                <Text style={styles.pinInputLabel}>
-                  {label}
-                </Text>
-                <TextInput style={styles.pinInput} value={pinForm[key]} onChangeText={value => setPinForm(previous => ({
-              ...previous,
-              [key]: value.replace(/\D/g, '').slice(0, 6)
-            }))} keyboardType="number-pad" secureTextEntry maxLength={6} placeholder="숫자 6자리" editable={!pinSaving} />
-              </View>)}
+            <View style={styles.pinDotsWrap}>
+              <PinDotsInput key={pinStep} value={pinForm[PIN_STEPS[pinStep][0]]} onChangeText={onPinDigits} autoFocus editable={!pinSaving} accessibilityLabel={PIN_STEPS[pinStep][1]} />
+            </View>
+
+            {!!pinMsg && <Text style={styles.pinErrorText} accessibilityLiveRegion="polite">{pinMsg}</Text>}
+            {pinSaving && <Text style={styles.pinModalDesc}>저장 중...</Text>}
 
             <View style={styles.pinModalButtons}>
               <TouchableOpacity style={styles.pinCancel} onPress={closePinChange} disabled={pinSaving}>
@@ -847,11 +902,7 @@ export default function MainScreen({
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.pinSave} onPress={saveChangedPin} disabled={pinSaving}>
-                <Text style={styles.pinSaveText}>
-                  {pinSaving ? '저장 중...' : '변경하기'}
-                </Text>
-              </TouchableOpacity>
+
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -991,7 +1042,6 @@ export default function MainScreen({
 
           <Text style={styles.chatInfo}>
             {currentCard ? '현재 카드: ' + currentCard.name : '등록된 카드가 없습니다'}
-            {' · '}AI API 미연결
           </Text>
 
           <KeyboardAvoidingView style={{
@@ -1010,7 +1060,7 @@ export default function MainScreen({
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickArea} contentContainerStyle={{
             paddingHorizontal: 14
           }}>
-              {['현재 카드 정보', '혜택 알려줘', '실적은?', '규칙 설정'].map(item => <TouchableOpacity key={item} style={styles.quickButton} onPress={() => askBot(item)}>
+              {chatQuick.map(item => <TouchableOpacity key={item} style={styles.quickButton} onPress={() => askBot(item)}>
                   <Text style={styles.quickButtonText}>
                     {item}
                   </Text>
@@ -1719,7 +1769,7 @@ const styles = StyleSheet.create({
     color: "#245DE5"
   },
   devClearance: {
-    height: 65,
+    height: 50,
     backgroundColor: "#FFFFFF"
   },
   modalOverlay: {
@@ -2026,6 +2076,21 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 480,
     alignSelf: "center"
+  },
+  pinStepText: {
+    marginTop: 14,
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#245DE5'
+  },
+  pinDotsWrap: {
+    marginTop: 14
+  },
+  pinErrorText: {
+    marginTop: 10,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#B24141'
   },
   pinModalTitle: {
     fontSize: 20,

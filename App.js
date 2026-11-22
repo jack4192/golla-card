@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Keyboard,
   Platform,
+  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -265,7 +266,17 @@ export default function App() {
       setConsent(savedConsent);
       setHasSavedPin(Boolean(savedPin) && !savedAccount?.firstLogin);
       setOnboardingComplete(completed);
-      const canUsePin = !fullLogout && completed && PIN_SESSION_STATES.has(session) && (!SERVER_MODE || Boolean(savedToken));
+      let canUsePin = !fullLogout && completed && PIN_SESSION_STATES.has(session) && (!SERVER_MODE || Boolean(savedToken));
+      if (SERVER_MODE && canUsePin) {
+        // 서버 모드에서는 이메일·비밀번호로 로그인한 서버 계정이 아직 유효할 때만 PIN 화면을 보여줍니다.
+        try {
+          await api.me();
+        } catch {
+          canUsePin = false;
+          await clearToken();
+        }
+        if (!active) return;
+      }
       setCurrentScreen(canUsePin ? 'PinLogin' : 'Login');
     };
 
@@ -600,11 +611,12 @@ export default function App() {
       try {
         await api.me();
       } catch (problem) {
-        if (problem?.status === 401) {
+        // 만료(401)·권한 없음(403)·계정 없음(404)은 서버 메시지를 보여주지 않고 이메일 로그인으로 보냅니다.
+        if ([401, 403, 404].includes(problem?.status)) {
           await clearToken();
           await DemoStore.setItemAsync(FULL_LOGOUT_KEY, 'yes');
           navigate('Login');
-          Alert.alert('다시 로그인해주세요', '로그인 시간이 지났어요. 이메일과 비밀번호로 다시 로그인해주세요.');
+          Alert.alert('다시 로그인해주세요', '로그인 정보가 만료됐거나 바뀌었어요. 이메일과 비밀번호로 다시 로그인해주세요.');
           return;
         }
         throw problem;
@@ -1040,22 +1052,7 @@ export default function App() {
                 onViewBenefits={() =>
                   previewGo('RoutineRecommendation')
                 }
-                onOpenChat={() =>
-                  Alert.alert(
-                    '안내',
-                    '카드 도우미는 홈에서 이용할 수 있어요.'
-                  )
-                }
               />
-
-              <TouchableOpacity
-                style={styles.pinLoginBack}
-                onPress={() => previewGo('Payment')}
-              >
-                <Text style={styles.previewCloseText}>
-                  선택한 카드로 결제 화면 열기
-                </Text>
-              </TouchableOpacity>
             </View>
           );
 
@@ -1211,7 +1208,8 @@ export default function App() {
   const showAccountActions = !previewScreen && ['Login', 'PinLogin', 'Main'].includes(currentScreen);
 
   return (
-    <View style={styles.container}>
+    // iPhone 노치·홈 인디케이터에 가려지지 않도록 전체를 안전 영역 안에 둡니다.
+    <SafeAreaView style={styles.container}>
       {(showAccountActions || (!previewScreen && (showInlinePreviewButton || !!walletWarning))) && <View style={styles.accountBanner}>
         <View style={showInlinePreviewButton && styles.bannerActions}>
           {showAccountActions && (
@@ -1393,7 +1391,7 @@ export default function App() {
           </TouchableOpacity>}
         </>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -1405,15 +1403,11 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
   },
-  pinLoginBack: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
   hidden: {
     display: 'none',
   },
   accountBanner: {
-    paddingVertical: 7,
+    paddingVertical: 3,
     paddingHorizontal: 10,
     backgroundColor: '#EAF1FF',
     alignItems: 'center',
@@ -1425,9 +1419,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   privacyButton: {
-    marginTop: 5,
+    marginTop: 2,
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 5,
     borderRadius: 8,
     backgroundColor: '#FFFFFF',
   },
@@ -1448,9 +1442,10 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   previewBar: {
-    padding: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     backgroundColor: '#FFF2D9',
-    gap: 8,
+    gap: 4,
   },
   previewLabel: {
     color: '#7A551B',
@@ -1470,11 +1465,11 @@ const styles = StyleSheet.create({
   },
   devFloatingButton: {
     position: 'absolute',
-    bottom: 35,
+    bottom: 6,
     right: 16,
     backgroundColor: '#222222',
-    paddingHorizontal: 17,
-    paddingVertical: 13,
+    paddingHorizontal: 15,
+    paddingVertical: 9,
     borderRadius: 30,
     elevation: 20,
     zIndex: 9999,
