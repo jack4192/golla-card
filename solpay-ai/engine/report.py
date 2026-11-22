@@ -136,6 +136,34 @@ def strategy_now(result: RankResult, rows: list[dict]) -> dict:
     }
 
 
+def promotion_of(payments: list[Payment], promotions: list, card_of: dict[int, tuple[str, int]]
+                 ) -> Callable[[int, Payment], int]:
+    """지난달 효과에서 '이 결제를 이 카드로 냈다면 받는 프로모션'을 주는 함수 (replay_month 의 promo, 2026-11-22 사용자 결정).
+    - 실제로 낸 카드: 기록값 (팀 DB payments.promotion_amount). 조건은 맞아도 마이샵을 켜지 않아 못 받은 결제가 많다
+      (2026-10: 조건으로 세면 2,104,530원, 기록은 475,100원).
+    - 다른 카드(추천): 이벤트는 조건이 맞으면 받는다고 보고, 마이샵은 그달에 그 브랜드에서 실제로 받은 기록이 있을 때만
+      (켜 둔 것이 확인된 행사만) 받는다고 본다.
+    - 기록이 없는 결제(promotion_amount None: 시연 결제, 예전 저장소)는 실제·추천 모두 조건이 맞으면 받았다고 본다.
+    한 결제는 행사 하나(가장 큰 것)만 받는다. card_of: user_card_id → (카드사, card_id)."""
+    on = {p.merchant_id for p in payments if p.promotion_amount and p.merchant_id is not None}     # 그달 프로모션을 받은 가맹점
+
+    def promo(user_card_id: int, p: Payment) -> int:
+        recorded = p.promotion_amount is not None
+        if recorded and user_card_id == p.user_card_id:
+            return p.promotion_amount
+        if p.merchant_id is None:
+            return 0
+        issuer, card_id = card_of[user_card_id]
+        best = 0
+        for x in promotions:
+            value = x.value(p.merchant_id, issuer, card_id, p.amount, p.paid_at)
+            if value > best and not (recorded and x.kind == "myshop" and not (x.merchant_ids & on)):
+                best = value
+        return best
+
+    return promo
+
+
 def _next_month(state: UserState, assigned: dict[int, list[Payment]], catalog: Catalog) -> int:
     """카드별로 지난달 결제를 지난달 실적 구간으로 이번 달에 똑같이 했다면 받을 혜택의 합 (월간 맞춤 방식과 같은 추정)."""
     return sum(month_benefit(catalog.cards[uc.card_id], assigned[uc.user_card_id],

@@ -53,14 +53,17 @@ def load_catalog(directory: Path | None = None) -> Catalog:
 
 
 def promotion_from_row(row: dict, catalog: Catalog) -> Promotion:
-    """promotions 테이블 한 행. 브랜드가 있으면 그 브랜드 가맹점, 없으면 그 업종 전체(업종도 없으면 모든 가맹점)."""
+    """promotions 테이블 한 행. 브랜드가 있으면 그 브랜드 가맹점, 없으면 그 업종 전체.
+    브랜드도 업종도 없으면 가맹점을 찾을 수 없는 행사라 어느 가맹점에도 적용하지 않는다 (예전에는 모든 가맹점에 적용됐다)."""
     category = row.get("category_code")
     key = row.get("match_brand") if "category_code" in row else (row.get("match_brand") or row["brand"])
     if key:
         ids = frozenset(m.merchant_id for m in catalog.merchants.values()
                         if (m.brand_code == key or m.is_brand(key)) and (category is None or m.category == category))
+    elif category is not None:
+        ids = frozenset(m.merchant_id for m in catalog.merchants.values() if m.category == category)
     else:
-        ids = frozenset(m.merchant_id for m in catalog.merchants.values() if category is None or m.category == category)
+        ids = frozenset()
     return Promotion(
         promotion_id=int(row["promotion_id"]), brand=row["brand"], starts_at=row["starts_at"], ends_at=row["ends_at"],
         merchant_ids=ids, issuer=row.get("issuer_code"), card_id=row.get("card_id"),

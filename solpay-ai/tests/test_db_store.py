@@ -190,3 +190,34 @@ def test_reset_is_refused_for_a_shared_db(db):
     remote.url = "postgresql://team:pw@team-db.example.com:5432/solpay"
     with pytest.raises(NotImplementedError):
         remote.reset()
+
+
+def test_일정을_읽지_못하면_일정_없이_배치한다(caplog):
+    # 2026-11-22 재검토 5번 (사용자 결정): 암호 키가 바뀌었거나 값이 깨져도 결제 화면 배치는 소비 패턴으로 계속한다
+    from datetime import date
+
+    from engine.db_store import TeamDbPgStore
+    store = object.__new__(TeamDbPgStore)
+
+    def broken(user_id, day):
+        raise ValueError("암호문을 풀 수 없습니다 (키가 다르거나 값이 바뀌었습니다)")
+
+    store.schedules = broken
+    assert store.schedules_or_empty(1, date(2026, 10, 7)) == []
+    assert "일정" in caplog.text
+    store.schedules = lambda user_id, day: ["일정"]
+    assert store.schedules_or_empty(1, date(2026, 10, 7)) == ["일정"]
+
+
+def test_db_결제의_프로모션_기록값과_규칙_만든_시각(db, csv_store):
+    # 2026-11-22 재검토 7·8번: 월간 리포트 효과의 실제 프로모션은 payments.promotion_amount, 규칙은 user_rules.created_at 이후에만
+    mine, theirs = db.context(1, AT).payments, csv_store.context(1, AT).payments
+    assert all(p.promotion_amount is not None for p in mine)
+    assert sum(p.promotion_amount for p in mine) == sum(p.promotion_amount for p in theirs) > 0
+    uc = db.context(1, AT).cards[0].user_card_id
+    before = datetime.now(KST) - timedelta(minutes=1)
+    db.add_rule(1, {"rule_type": "force", "target": {"user_card_ids": [uc]}})
+    rule = db.context(1, AT).rules[-1]
+    assert rule.created_at is not None and rule.created_at >= before
+    db.add_payment(Payment(990_001, 1, uc, None, "CAFE", "offline_qr", "manual", 5_000, AT - timedelta(hours=1)))
+    assert db.context(1, AT).payments[-1].promotion_amount is None          # 시연 결제는 기록값이 없다

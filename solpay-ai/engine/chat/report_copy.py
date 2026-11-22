@@ -315,6 +315,8 @@ def _base_line(st: dict) -> str | None:
 
 def strategy_lines(report: dict) -> list[str]:
     """카드 배치 전략 문장 (엔진이 쓴다): [방식과 고른 근거, 지금 기본 카드]. 기본 카드 문장을 쓸 수 없으면 방식 문장만."""
+    if not report.get("cards"):                 # 등록한 카드가 없으면 방식 이야기를 하지 않는다
+        return []
     st = report["strategy"]
     base = _base_line(st)
     return [_method_line(st)] + ([base] if base else [])

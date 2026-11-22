@@ -50,6 +50,8 @@ class Payment:
     amount: int
     paid_at: datetime
     synced_at: datetime | None = None
+    # 그 결제에서 실제로 받은 프로모션 금액 (팀 DB payments.promotion_amount). 기록이 없는 결제(시연 결제 등)는 None
+    promotion_amount: int | None = None
 
     @property
     def pay(self) -> str | None:

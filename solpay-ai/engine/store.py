@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Protocol
+from zoneinfo import ZoneInfo
 
 from engine import loader
 from engine.catalog import Catalog
@@ -26,6 +27,13 @@ class UserContext:
     last_base: int | None = None
     benefit_start: str | None = None
     schedules: list[ScheduleItem] = field(default_factory=list)     # 그날 일정
+
+    def __post_init__(self):
+        # 내 카드가 아닌 결제(지운 카드, 잘못 들어온 결제)는 어느 카드의 실적·혜택에도 넣을 수 없으니 뺀다.
+        # 예전에는 이런 결제가 하나라도 있으면 그 사용자의 배치·리포트가 계속 500 이었다 (state.apply 의 KeyError).
+        owned = {c.user_card_id for c in self.cards}
+        if any(p.user_card_id not in owned for p in self.payments):
+            self.payments = [p for p in self.payments if p.user_card_id in owned]
 
 
 class Store(Protocol):
@@ -120,6 +128,11 @@ class ParquetStore:
     def save_rules(self, user_id: int, rules: list[dict]) -> None:
         if user_id not in self.users:
             raise UnknownUser(user_id)
+        for r in rules:
+            parse_rule(r)
+        # 만든 시각을 규칙에 적어 둔다 (이미 적힌 규칙은 그대로: add_rule 은 앞 규칙을 다시 저장한다). DB 저장소는 표의 created_at
+        now = datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds")
+        rules = [r if r.get("created_at") else {**r, "created_at": now} for r in rules]
         self.rules[user_id] = [parse_rule(r, i + 1, i) for i, r in enumerate(rules)]
         self.rules_raw[user_id] = list(rules)
 

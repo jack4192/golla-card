@@ -45,7 +45,7 @@ class CardBody(BaseModel):
 
 
 class RankResponse(BaseModel):
-    recommendation_id: int
+    recommendation_id: int | None           # 등록한 카드가 없거나(reason_code=NO_CARD) 추천 기록을 남기지 못하면 null
     cards: list[CardBody]
     display_count: int
     reason_code: str
@@ -190,6 +190,24 @@ def _explain(svc: PlacementService, result) -> dict:
     }
 
 
+def _kst(value: datetime | None) -> datetime:
+    """요청의 시각을 한국 시간으로. 없으면 지금, 시간대가 없으면 한국 시간으로 본다
+    (astimezone 은 시간대 없는 값을 서버 시간대로 읽어서, UTC 서버에서는 9시간 밀렸다)."""
+    if value is None:
+        return datetime.now(KST)
+    return value.replace(tzinfo=KST) if value.tzinfo is None else value.astimezone(KST)
+
+
+def _owned_cards(svc: PlacementService, user_id: int) -> set[int]:
+    """이 사용자가 지금 가진 카드 번호 (없는 사용자면 UnknownUser)."""
+    return {c.user_card_id for c in svc.store.context(user_id, datetime.now(KST)).cards}
+
+
+def _rule_cards(rule: dict) -> list[int]:
+    """규칙이 가리키는 카드 번호 (parse_rule 을 통과한 규칙)."""
+    return list((rule.get("target") or {}).get("user_card_ids") or [])
+
+
 _DEFAULT = object()
 
 
@@ -241,7 +259,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
 
     @app.post("/internal/rank", response_model=RankResponse, dependencies=[Depends(check_token)])
     def rank(body: RankBody, svc: PlacementService = Depends(current)):
-        at = (body.at or datetime.now(KST)).astimezone(KST)
+        at = _kst(body.at)
         req = RankRequest(body.user_id, at)
         try:
             recommendation_id, result = svc.rank(req)
@@ -275,7 +293,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         """하루 일정을 통째로 저장한다 (빈 목록이면 지운다). 그날이 지나면 엔진이 지운다."""
         try:
             items = svc.put_schedule(user_id, day, [i.model_dump() for i in body.items],
-                                     (at or datetime.now(KST)).astimezone(KST))
+                                     _kst(at))
         except UnknownUser:
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
         except ValueError as e:
@@ -302,7 +320,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         카드날(마지막 카드 추천 3일 뒤)은 두 탭, 그 외 날은 가맹점 탭, 프로모션이 없으면 카드 탭. 비면 페이지를 건너뛴다.
         카드·금액은 엔진 계산, 문구는 OpenAI (실패하면 정해진 문구 copy_source=template, 탭이 비면 none). 같은 날 다시 부르면 cached=true."""
         try:
-            return svc.recommendation_page(user_id, (body.at or datetime.now(KST)).astimezone(KST),
+            return svc.recommendation_page(user_id, _kst(body.at),
                                            request.app.state.page_writer)
         except UnknownUser:
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
@@ -315,9 +333,9 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         요약 문장(summary): headline 은 OpenAI 가 쓰고, points(카드 숫자 요점)는 엔진이 쓴 후보 문장 중 OpenAI 가 고른 1~2개
         (실패하면 정해진 문구 copy_source=template), effect(SOL페이 효과와 이유)·strategy(방식·고른 근거·지금 기본 카드)는
         엔진이 쓴 정해진 문장. 숫자와 숫자가 든 문장은 모두 엔진.
-        같은 날 다시 부르면 cached=true."""
+        숫자는 부를 때마다 다시 계산한다. OpenAI 답만 보낸 사실이 지난번과 같으면 다시 쓴다 (cached=true)."""
         try:
-            return svc.monthly_report(user_id, (at or datetime.now(KST)).astimezone(KST),
+            return svc.monthly_report(user_id, _kst(at),
                                       request.app.state.report_writer)
         except UnknownUser:
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
@@ -326,7 +344,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
     def card_recommendation(user_id: int, body: AtBody, svc: PlacementService = Depends(current)) -> dict:
         """신규 카드 추천. 계기(일정·특수 업종 방문·반복 소비·3일 간격)가 없거나 이득이 작으면 recommend=false."""
         try:
-            return svc.recommend_card(user_id, (body.at or datetime.now(KST)).astimezone(KST))
+            return svc.recommend_card(user_id, _kst(body.at))
         except UnknownUser:
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
 
@@ -335,7 +353,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         """일정 저장 뒤 팝업 (설계서 v4.1). 3일마다 카드 추천(kind=card), 그 외의 날은 일정에 맞는 프로모션 추천
         (kind=promotion, offers 최대 2건). 둘 다 없으면 kind=none. 프로모션을 추천한 일정 시간에는 그 신한카드가 1순위다."""
         try:
-            return svc.schedule_popup(user_id, (body.at or datetime.now(KST)).astimezone(KST))
+            return svc.schedule_popup(user_id, _kst(body.at))
         except UnknownUser:
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
 
@@ -343,7 +361,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
     def strategy(user_id: int, at: datetime | None = None, svc: PlacementService = Depends(current)) -> dict:
         """이번 달 실적 채우기 방식과 고른 근거 (화면·챗봇 표시용)."""
         try:
-            return svc.monthly_strategy(user_id, (at or datetime.now(KST)).astimezone(KST))
+            return svc.monthly_strategy(user_id, _kst(at))
         except UnknownUser:
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
 
@@ -352,14 +370,14 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
                svc: PlacementService = Depends(current)) -> list[dict]:
         """연말정산 안내: 지난 기간에 각 신한카드가 있었다면 더 받았을 금액 (상위 3장)."""
         try:
-            return svc.missed_benefit(user_id, (at or datetime.now(KST)).astimezone(KST), days)
+            return svc.missed_benefit(user_id, _kst(at), days)
         except UnknownUser:
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
 
     @app.post("/internal/users/{user_id}/strategy/initialize", dependencies=[Depends(check_token)])
     def initialize_strategy(user_id: int, at: datetime | None = None, svc: PlacementService = Depends(current)):
         try:
-            return svc.initialize_strategy(user_id, (at or datetime.now(KST)).astimezone(KST))
+            return svc.initialize_strategy(user_id, _kst(at))
         except UnknownUser:
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
         except NotImplementedError as e:
@@ -369,7 +387,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
     def cards(user_id: int, at: datetime | None = None, svc: PlacementService = Depends(current)) -> list[dict]:
         """카드별 실적 현황. 타사 카드는 어제까지 기준이다."""
         try:
-            return svc.card_status(user_id, (at or datetime.now(KST)).astimezone(KST))
+            return svc.card_status(user_id, _kst(at))
         except UnknownUser:
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
 
@@ -383,7 +401,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
     @app.post("/internal/payments/evaluate", dependencies=[Depends(check_token)])
     def evaluate_payment(body: EvaluateBody, svc: PlacementService = Depends(current)) -> dict:
         """승인 직전 결제를 카드마다 했을 때의 혜택. 결제 완료 화면과 사후 최적 카드에 쓴다."""
-        at = (body.at or datetime.now(KST)).astimezone(KST)
+        at = _kst(body.at)
         try:
             return svc.evaluate_payment(body.user_id, at, body.category_code, body.amount, body.user_card_id,
                                         body.merchant_id)
@@ -416,6 +434,10 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         try:
             for i, rule in enumerate(rules):
                 parse_rule(rule, i + 1, i)
+            owned = _owned_cards(svc, user_id)
+            missing = sorted({i for rule in rules for i in _rule_cards(rule) if i not in owned})
+            if missing:
+                raise RuleError(f"보유하지 않은 카드가 있습니다: {missing}")
             svc.store.save_rules(user_id, rules)
         except RuleError as e:
             raise HTTPException(status_code=422, detail=str(e))
@@ -427,7 +449,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
     @app.post("/internal/chat", response_model=ChatResponse, dependencies=[Depends(check_token)])
     def chat(body: ChatBody, request: Request) -> dict:
         """질문 하나에 답한다 (최대 15초). FastAPI 는 세션을 기억하지 않고 DB 에 쓰지 않는다."""
-        at = (body.at or datetime.now(KST)).astimezone(KST)
+        at = _kst(body.at)
         try:
             out = request.app.state.chat.answer(body.user_id, body.message, at,
                                                 [t.model_dump() for t in body.history],
@@ -455,7 +477,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         except RuleError as e:
             raise HTTPException(status_code=422, detail=str(e))
         owned = {c.user_card_id for c in cards}
-        missing = [i for i in (body.rule.get("target") or {}).get("user_card_ids") or [] if i not in owned]
+        missing = [i for i in _rule_cards(body.rule) if i not in owned]
         if missing:
             raise HTTPException(status_code=422, detail=f"보유하지 않은 카드가 있습니다: {missing}")
         names = {c.user_card_id: svc.engine.catalog.card_label(c.card_id) for c in cards}
@@ -490,10 +512,12 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
     def add_payment(body: PaymentBody, svc: PlacementService = Depends(current)) -> dict:
         """로컬 시연용. 운영에서는 Spring 이 결제를 DB 에 저장하고 엔진은 DB 를 읽는다."""
         try:
+            if body.user_card_id not in _owned_cards(svc, body.user_id):
+                raise HTTPException(status_code=422, detail=f"보유하지 않은 카드입니다: {body.user_card_id}")
             svc.store.add_payment(Payment(
                 body.payment_id, body.user_id, body.user_card_id, body.merchant_id, body.category_code, body.channel,
-                body.card_select_mode, body.amount, body.paid_at.astimezone(KST),
-                body.synced_at.astimezone(KST) if body.synced_at else None))
+                body.card_select_mode, body.amount, _kst(body.paid_at),
+                _kst(body.synced_at) if body.synced_at else None))
         except UnknownUser:
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
         except NotImplementedError:

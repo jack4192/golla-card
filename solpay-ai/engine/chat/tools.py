@@ -455,6 +455,8 @@ class ToolBox:
         if category is None:
             return {"need": "merchant", "message": "가맹점이나 업종을 물어봐 주세요"}
         amount = int(amount)
+        if not self.cards:
+            raise ToolError("등록한 카드가 없어 추천할 카드가 없습니다")
         r = self.service.preview(self.user_id, self.at, KnownPayment(category, amount, mid))
         ev = self.service.evaluate_payment(self.user_id, self.at, category, amount, None, mid)
         value = {c["user_card_id"]: c for c in ev["cards"]}

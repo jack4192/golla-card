@@ -71,3 +71,43 @@ def test_평일_주말_별칭을_받는다():
 def test_잘못된_규칙은_거부한다(bad):
     with pytest.raises(RuleError):
         parse_rule(bad)
+
+
+# ---------- 형식 검사 (2026-11-22 재검토 3번: 형식이 틀리면 500 이 아니라 RuleError) ----------
+CARD = {"user_card_ids": [101]}
+
+
+@pytest.mark.parametrize("data", [
+    "문자열", None, ["force"],
+    {"rule_type": "force", "condition": "아침", "target": CARD},
+    {"rule_type": "force", "condition": {"hours": ["9", "18"]}, "target": CARD},
+    {"rule_type": "force", "condition": {"hours": "9-18"}, "target": CARD},
+    {"rule_type": "force", "condition": {"hours": [9]}, "target": CARD},
+    {"rule_type": "force", "condition": {"hours": [9.5, 18]}, "target": CARD},
+    {"rule_type": "force", "condition": {"hours": [True, 18]}, "target": CARD},
+    {"rule_type": "force", "condition": {"days": 3}, "target": CARD},
+    {"rule_type": "force", "condition": {"days": "mon"}, "target": CARD},
+    {"rule_type": "force", "condition": {"days": [["mon"]]}, "target": CARD},
+    {"rule_type": "force", "target": "신한"},
+    {"rule_type": "force", "target": {"user_card_ids": "101"}},
+    {"rule_type": "force", "target": {"user_card_ids": ["101"]}},
+    {"rule_type": "force", "target": {"user_card_ids": [True]}},
+    {"rule_type": "force", "target": {"issuer": 3}},
+    {"rule_type": "preference", "settings": "많이"},
+    {"rule_type": "preference", "settings": {"w1": "많이"}},
+    {"rule_type": "preference", "settings": {"w2": True}},
+    {"rule_type": "force", "target": CARD, "priority": "high"},
+    {"rule_type": "force", "target": CARD, "active": "yes"},
+    {"rule_type": ["force"], "target": CARD},
+])
+def test_형식이_틀린_규칙은_RuleError(data):
+    with pytest.raises(RuleError):
+        parse_rule(data)
+
+
+def test_형식이_맞는_규칙은_그대로_통과한다():
+    rule = parse_rule({"rule_type": "force", "condition": {"days": ["mon", "weekend"], "hours": [7, 9]},
+                       "target": {"issuer": "SHINHAN", "user_card_ids": [101]}, "priority": 2, "source_text": "출근길"})
+    assert rule.hours == (7, 9) and rule.user_card_ids == (101,) and rule.issuer == "SHINHAN" and rule.priority == 2
+    pref = parse_rule({"rule_type": "preference", "settings": {"w1": 9, "w2": 0.1}})
+    assert (pref.w1, pref.w2) == (9, 0.1)

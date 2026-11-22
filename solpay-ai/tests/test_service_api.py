@@ -291,3 +291,173 @@ def test_최초_추천_방식은_월간_맞춤을_거친다(svc, tmp_path):
     svc.store.strategy_store.initialize(1, "value")
     out = svc.monthly_strategy(1, at(10, 7))
     assert out["status"] in ("ready", "insufficient_history") and out["strategy"] in ("value", "main_top", "first_tier", "none")
+
+
+# ---------- 입력 검사·카드 없는 사용자 (2026-11-22 재검토 1~3번, 사용자 결정) ----------
+AT = "2026-10-07T12:20:00+09:00"
+
+
+def test_내_카드가_아닌_결제는_문맥에서_빠져_배치와_리포트가_멈추지_않는다(svc):
+    # 지운 카드나 잘못 들어온 결제가 저장소에 있어도 (예전에는 그 사용자의 배치·리포트가 계속 500)
+    svc.store.payments.append(pay(999, 5_000, when=at(10, 6)))
+    assert all(p.user_card_id != 999 for p in svc.store.context(1, at(10, 7)).payments)
+    with client(svc) as c:
+        assert c.post("/internal/rank", json={"user_id": 1, "at": AT}).status_code == 200
+        assert c.get("/internal/users/1/monthly-report", params={"at": AT}).status_code == 200
+
+
+def test_내_카드가_아닌_결제는_저장하지_않고_422다(svc):
+    body = {"payment_id": 9001, "user_id": 1, "user_card_id": 999, "merchant_id": 10, "category_code": "CAFE",
+            "channel": "offline_qr", "card_select_mode": "manual", "amount": 5000, "paid_at": "2026-10-06T11:00:00+09:00"}
+    before = len(svc.store.payments)
+    with client(svc) as c:
+        r = c.post("/internal/payments", json=body)
+        assert r.status_code == 422 and "보유하지 않은 카드" in r.json()["detail"]
+        assert len(svc.store.payments) == before
+        assert c.post("/internal/payments", json={**body, "user_card_id": 101}).json() == {"saved": True}
+
+
+def _no_cards(svc):
+    from engine.domain import User
+    svc.store.context = lambda user_id, when: UserContext(User(1), [], [])
+
+
+def test_카드가_없는_사용자의_배치는_빈_목록이다(svc):
+    _no_cards(svc)
+    with client(svc) as c:
+        r = c.post("/internal/rank", json={"user_id": 1, "at": AT, "explain": True})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["cards"] == [] and body["display_count"] == 0 and body["reason_code"] == "NO_CARD"
+    assert body["recommendation_id"] is None and svc.store.logs == []          # 추천 기록은 남기지 않는다
+
+
+def test_카드가_없는_사용자의_리포트와_결제_평가도_200이다(svc):
+    _no_cards(svc)
+    with client(svc) as c:
+        report = c.get("/internal/users/1/monthly-report", params={"at": AT})
+        assert report.status_code == 200
+        r = report.json()
+        assert r["cards"] == [] and r["solpay_effect"] is None and r["summary"]["headline"]
+        assert r["strategy"]["base_card"] is None and r["strategy"]["current_order"] == []
+        assert r["summary"]["strategy"] == [] and r["summary"]["effect"] == []     # 카드가 없으면 방식 이야기를 하지 않는다
+        ev = c.post("/internal/payments/evaluate", json={"user_id": 1, "category_code": "CAFE", "amount": 5000, "at": AT})
+        assert ev.status_code == 200
+        assert ev.json()["cards"] == [] and ev.json()["best_card"] is None
+
+
+@pytest.mark.parametrize("rule", [
+    {"rule_type": "force", "condition": {"hours": ["9", "18"]}, "target": {"user_card_ids": [101]}},
+    {"rule_type": "force", "condition": {"days": 3}, "target": {"user_card_ids": [101]}},
+    {"rule_type": "force", "target": "신한"},
+    {"rule_type": "force", "target": {"user_card_ids": "101"}},
+    {"rule_type": "preference", "settings": {"w1": "많이"}},
+])
+def test_형식이_틀린_규칙은_422다(svc, rule):
+    with client(svc) as c:
+        assert c.put("/internal/users/1/rules", json=[rule]).status_code == 422
+    assert svc.store.rules == []
+
+
+def test_내_카드가_아닌_규칙은_저장하지_않고_422다(svc):
+    rule = {"rule_type": "force", "target": {"user_card_ids": [999]}}
+    with client(svc) as c:
+        r = c.put("/internal/users/1/rules", json=[rule])
+        assert r.status_code == 422 and "보유하지 않은 카드" in r.json()["detail"]
+        assert svc.store.rules == []
+        ok = {"rule_type": "force", "target": {"user_card_ids": [103]}}
+        assert c.put("/internal/users/1/rules", json=[ok]).json() == {"saved": 1}
+
+
+# ---------- 기록을 못 남겨도 추천은 준다 (2026-11-22 재검토 5번, 사용자 결정) ----------
+def _boom(*args, **kwargs):
+    raise RuntimeError("read-only transaction")
+
+
+def test_추천_기록을_못_남겨도_배치는_돌려준다(svc, caplog):
+    svc.store.log_recommendation = _boom              # 읽기 전용 DB 계정처럼 쓰기가 실패
+    with client(svc) as c:
+        r = c.post("/internal/rank", json={"user_id": 1, "at": AT})
+    assert r.status_code == 200
+    assert r.json()["recommendation_id"] is None and r.json()["cards"]
+    assert "추천 기록" in caplog.text
+
+
+def test_카드_추천_기록을_못_남겨도_멈추지_않는다(svc, caplog):
+    svc.store.log_card_recommendation = _boom
+    svc._log_card({"user_id": 1, "at": at(10, 7), "card_id": 4, "trigger": "pattern", "gain": 1000})
+    assert "카드 추천 기록" in caplog.text
+
+
+# ---------- 확인 필요 행사 (2026-11-22 재검토 9번) ----------
+def test_확인_필요_행사는_팀_DB_사본도_배치와_결제_평가에서_뺀다(svc):
+    # 팝업용 목록(promotions.yml)에서 '확인 필요'(응모·신규 조건)인 번호는 팀 DB 사본에 그 표시가 없어도 계산에서 뺀다
+    from dataclasses import replace
+    from datetime import datetime
+
+    from engine.domain import Promotion
+    from tests.conftest import KST
+    span = (datetime(2026, 9, 1, tzinfo=KST), datetime(2026, 10, 31, 23, 59, tzinfo=KST))
+    apply_first = Promotion(5, "카페", *span, frozenset({10}), issuer="SHINHAN", amount=2_000, title="응모하면 2천 원")
+    plain = Promotion(6, "식당", *span, frozenset({11}), issuer="SHINHAN", amount=700, title="식당 700원")
+    svc.store.promotions = [apply_first, plain]
+    svc.popup_promotions = [replace(apply_first, needs_check=True)]
+    context = svc.store.context(1, at(10, 7))
+    assert [p.promotion_id for p in svc._all_promotions(context) if not p.needs_check] == [6]
+    cafe = svc.evaluate_payment(1, at(10, 7), "CAFE", 10_000, None, 10)
+    assert all(c["promotion"] == 0 for c in cafe["cards"])
+    rest = svc.evaluate_payment(1, at(10, 7), "REST", 20_000, None, 11)
+    assert max(c["promotion"] for c in rest["cards"]) == 700
+
+
+def test_가맹점을_찾을_수_없는_행사는_어느_가맹점에도_적용하지_않는다(catalog):
+    # 브랜드도 업종도 없는 행사 행: 예전에는 모든 가맹점에 적용됐다
+    from datetime import datetime
+
+    from engine.loader import promotion_from_row
+    from tests.conftest import KST
+    row = {"promotion_id": 1, "brand": "이름만 있는 행사", "match_brand": None, "category_code": None, "issuer_code": "SHINHAN",
+           "amount": 1_000, "starts_at": datetime(2026, 9, 1, tzinfo=KST), "ends_at": datetime(2026, 10, 31, tzinfo=KST)}
+    assert promotion_from_row(row, catalog).merchant_ids == frozenset()
+    assert promotion_from_row({**row, "category_code": "CAFE"}, catalog).merchant_ids == frozenset({10})     # 업종 행사는 그대로
+
+
+# ---------- 개인정보 가리기·시간대 (2026-11-22 재검토 10·11번) ----------
+@pytest.mark.parametrize("text, label", [
+    ("제 카드번호1234-5678-9012-3456입니다", "카드번호"),
+    ("카드 1234567890123456으로 결제", "카드번호"),
+    ("전화01012345678로 연락 주세요", "전화번호"),
+    ("번호는010-1234-5678이에요", "전화번호"),
+    ("주민번호900101-1234567이고", "주민등록번호"),
+    ("계좌110-123-456789로 보내 줘", "계좌번호"),
+    ("메일abc.def@naver.com으로 보내 줘", "이메일"),
+])
+def test_한글에_붙은_개인정보도_가린다(text, label):
+    from engine.privacy import redact
+    out = redact(text)
+    assert f"[{label}]" in out and not any(ch.isdigit() for ch in out) and "@" not in out, out
+
+
+def test_금액과_짧은_숫자는_가리지_않는다():
+    from engine.privacy import redact
+    for text in ("스타벅스에서 5000원 결제하면", "이번 달 1,500,000원 썼어", "3번 카드 실적 40만원", "오전 9시부터 18시까지"):
+        assert redact(text) == text
+
+
+def test_시간대_없는_시각은_한국_시간으로_본다(svc, monkeypatch):
+    # 서버 시간대가 UTC 여도 '2026-10-07T12:20:00' 은 한국 시간 12시 20분이다 (예전에는 9시간 밀려 21시 20분이 됐다)
+    import time
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
+    try:
+        with client(svc) as c:
+            naive = c.get("/internal/users/1/monthly-report", params={"at": "2026-10-07T12:20:00"}).json()
+            aware = c.get("/internal/users/1/monthly-report", params={"at": "2026-10-07T03:20:00Z"}).json()
+            body = {"payment_id": 9002, "user_id": 1, "user_card_id": 101, "merchant_id": 10, "category_code": "CAFE",
+                    "channel": "offline_qr", "card_select_mode": "manual", "amount": 5000, "paid_at": "2026-10-06T11:00:00"}
+            assert c.post("/internal/payments", json=body).json() == {"saved": True}
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+    assert naive["at"] == "2026-10-07T12:20:00+09:00" and aware["at"] == "2026-10-07T12:20:00+09:00"
+    assert svc.store.payments[-1].paid_at.isoformat() == "2026-10-06T11:00:00+09:00"

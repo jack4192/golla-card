@@ -17,6 +17,7 @@ seen=True 는 프롬프트를 고칠 때 본 17문항, False 는 처음 보는 3
 
 import argparse
 import json
+import os
 import statistics
 import time
 from datetime import datetime
@@ -170,6 +171,10 @@ def main() -> None:
     client = openai_client()
     if client is None:
         raise SystemExit("OPENAI_API_KEY 가 없습니다. solpay-ai/.env 에 넣어 주세요.")
+    # 셸·.env 가 DB 를 가리켜도 팀 CSV 저장소만 쓴다. 문항마다 store.reset() 을 부르므로 DB 저장소면
+    # 개인 DB 의 app 표(규칙·일정·추천 기록)를 지우고, 공동 DB 면 초기화가 막혀 평가가 멈춘다 (page_eval·report_eval 과 같은 방식).
+    os.environ["SOLPAY_STORE"] = "teamdb"
+    os.environ["SOLPAY_DATABASE_URL"] = ""
     from engine.api import build_service
     agent = ChatAgent(build_service(), client)
     at = datetime.fromisoformat(args.at)
