@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as Store from '../utils/demoStore';
 import { CARD_ORDER_KEY, saveWalletCardOrder } from '../utils/wallet';
 export function validateCardOrder(raw) {
@@ -54,18 +54,17 @@ export default function PaymentCardOrder({
   onSelect
 }) {
   const [savedIds, setSavedIds] = useState([]);
-  const [draftIds, setDraftIds] = useState([]);
-  const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [readError, setReadError] = useState('');
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  // 드래그 중인 카드와 이동 거리(px)
+  const [drag, setDrag] = useState(null);
+  const rowHeight = useRef(84);
   const mounted = useRef(true);
-  const lock = useRef(false);
   const revision = useRef(0);
   const ordered = useMemo(() => orderCards(cards, savedIds), [cards, savedIds]);
-  const draft = useMemo(() => orderCards(cards, draftIds), [cards, draftIds]);
+  const orderedRef = useRef(ordered);
+  orderedRef.current = ordered;
   const load = async () => {
     const ticket = ++revision.current;
     setLoading(true);
@@ -93,59 +92,65 @@ export default function PaymentCardOrder({
       revision.current++;
     };
   }, []);
-  const begin = () => {
-    if (loading || readError || lock.current) return;
-    setDraftIds(ordered.map(card => String(card.id)));
-    setError('');
-    setNotice('');
-    setEditing(true);
-  };
-  const cancel = () => {
-    if (lock.current) return;
-    setEditing(false);
-    setDraftIds([]);
-    setError('');
-  };
-  const move = (index, direction) => {
-    if (lock.current) return;
-    setDraftIds(moveCard(draft.map(card => String(card.id)), index, direction));
-    setError('');
-  };
-  const save = async () => {
-    if (lock.current) return;
-    lock.current = true;
-    setSaving(true);
+
+  const targetIndex = (from, dy) => Math.max(0, Math.min(orderedRef.current.length - 1, from + Math.round(dy / rowHeight.current)));
+
+  // 놓으면 바로 새 순서를 저장합니다. 결제 카드는 바뀌지 않습니다.
+  const drop = async (from, dy) => {
+    setDrag(null);
+    const to = targetIndex(from, dy);
+    if (to === from) return;
+    const ids = orderedRef.current.map(card => String(card.id));
+    const [moved] = ids.splice(from, 1);
+    ids.splice(to, 0, moved);
+    setSavedIds(ids);
     setError('');
     try {
-      const ids = await persistCardOrder(draft.map(card => String(card.id)));
-      if (!mounted.current) return;
-      setSavedIds(ids);
-      setEditing(false);
-      setNotice('카드 순서를 저장했습니다. 결제 카드는 그대로 유지됩니다.');
+      await persistCardOrder(ids);
     } catch (problem) {
-      if (mounted.current) {
-        setError(problem.message || '순서를 저장하지 못했습니다. 다시 시도해주세요.');
-      }
-    } finally {
-      lock.current = false;
-      if (mounted.current) {
-        setSaving(false);
-      }
+      if (mounted.current) setError(problem.message || '순서를 저장하지 못했습니다. 다시 시도해주세요.');
     }
   };
-  return <View style={s.box}>
-      <View style={s.header}>
-        <Text style={s.heading}>
-          내 카드 · {cards.length}장
-        </Text>
 
-        <TouchableOpacity accessibilityRole="button" disabled={loading || !!readError || !cards.length} style={s.edit} onPress={begin}>
-          <Text style={s.link}>수정</Text>
-        </TouchableOpacity>
-      </View>
+  const responders = useRef({});
+  const handleFor = (id, index) => {
+    const key = id + ':' + index;
+    if (!responders.current[key]) {
+      responders.current[key] = PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponderCapture: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponderCapture: () => true,
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: () => setDrag({ id, index, dy: 0 }),
+        onPanResponderMove: (_, gesture) => setDrag({ id, index, dy: gesture.dy }),
+        onPanResponderRelease: (_, gesture) => drop(index, gesture.dy),
+        onPanResponderTerminate: () => setDrag(null),
+      });
+    }
+    return responders.current[key].panHandlers;
+  };
+  useEffect(() => {
+    responders.current = {};
+  }, [ordered]);
+
+  // 드래그 중 다른 카드들이 비켜나는 거리
+  const shiftOf = index => {
+    if (!drag) return 0;
+    if (index === drag.index) return drag.dy;
+    const to = targetIndex(drag.index, drag.dy);
+    if (drag.index < to && index > drag.index && index <= to) return -rowHeight.current;
+    if (drag.index > to && index < drag.index && index >= to) return rowHeight.current;
+    return 0;
+  };
+
+  return <View style={s.box}>
+      <Text style={s.heading}>
+        내 카드 · {cards.length}장
+      </Text>
 
       <Text style={s.hint}>
-        카드를 누르면 결제 카드가 바뀝니다. 수정에서 표시 순서를 바꿀 수 있습니다.
+        카드를 누르면 결제 카드가 바뀌어요. 오른쪽 ☰ 를 눌러 위아래로 끌면 순서를 바꿀 수 있어요.
       </Text>
 
       {loading && <ActivityIndicator color="#245DE5" />}
@@ -160,97 +165,68 @@ export default function PaymentCardOrder({
           </TouchableOpacity>
         </View>}
 
-      {ordered.map((card, index) => <TouchableOpacity key={card.id} accessibilityRole="button" accessibilityLabel={index + 1 + '번 ' + card.name + (card.id === selectedId ? ' 선택됨' : '')} accessibilityState={{
-      selected: card.id === selectedId
-    }} onPress={() => onSelect?.(card)} style={[s.item, card.id === selectedId && s.selected]}>
-          <Text style={s.number}>{index + 1}</Text>
+      {ordered.map((card, index) => {
+        const dragging = drag?.id === card.id;
+        return <View key={card.id}
+            onLayout={index === 0 ? event => { rowHeight.current = event.nativeEvent.layout.height + 12; } : undefined}
+            style={[s.dragRow, { transform: [{ translateY: shiftOf(index) }] }, dragging && s.dragging]}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={index + 1 + '번 ' + card.name + (card.id === selectedId ? ' 선택됨' : '')} accessibilityState={{
+            selected: card.id === selectedId
+          }} disabled={!!drag} onPress={() => onSelect?.(card)} style={[s.item, s.itemFlex, card.id === selectedId && s.selected]}>
+              <CardThumb card={card} />
 
-          <CardThumb card={card} />
+              <View style={s.copy}>
+                <Text style={s.name}>{card.name}</Text>
+                <Text style={s.hint}>{card.issuer}</Text>
 
-          <View style={s.copy}>
-            <Text style={s.name}>{card.name}</Text>
-            <Text style={s.hint}>{card.issuer}</Text>
-
-            {card.id === selectedId && <Text style={s.link}>
-                ✓ 현재 결제 카드
-              </Text>}
-          </View>
-        </TouchableOpacity>)}
-
-      {!!notice && <Text style={s.hint} accessibilityLiveRegion="polite">
-          {notice}
-        </Text>}
-
-      <Modal visible={editing} transparent animationType="slide" onRequestClose={cancel}>
-        <View style={s.overlay}>
-          <View style={s.sheet}>
-            <View style={s.modalHeader}>
-              <Text style={s.heading}>
-                내 카드 순서 수정
-              </Text>
-
-              <Text style={s.hint}>
-                위·아래 버튼으로 이동하세요. 선택된 결제 카드는 바뀌지 않습니다.
-              </Text>
-            </View>
-
-            <ScrollView style={s.scroll} contentContainerStyle={s.list} keyboardShouldPersistTaps="handled">
-              {draft.map((card, index) => <View key={card.id} style={s.draftItem}>
-                  <View style={s.row}>
-                    <Text style={s.number}>
-                      {index + 1}
-                    </Text>
-
-                    <CardThumb card={card} />
-
-                    <View style={s.copy}>
-                      <Text style={s.name}>
-                        {card.name}
-                      </Text>
-
-                      {card.id === selectedId && <Text style={s.link}>
-                          현재 결제 카드
-                        </Text>}
-                    </View>
-                  </View>
-
-                  <View style={s.actions}>
-                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={card.name + ' 위로 이동'} disabled={saving || index === 0} onPress={() => move(index, -1)} style={[s.arrow, (saving || index === 0) && s.disabled]}>
-                      <Text style={s.link}>↑ 위로</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={card.name + ' 아래로 이동'} disabled={saving || index === draft.length - 1} onPress={() => move(index, 1)} style={[s.arrow, (saving || index === draft.length - 1) && s.disabled]}>
-                      <Text style={s.link}>
-                        ↓ 아래로
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>)}
-            </ScrollView>
-
-            <View style={s.footer}>
-              {!!error && <Text style={s.error} accessibilityRole="alert">
-                  {error}
-                </Text>}
-
-              <View style={s.footerRow}>
-                <TouchableOpacity accessibilityRole="button" disabled={saving} onPress={cancel} style={[s.cancel, saving && s.disabled]}>
-                  <Text style={s.link}>취소</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity accessibilityRole="button" disabled={saving} onPress={save} style={[s.save, saving && s.disabled]}>
-                  {saving ? <ActivityIndicator color="#FFF" /> : <Text style={s.white}>
-                      순서 저장
-                    </Text>}
-                </TouchableOpacity>
+                {card.id === selectedId && <Text style={s.link}>
+                    ✓ 현재 결제 카드
+                  </Text>}
               </View>
-            </View>
-          </View>
-        </View>
-      </Modal>
+
+              <View {...handleFor(card.id, index)} accessibilityRole="adjustable" accessibilityLabel={card.name + ' 순서 이동 손잡이'} style={s.handle}>
+                <Text style={s.handleText}>☰</Text>
+              </View>
+            </TouchableOpacity>
+          </View>;
+      })}
+
+      {!!error && <Text style={s.error} accessibilityRole="alert">
+          {error}
+        </Text>}
     </View>;
 }
 const s = StyleSheet.create({
+  dragRow: {
+    zIndex: 1
+  },
+  dragging: {
+    zIndex: 10,
+    opacity: 0.95,
+    shadowColor: '#0B2A6F',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6
+  },
+  itemFlex: {
+    alignItems: 'center'
+  },
+  handle: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 'auto',
+    cursor: 'grab',
+    userSelect: 'none',
+    touchAction: 'none'
+  },
+  handleText: {
+    fontSize: 22,
+    color: '#8A9BB4',
+    userSelect: 'none'
+  },
   box: {
     backgroundColor: "#FFFFFF",
     borderRadius: 22,

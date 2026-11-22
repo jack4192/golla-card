@@ -3,6 +3,7 @@ import PaymentBenefitChat from '../components/PaymentBenefitChat';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
 import makeQR from 'qrcode-generator';
 import JsBarcode from 'jsbarcode';
 import { CARD_CATALOG } from '../data/cards';
@@ -467,20 +468,34 @@ export default function PaymentScreen({
     });
   };
   if (!selected) {
+    const hasCards = cards.length > 0;
     return <View style={s.empty}>
-        <Text style={s.title}>
-          {cards.length ? '결제에 사용할 수 있는 카드가 없습니다' : '등록된 카드가 없습니다'}
+        {/* 점선 카드 + 도우미 캐릭터 */}
+        <View style={s.emptyArt}>
+          <View style={s.emptyCard}>
+            <Text style={s.emptyPlus}>+</Text>
+          </View>
+          <Text style={s.emptySparkleA}>✦</Text>
+          <Text style={s.emptySparkleB}>✦</Text>
+          <View style={s.emptyBadge}>
+            <Ionicons name="card" size={26} color="#FFFFFF" />
+          </View>
+          <View style={s.emptyBadgeSmall}>
+            <Ionicons name="heart" size={14} color="#FFFFFF" />
+          </View>
+        </View>
+
+        <Text style={s.emptyTitle}>
+          {hasCards ? '결제할 수 있는 카드가 없어요' : '아직 카드가 없어요'}
         </Text>
 
-        <Text style={s.hint}>
-          카드 탭에서 보유 카드를 등록해주세요.
+        <Text style={s.emptyHint}>
+          {hasCards ? '다른 카드를 등록하면 QR로 바로 결제할 수 있어요' : '카드를 등록하면 QR로 바로 결제할 수 있어요'}
         </Text>
 
         {/* 카드 탭(내 카드)으로 이동. 연결이 없으면 이전 화면으로 */}
-        <TouchableOpacity accessibilityRole="button" onPress={() => (typeof onOpenCards === 'function' ? onOpenCards() : close())}>
-          <Text style={s.link}>
-            카드 등록하러 가기
-          </Text>
+        <TouchableOpacity accessibilityRole="button" onPress={() => (typeof onOpenCards === 'function' ? onOpenCards() : close())} style={s.emptyButton}>
+          <Text style={s.emptyButtonText}>+ 카드 등록하러 가기</Text>
         </TouchableOpacity>
       </View>;
   }
@@ -544,11 +559,6 @@ export default function PaymentScreen({
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity accessibilityRole="button" disabled={expired || generating || !active} onPress={approve} style={[s.primary, (expired || generating || !active) && s.dim]}>
-              <Text style={s.white}>
-                승인 결과 보기
-              </Text>
-            </TouchableOpacity>
           </View>}
 
         {/* QR 아래: 실제 상품 카드 이미지 */}
@@ -585,43 +595,44 @@ export default function PaymentScreen({
           </Text>
 
           <View style={s.benefitBox}>
-            <Text style={s.label}>
-              이 거래의 예상 혜택
-            </Text>
+            {/* 머리: 제목 + 거래 예시 */}
+            <View style={s.bxHead}>
+              <Text style={s.bxEyebrow}>이 거래의 예상 혜택</Text>
+              <View style={s.bxChip}>
+                <Text style={s.bxChipText}>{scenario.merchant} · {won(scenario.amount)}</Text>
+              </View>
+            </View>
 
-            <Text style={s.hint}>
-              {scenario.merchant}
-              {' · '}{won(scenario.amount)}
-              {' · '}결제 예시
-            </Text>
+            {!!selectedBenefit.name && <Text style={s.bxName}>{selectedBenefit.name}</Text>}
 
-            {!!selectedBenefit.name && <Text style={s.benefitName}>{selectedBenefit.name}</Text>}
+            {/* 금액이 확인되면 크게, 아니면 작은 상태 배지 + 이유 */}
+            {Number.isFinite(selectedBenefit.value)
+              ? <Text style={s.bxAmount}>{reward(selectedBenefit)}</Text>
+              : <View style={s.bxStatusRow}>
+                  <View style={s.bxStatus}><Text style={s.bxStatusText}>조건 확인 필요</Text></View>
+                  {!!selectedBenefit.reason && <Text style={s.bxReason}>{selectedBenefit.reason}</Text>}
+                </View>}
 
-            <Text style={s.benefit}>
-              {reward(selectedBenefit)}
-            </Text>
+            {selected.id !== baseline.id && <>
+                <View style={s.bxDivider} />
+                <View style={s.bxCompareRow}>
+                  <View style={s.flex}>
+                    <Text style={s.bxSmall}>비교 카드</Text>
+                    <Text style={s.bxCompareName} numberOfLines={1}>{baseline.name}</Text>
+                  </View>
+                  <Text style={s.bxCompareValue}>{Number.isFinite(baseBenefit.value) ? reward(baseBenefit) : '조건 확인 필요'}</Text>
+                </View>
+                {difference !== null && <Text style={[s.bxDiff, difference > 0 ? s.bxDiffGood : s.bxDiffNeutral]}>
+                    {difference > 0 ? '비교 카드보다 ' + won(difference) + ' 더 아낄 수 있어요'
+                      : difference === 0 ? '두 카드의 혜택이 같아요'
+                      : '비교 카드가 ' + won(-difference) + ' 더 유리해요'}
+                  </Text>}
+              </>}
 
-            {!Number.isFinite(selectedBenefit.value) && !!selectedBenefit.reason && <Text style={s.hint}>
-              {selectedBenefit.reason}
-            </Text>}
-
-            <Text style={s.comparison}>
-              {selected.id === baseline.id ? '아래에서 다른 비교 카드를 선택할 수 있어요.' : difference === null ? '두 카드의 원화 혜택이 확인되면 차이를 보여드려요.' : difference > 0 ? '가정대로라면 비교 카드보다 ' + won(difference) + ' 더 아낄 수 있어요!' : difference === 0 ? '이 조건에서는 두 카드의 원화 혜택이 같아요.' : '이 조건에서는 비교 카드가 ' + won(-difference) + ' 더 유리해요.'}
-            </Text>
-
-            <Text style={s.hint}>
-              비교 카드: {baseline.name}
-              {' · '}{reward(baseBenefit)}
-            </Text>
-
-            {baseline.id !== selected.id && !Number.isFinite(baseBenefit.value) && !!baseBenefit.reason && <Text style={s.hint}>
-              {baseBenefit.reason}
-            </Text>}
-
-            <Text style={s.hint}>
+            <Text style={s.bxFoot}>
               {scheduleScenario
-                ? '일정 업종에 맞춘 결제 예시입니다. 실제 혜택은 가맹점·실적·잔여 한도에 따라 달라요.'
-                : '기록된 전월 실적을 사용하고, 기록이 없으면 40만 원으로 계산해요.'}
+                ? '일정 업종에 맞춘 결제 예시예요. 실제 혜택은 가맹점·실적·잔여 한도에 따라 달라요.'
+                : '전월 실적 기록이 없으면 40만 원으로 계산한 예시예요.'}
             </Text>
           </View>
         </View>
@@ -686,78 +697,6 @@ export default function PaymentScreen({
           {!!selectedBenefit?.condition && <Text style={s.hint}>
               {selectedBenefit.condition}
             </Text>}
-        </View>
-
-        <View style={s.box}>
-          <Text style={s.heading}>
-            혜택 비교 조건
-          </Text>
-
-          <Text style={s.text}>
-            {scenario.merchant}
-            {' · '}{won(scenario.amount)}
-          </Text>
-
-          {!scheduleScenario && <View style={s.chips}>
-            {SCENARIOS.map(item => <TouchableOpacity key={item.id} onPress={() => setScenarioId(item.id)} style={[s.chip, item.id === scenario.id && s.chipOn]}>
-                <Text style={item.id === scenario.id ? s.whiteSmall : s.chipText}>
-                  {item.merchant}
-                </Text>
-              </TouchableOpacity>)}
-          </View>}
-
-          <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{
-          checked: assume
-        }} onPress={() => setAssume(!assume)} style={s.secondary}>
-            <Text style={s.link}>
-              {assume ? '☑' : '☐'} 비교 조건 적용
-            </Text>
-          </TouchableOpacity>
-
-          <Text style={s.hint}>
-            {scheduleScenario
-              ? '등록된 전월 실적을 사용합니다. 업종 외에 확인이 필요한 조건이 있으면 위에 표시돼요. 예상치는 월 한도 미사용을 가정하며, 포인트는 원화와 비교하지 않아요.'
-              : '전월 실적 기록이 없으면 40만 원으로 계산해요. 월 한도를 사용하지 않았고 거래 조건을 충족했다고 가정해요. 포인트는 별도로 표시해요.'}
-          </Text>
-
-          {selected.status && <Text style={s.hint}>
-              선택 카드 실적 자료:
-              {' '}{selected.status.month}
-              {' · '}전월{' '}
-              {won(selected.status.previousSpend)}
-            </Text>}
-
-        </View>
-
-        <View style={s.box}>
-          <Text accessibilityRole="header" style={s.heading}>같은 거래로 내 카드 비교</Text>
-          <Text style={s.text}>{scenario.merchant} · {won(scenario.amount)} · 결제 예시</Text>
-          <Text style={s.hint}>카드를 누르면 위 예상 혜택의 비교 카드가 바뀌어요.</Text>
-          {estimateGroups.filter(group => group.rows.length).map(group => <View key={group.label} style={s.estimateGroup}>
-            <Text style={s.label}>{group.label}</Text>
-            {group.rows.map(({ card, benefit }) => {
-              const isBaseline = baseline.id === card.id;
-              return <TouchableOpacity
-                key={card.id}
-                accessibilityRole="radio"
-                accessibilityLabel={card.name + ' 비교 대상 · ' + reward(benefit)}
-                accessibilityState={{ checked: isBaseline }}
-                onPress={() => setBaselineId(card.id)}
-                style={[s.estimateRow, isBaseline && s.estimateRowSelected]}
-              >
-                <View style={s.estimateContent}>
-                  <Text style={s.label}>{card.name}</Text>
-                  {!!benefit.name && <Text style={s.hint}>{benefit.name}</Text>}
-                  {!Number.isFinite(benefit.value) && !!benefit.reason && <Text style={s.hint}>{benefit.reason}</Text>}
-                  {selected.id === card.id && <Text style={s.estimateBadge}>결제 카드</Text>}
-                </View>
-                <View style={s.estimateValue}>
-                  <Text style={s.estimateBadge}>{reward(benefit)}</Text>
-                  {isBaseline && <Text style={s.hint}>비교 중</Text>}
-                </View>
-              </TouchableOpacity>;
-            })}
-          </View>)}
         </View>
 
         <View style={s.box}>
@@ -1018,11 +957,110 @@ const s = StyleSheet.create({
   },
   benefitBox: {
     width: '100%',
-    backgroundColor: "#EDF3FF",
+    backgroundColor: "#F3F7FF",
+    borderWidth: 1,
+    borderColor: '#DCE6FA',
     padding: 16,
-    borderRadius: 15,
-    alignItems: 'center',
+    borderRadius: 16,
     gap: 8
+  },
+  flex: {
+    flex: 1
+  },
+  bxHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    flexWrap: 'wrap'
+  },
+  bxEyebrow: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#5A6E89'
+  },
+  bxChip: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3
+  },
+  bxChipText: {
+    fontSize: 12,
+    color: '#435E80',
+    fontWeight: '600'
+  },
+  bxName: {
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: '700',
+    color: '#1E395F'
+  },
+  bxAmount: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#245DE5',
+    letterSpacing: -0.5
+  },
+  bxStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8
+  },
+  bxStatus: {
+    backgroundColor: '#FFF4E0',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4
+  },
+  bxStatusText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#B45309'
+  },
+  bxReason: {
+    fontSize: 13,
+    color: '#5A6E89'
+  },
+  bxDivider: {
+    height: 1,
+    backgroundColor: '#DCE6FA',
+    marginVertical: 2
+  },
+  bxCompareRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  bxSmall: {
+    fontSize: 12,
+    color: '#7486A0'
+  },
+  bxCompareName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#29456B'
+  },
+  bxCompareValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#29456B'
+  },
+  bxDiff: {
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  bxDiffGood: {
+    color: '#087D54'
+  },
+  bxDiffNeutral: {
+    color: '#5A6E89'
+  },
+  bxFoot: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#7486A0'
   },
   benefit: {
     fontSize: 25,
@@ -1157,7 +1195,101 @@ const s = StyleSheet.create({
   empty: {
     flex: 1,
     padding: 24,
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: 20
+    gap: 14,
+    backgroundColor: '#F4F7FF'
+  },
+  emptyArt: {
+    width: 220,
+    height: 150,
+    marginBottom: 10,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  emptyCard: {
+    width: 190,
+    height: 118,
+    borderRadius: 20,
+    borderWidth: 2.5,
+    borderStyle: 'dashed',
+    borderColor: '#9DB8F5',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ rotate: '-6deg' }]
+  },
+  emptyPlus: {
+    fontSize: 44,
+    lineHeight: 50,
+    fontWeight: '300',
+    color: '#9DB8F5'
+  },
+  emptyBadge: {
+    position: 'absolute',
+    right: 4,
+    bottom: -4,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#245DE5',
+    borderWidth: 4,
+    borderColor: '#F4F7FF',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  emptyBadgeSmall: {
+    position: 'absolute',
+    left: 14,
+    bottom: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#FF8FA3',
+    borderWidth: 3,
+    borderColor: '#F4F7FF',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  emptySparkleA: {
+    position: 'absolute',
+    left: 4,
+    top: 6,
+    fontSize: 20,
+    color: '#F5BF47'
+  },
+  emptySparkleB: {
+    position: 'absolute',
+    right: 18,
+    top: 0,
+    fontSize: 13,
+    color: '#92B8FF'
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#14213D',
+    textAlign: 'center'
+  },
+  emptyHint: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: '#5A6E89',
+    textAlign: 'center'
+  },
+  emptyButton: {
+    marginTop: 10,
+    backgroundColor: '#245DE5',
+    paddingHorizontal: 26,
+    paddingVertical: 14,
+    borderRadius: 999,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  emptyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800'
   }
 });

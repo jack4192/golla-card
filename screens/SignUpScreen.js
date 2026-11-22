@@ -61,6 +61,7 @@ export default function SignUpScreen({
   const [contactChecks, setContactChecks] = useState({});
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
+  const [englishHint, setEnglishHint] = useState(false);
   const busy = useRef(false);
   const mounted = useRef(true);
   const foreground = useRef(true);
@@ -85,7 +86,8 @@ export default function SignUpScreen({
   }, []);
   const change = (key, value) => {
     if (busy.current || !foreground.current) return;
-    const next = key === 'birthDate' ? value.replace(/\D/g, '').slice(0, 8) : key === 'phone' ? formatPhone(value) : value;
+    const next = key === 'birthDate' ? value.replace(/\D/g, '').slice(0, 8) : key === 'phone' ? formatPhone(value) : key === 'email' ? value.replace(/[^A-Za-z0-9@._%+\-]/g, '') : value;
+    if (key === 'email') setEnglishHint(next !== value);
     setForm(previous => ({
       ...previous,
       [key]: next
@@ -234,7 +236,7 @@ export default function SignUpScreen({
           {contactChecks[key].text}
         </Text>
       )}
-      {hint && <Text style={styles.fieldHint}>{hint}</Text>}
+      {!!hint && (typeof hint === 'string' ? <Text style={styles.fieldHint}>{hint}</Text> : hint)}
     </View>
   );
   const checkButton = (title, checked, action, disabled) => (
@@ -283,7 +285,10 @@ export default function SignUpScreen({
             keyboardType: 'email-address',
             textContentType: 'emailAddress',
             maxLength: 254
-          }, checkButton('이메일 중복 확인', !!contactChecks.email?.confirmedValue, () => checkContact('email', isEmailTaken), !form.email.trim()), '가입 후 이 이메일로 로그인해요.')}
+          }, checkButton('이메일 중복 확인', !!contactChecks.email?.confirmedValue, () => checkContact('email', isEmailTaken), !form.email.trim()), <>
+            {englishHint && <Text style={styles.englishHint} accessibilityLiveRegion="polite">영어로 입력해주세요</Text>}
+            <Text style={styles.fieldHint}>가입 후 이 이메일로 로그인해요.</Text>
+          </>)}
 
           {field('phone', '전화번호', {
             placeholder: '010-1234-5678',
@@ -295,7 +300,10 @@ export default function SignUpScreen({
           placeholder: '비밀번호 · 8자 이상',
           secureTextEntry: true,
           maxLength: 128
-        }, null, passwordHint)}
+        }, null, form.password && isValidSignUpPassword(form.password)
+          // 조건을 만족하면 초록 안내, 아니면 기존 조건 안내
+          ? <Text style={styles.success} accessibilityLiveRegion="polite">✓ 사용 가능한 비밀번호입니다.</Text>
+          : passwordHint)}
 
           {field('confirmation', '비밀번호 확인', {
           placeholder: '비밀번호 다시 입력',
@@ -362,6 +370,7 @@ const styles = StyleSheet.create({
   },
   inputRow: {flexDirection: 'row', gap: 8},
   fieldHint: {fontSize: 12, lineHeight: 18, color: '#5A6E89'},
+  englishHint: {fontSize: 12, lineHeight: 18, color: '#C53D56'},
   input: {
     flex: 1,
     minWidth: 0,

@@ -12,6 +12,7 @@ export default function LoginScreen({
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [englishHint, setEnglishHint] = useState(false);
   const busy = useRef(false);
   const mounted = useRef(true);
   const foreground = useRef(true);
@@ -89,8 +90,10 @@ export default function LoginScreen({
         <View style={styles.form}>
           <View style={styles.inputRow}>
             <Ionicons name="mail-outline" size={19} color="#526D97" />
-            <TextInput style={styles.input} placeholder="이메일" placeholderTextColor="#687B97" value={email} onChangeText={value => change(setEmail, value)} keyboardType="email-address" maxLength={254} autoCapitalize="none" autoCorrect={false} textContentType="username" editable={!submitting} accessibilityLabel="이메일" />
+            <TextInput style={styles.input} placeholder="이메일" placeholderTextColor="#687B97" value={email} onChangeText={value => { const clean = value.replace(/[^A-Za-z0-9@._%+\-]/g, ''); setEnglishHint(clean !== value); change(setEmail, clean); }} keyboardType="email-address" maxLength={254} autoCapitalize="none" autoCorrect={false} textContentType="username" editable={!submitting} accessibilityLabel="이메일" />
           </View>
+
+          {englishHint && <Text style={styles.englishHint} accessibilityLiveRegion="polite">영어로 입력해주세요</Text>}
 
           <View style={styles.inputRow}>
             <Ionicons name="lock-closed-outline" size={19} color="#526D97" />
@@ -159,6 +162,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#142D4E',
     borderRadius: 16
+  },
+  englishHint: {
+    color: '#C53D56',
+    fontSize: 12,
+    marginTop: -6,
+    marginBottom: 8,
+    marginLeft: 6
   },
   error: {
     color: "#C53D56",

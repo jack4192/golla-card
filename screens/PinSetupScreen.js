@@ -152,8 +152,9 @@ const styles = StyleSheet.create({
   },
   body: {
     flexGrow: 1,
-    paddingVertical: 16,
-    justifyContent: 'center',
+    paddingTop: 4,
+    paddingBottom: 16,
+    justifyContent: 'flex-start',
     gap: 20,
     width: "100%",
     maxWidth: 560,

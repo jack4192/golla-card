@@ -93,10 +93,11 @@ const styles = StyleSheet.create({
   layout: {flex: 1},
   center: {
     flexGrow: 1,
-    paddingVertical: 24,
+    paddingTop: 28,
+    paddingBottom: 16,
     paddingHorizontal: 24,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     gap: 20,
     width: "100%",
     maxWidth: 520,

@@ -37,7 +37,8 @@ function buildRecommendations(profile, events, saved, now, useCurrentTime, cardA
     row.matches.some(match => match.status !== 'blocked')
   );
   const relevantCards = rank(input, relevant);
-  const example = cardAd && relevantCards.length === 0;
+  // 일정·일과에 맞는 카드가 없으면, 가진 카드를 그대로 두지 않고 혜택이 좋은 신한카드를 한 장 추천합니다.
+  const example = relevantCards.length === 0;
   const ranked = example ? rank({ coffee: 'always' }, []) : relevantCards;
   const card = ranked.find(row => !row.owned) || ranked[0] || null;
   return { card, example, ...(cardAd ? {} : recommendPromotion(signals, now)) };
@@ -114,7 +115,7 @@ export default function RoutineRecommendationScreen({
   const card = promotionTab ? null : selected?.card;
   const matches = selected?.matches.filter(item => item.status !== 'blocked') || [];
   const match = matches.sort((a, b) => b.weight - a.weight)[0];
-  const reason = recommendations?.example ? '신한카드 추천' : match?.reasons?.[0];
+  const reason = recommendations?.example ? '지금 일정에 딱 맞는 카드가 없어서, 혜택이 좋은 신한카드를 추천드려요' : match?.reasons?.[0];
   const run = async action => {
     if (lock.current) return;
     lock.current = true;
