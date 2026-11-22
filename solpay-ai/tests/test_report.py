@@ -213,8 +213,8 @@ def test_replay_month_구간이_내려간_카드와_차이_0원_결제(catalog, 
     assert out["changed_payments"] == 2 and out["top_changes"] == []      # 차이 0원 결제는 이유로 보여 주지 않는다
 
 
-def test_replay_month_구간이_내려간_카드면_정해진_문구가_그_구간을_말한다(catalog, params):
-    from engine.chat.report_copy import check_copy, facts_of, template_copy
+def test_replay_month_구간이_내려간_카드면_엔진_효과_문장이_그_구간을_말한다(catalog, params):
+    from engine.chat.report_copy import effect_lines
     payments = [pay(103, 110_000, "TRANSIT", at(10, 5), merchant=20), pay(103, 110_000, "TRANSIT", at(10, 9), merchant=20)]
     effect = replay_month(_warm(catalog, params, {101: 320_000}), payments, lambda view, p: (101, "PERFORMANCE"),
                           _no_promo, catalog, "2026-10")
@@ -222,12 +222,9 @@ def test_replay_month_구간이_내려간_카드면_정해진_문구가_그_구�
               "cards": [], "solpay_effect": effect,
               "strategy": {"label": "첫 구간 우선", "description": STRATEGY_DESC["first_tier"], "chosen_by_label": "기본 방식",
                            "compare_months": None, "base_card": None, "base_reason": None}}
-    f = facts_of(report)
-    copy = template_copy(f)
-    text = " ".join(copy["points"])
-    assert "5,000원 덜 받았어요" in text
-    assert f"추천대로였다면 {catalog.card_label(3)} 실적이 220,000원에서 0원으로 줄어 20만 원 구간을 놓쳤어요" in text
-    assert check_copy(copy, f) == []
+    assert effect_lines(report) == [
+        "추천대로 냈다면 5,000원 덜 받았어요(실적 차이로 11월 -5,000원 예상).",
+        f"추천대로였다면 {catalog.card_label(3)} 실적이 220,000원에서 0원으로 줄어 20만 원 구간을 놓쳤어요."]
 
 
 def test_replay_month_이유는_차이_큰_순_3건(catalog, params):
@@ -257,6 +254,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from engine.api import create_app
+from engine.chat.report_copy import effect_lines
 from engine.domain import Promotion
 from engine.loader import ARTIFACTS
 from engine.team_db import team_db_dir
@@ -293,6 +291,7 @@ def test_monthly_report_형식과_캐시(report_svc):
     assert first["at"] == at(10, 7).isoformat()
     assert first["copy_source"] == "template" and first["cached"] is False
     assert first["summary"]["headline"] == "9월에 카드 혜택 3,000원을 받았어요." and first["summary"]["points"]
+    assert list(first["summary"]) == ["headline", "effect", "points"]          # 앱은 effect 다음에 points 를 보인다
 
     cards = {c["user_card_id"]: c for c in first["cards"]}
     assert (cards[101]["this_month"]["perf"], cards[101]["this_month"]["benefit"]) == (610_000, 1_000)
@@ -346,7 +345,26 @@ def test_monthly_report_지난달_결제화면_결제가_없으면_효과_없음
     svc = _service(catalog, priors, params)          # 9월 결제가 온라인뿐
     r = svc.monthly_report(1, at(10, 7))
     assert r["solpay_effect"] is None and r["effect_note"] == "지난달 결제화면 결제가 없어 비교하지 않았어요"
-    assert r["summary"]["headline"] and r["copy_source"] == "template"
+    assert r["summary"]["headline"] and r["copy_source"] == "template" and r["summary"]["effect"] == []
+
+
+def test_서비스_요약은_엔진_효과와_AI_요점(report_svc):
+    # 효과 문장은 엔진(effect_lines), 제목·요점만 OpenAI 작성기. 작성기에는 효과를 보내지 않는다
+    seen = []
+
+    class Writer:
+        def write(self, facts):
+            seen.append(facts)
+            return {"headline": "AI 제목", "points": ["AI 요점"]}, "llm", {"ms": 3}
+
+    r = report_svc.monthly_report(1, at(10, 7), Writer())
+    assert r["summary"]["headline"] == "AI 제목" and r["summary"]["points"] == ["AI 요점"]
+    assert r["summary"]["effect"] == effect_lines(r) and r["summary"]["effect"]
+    assert r["summary"]["effect"][0].startswith("추천대로 ")
+    assert "effect" not in seen[0] and "solpay_effect" not in json.dumps(seen[0], ensure_ascii=False)
+    report_svc.reports.clear()
+    template = report_svc.monthly_report(1, at(10, 7))               # 작성기가 없어도 효과 문장은 같다
+    assert template["summary"]["effect"] == r["summary"]["effect"] and template["copy_source"] == "template"
 
 
 def test_monthly_report_문구_작성기는_하루_한_번(report_svc):
@@ -359,7 +377,8 @@ def test_monthly_report_문구_작성기는_하루_한_번(report_svc):
 
     first = report_svc.monthly_report(1, at(10, 7), Writer())
     again = report_svc.monthly_report(1, at(10, 7, 22), Writer())
-    assert first["summary"] == {"headline": "요약", "points": ["한 줄"]} and first["copy_source"] == "llm"
+    assert first["summary"] == {"headline": "요약", "effect": effect_lines(first), "points": ["한 줄"]}
+    assert first["copy_source"] == "llm"
     assert again["cached"] is True and len(seen) == 1
     assert "user_id" not in json.dumps(seen[0], ensure_ascii=False)
     report_svc.monthly_report(1, at(10, 8), Writer())               # 날짜가 바뀌면 다시 계산
@@ -458,3 +477,6 @@ def test_팀DB_1번_10월_숫자가_card_month_status_와_같다(service):
     assert report["prev_month"] == "2026-10" and report["solpay_effect"]["month"] == "2026-10"
     assert report["totals"]["prev_month_benefit"] == sum(v[1] for v in got.values())
     assert report["solpay_effect"]["diff"] == {"card": 290, "promotion": 0, "next_month": 4890, "total": 5180}
+    assert report["summary"]["effect"] == [
+        "추천대로 냈다면 5,180원을 더 받을 수 있었어요(10월 카드 혜택 +290원, 실적 덕분에 11월 +4,890원 예상).",
+        "추천대로였다면 신한카드 Discount Plan+ 실적이 1,542,790원에서 1,925,990원으로 늘어 180만 원 구간에 올랐어요."]

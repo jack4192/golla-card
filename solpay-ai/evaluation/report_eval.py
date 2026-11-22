@@ -65,8 +65,12 @@ def main() -> None:
               f"{', ' + log['reason'] if log.get('reason') else ''}) · 효과 "
               + (f"{effect['diff']['total']:+,}원" if effect else f"없음({report['effect_note']})"))
         print(report["summary"]["headline"])
+        for line in report["summary"]["effect"]:          # 엔진이 쓴 효과 문장
+            print(f"  [엔진] {line}")
         for point in report["summary"]["points"]:
-            print(f"  - {point}")
+            print(f"  [{'AI' if report['copy_source'] == 'llm' else '정해진 문구'}] {point}")
+        for problem in log.get("first_problems", []):
+            print(f"  첫 답 검사: {problem}")
         for problem in log.get("problems", []):
             print(f"  검사: {problem}")
         rows.append({"user_id": user_id, "report": report})

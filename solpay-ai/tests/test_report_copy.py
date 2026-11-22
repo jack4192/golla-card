@@ -1,9 +1,12 @@
-"""월간 리포트 요약 문장: 사실 고르기, 정해진 문구, 검사, 작성기 (설계서 2026-11-22-monthly-report-design.md '요약 문장')."""
+"""월간 리포트 요약 문장: 사실 고르기, 엔진 효과 문장, 정해진 문구, 검사, 작성기
+(설계서 2026-11-22-monthly-report-design.md '요약 문장'·'변경 (2026-11-22 저녁): 효과 문장은 엔진이 쓴다')."""
 
 import json
+import re
 
 from engine.chat.page_copy import CopySettings, PageCopyWriter
-from engine.chat.report_copy import ReportCopyWriter, check_copy, facts_of, template_copy
+from engine.chat.report_copy import (ReportCopyWriter, check_copy, effect_lines, facts_of, reason_of,
+                                     template_copy)
 from tests.test_page_copy import FakeClient
 
 
@@ -44,109 +47,232 @@ KB_DOWN = [{"card": "KB ALL 카드", "first_tier": 400000, "actual_perf": 412000
             "actual_tier": 400000, "recommended_tier": None, "direction": "down"}]
 KB_UP = [{"card": "KB ALL 카드", "first_tier": 400000, "actual_perf": 371800, "recommended_perf": 412000,
           "actual_tier": None, "recommended_tier": 400000, "direction": "up"}]
+# 데모 4번 (2026-11-05 12시, 효과 +8,550원): 추천대로면 NH 올원더풀 실적이 140,900→443,900원으로 늘어 40만 원 구간에 오른다.
+# 카드가 바뀐 결제는 모두 덜 받았고(편의점), 더 받은 몫은 실적 덕분의 11월 혜택이다.
+NH_UP = [{"card": "NH농협 올원더풀 (할인 PACK)", "first_tier": 400000, "actual_perf": 140900, "recommended_perf": 443900,
+          "actual_tier": None, "recommended_tier": 400000, "direction": "up"}]
+DEMO4_CHANGES = [
+    {"day": "2026-10-27", "category": "편의점", "amount": 1700, "actual_card": "신한카드 EVerywhere",
+     "recommended_card": "NH농협 올원더풀 (할인 PACK)", "diff": -80, "why": "혜택 비교"},
+    {"day": "2026-10-13", "category": "편의점", "amount": 2200, "actual_card": "신한카드 EVerywhere",
+     "recommended_card": "NH농협 올원더풀 (할인 PACK)", "diff": -110, "why": "혜택 비교"},
+    {"day": "2026-10-15", "category": "편의점", "amount": 4200, "actual_card": "신한카드 EVerywhere",
+     "recommended_card": "NH농협 올원더풀 (할인 PACK)", "diff": -210, "why": "실적 채우기"}]
+GAINED = [{"day": "2026-10-19", "category": "카페", "amount": 6500, "actual_card": "KB ALL 카드",
+           "recommended_card": "신한카드 Discount Plan+", "diff": 150, "why": "혜택 비교"},
+          {"day": "2026-10-15", "category": "약국", "amount": 33800, "actual_card": "신한카드 SOL트래블 체크",
+           "recommended_card": "신한카드 Discount Plan+", "diff": 1690, "why": "실적 채우기"},
+          {"day": "2026-10-12", "category": "카페", "amount": 6500, "actual_card": "신한카드 Discount Plan",
+           "recommended_card": "KB ALL 카드", "diff": -300, "why": "실적 채우기"}]
 
 
 def facts(**kw):
     return facts_of(report(**kw))
 
 
-def good(total=5180):
-    return {"headline": "10월에 카드 혜택 47,070원을 받았어요.",
-            "points": [f"추천대로 냈다면 {total:,}원을 더 받을 수 있었어요."]}
+def lines(**kw):
+    return effect_lines(report(**kw))
 
+
+def reason(**kw):
+    return reason_of(report(**kw)["solpay_effect"], 10, 11)
+
+
+def good():
+    return {"headline": "10월에 카드 혜택 47,070원을 받았어요.",
+            "points": ["이번 달은 '주력 카드 우선' 방식으로 신한카드 Discount Plan 실적을 먼저 채우고 있어요."]}
+
+
+# ---------- 사실 (OpenAI 에 보내는 것) ----------
 
 def test_사실에_가맹점_이름과_사용자_번호가_없다():
-    f = facts()
-    text = json.dumps(f, ensure_ascii=False)
+    text = json.dumps(facts(), ensure_ascii=False)
     assert "user_id" not in text and "merchant" not in text
-    assert "신한카드 Discount Plan" in text and "카페" in text and "2026-10-12" in text
-    assert f["effect"]["diff"]["total"] == 5180
+    assert "신한카드 Discount Plan" in text and "주력 카드 우선" in text
 
 
-def test_정해진_문구_더_받은_경우():
-    copy = template_copy(facts())
-    assert copy["headline"] == "10월에 카드 혜택 47,070원을 받았어요."
-    text = " ".join(copy["points"])
-    assert "5,180원을 더 받을 수 있었어요(10월 카드 혜택 +290원, 실적 덕분에 11월 +4,890원 예상)" in text
-    assert "11월" in text and len(copy["points"]) <= 3
-    assert check_copy(copy, facts()) == []
+def test_사실에_효과가_없다():
+    # 효과 숫자·이유를 OpenAI 가 섞어 거짓 이유를 쓰지 못하게 (데모 4번) 효과는 통째로 뺀다
+    for f in (facts(), facts(total=-700, card=-700, next_month=0, tier_changes=KB_DOWN),
+              facts(total=8_550, card=-1_450, promotion=-1_000, next_month=11_000, tier_changes=NH_UP,
+                    top_changes=DEMO4_CHANGES)):
+        text = json.dumps(f, ensure_ascii=False)
+        assert "effect" not in f and "solpay_effect" not in f
+        for key in ("solpay_effect", "effect", "diff", "top_changes", "tier_changes", "shortfall", "less_by_part", "reason"):
+            assert f'"{key}"' not in text, key
+        assert "올원더풀" not in text and "편의점" not in text and "8550" not in text and "443900" not in text
 
 
-def test_정해진_문구_덜_받았고_구간이_내려간_카드가_있으면_그_구간():
-    f = facts(total=-700, card=-700, next_month=0, tier_changes=KB_DOWN)
-    copy = template_copy(f)
-    text = " ".join(copy["points"])
-    assert "700원 덜 받았어요" in text
-    assert "추천대로였다면 KB ALL 카드 실적이 412,000원에서 371,800원으로 줄어 40만 원 구간을 놓쳤어요" in text
-    assert "더 받" not in copy["headline"] + text and "닿지 못했" not in text
-    assert check_copy(copy, f) == []
+def test_사실에_기본_카드_이유가_있다():
+    r = report()
+    r["strategy"]["base_reason"] = "어느 방식이든 지난달 받은 구간을 지킬 수 있으면 그 카드를 먼저 채워요"
+    assert facts_of(r)["strategy"]["base_reason"] == r["strategy"]["base_reason"]
+    assert "base_reason" not in facts()["strategy"]                      # 없으면 넣지 않는다
 
 
-def test_정해진_문구_덜_받았고_구간이_올라간_카드뿐이면_가장_큰_손해_결제():
-    # 추천대로면 KB ALL 카드가 40만 원 구간에 닿았다 → '닿지 못했어요'·'놓쳤어요'는 거짓이다
-    f = facts(total=-700, card=-700, next_month=0, tier_changes=KB_UP)
-    text = " ".join(template_copy(f)["points"])
-    assert "700원 덜 받았어요" in text
-    assert "10월 12일 카페 결제를 KB ALL 카드로 냈다면 300원 덜 받았어요" in text and "실적 채우기" in text
-    assert "닿지 못했" not in text and "놓쳤" not in text
-    assert check_copy(template_copy(f), f) == []
+# ---------- 엔진 효과 문장 (effect_lines) ----------
+
+def test_효과_문장_더_받음_구간_올라감():
+    out = lines(total=8_550, card=-1_450, promotion=-1_000, next_month=11_000, tier_changes=NH_UP,
+                top_changes=DEMO4_CHANGES)
+    assert len(out) == 2
+    assert "8,550원을 더" in out[0] and "-1,450원" in out[0] and "-1,000원" in out[0] and "+11,000원" in out[0]
+    assert out[0] == ("추천대로 냈다면 8,550원을 더 받을 수 있었어요"
+                      "(10월 카드 혜택 -1,450원, 10월 프로모션 -1,000원, 실적 덕분에 11월 +11,000원 예상).")
+    for word in ("NH농협 올원더풀 (할인 PACK)", "140,900원", "443,900원", "40만 원"):
+        assert word in out[1], word
+    assert out[1] == "추천대로였다면 NH농협 올원더풀 (할인 PACK) 실적이 140,900원에서 443,900원으로 늘어 40만 원 구간에 올랐어요."
+    assert "놓쳤" not in " ".join(out) and "덜 받" not in " ".join(out)
 
 
-def test_정해진_문구_덜_받았고_구간_변화_없으면_가장_큰_손해_결제():
-    f = facts(total=-700, card=-700, next_month=0)
-    text = " ".join(template_copy(f)["points"])
-    assert "700원 덜 받았어요" in text and "10월 12일 카페 결제를 KB ALL 카드로 냈다면 300원 덜 받았어요" in text
-    assert check_copy(template_copy(f), f) == []
+def test_효과_문장_더_받음_구간이_내려간_카드가_있어도_올라간_카드():
+    out = lines(tier_changes=KB_DOWN + NH_UP)
+    assert out[1].startswith("추천대로였다면 NH농협 올원더풀 (할인 PACK) 실적이") and "놓쳤" not in " ".join(out)
 
 
-def test_정해진_문구_덜_받았는데_손해_본_결제가_없으면_가장_큰_손해_항목():
+def test_효과_문장_더_받음_결제():
+    out = lines(top_changes=GAINED)
+    assert out == ["추천대로 냈다면 5,180원을 더 받을 수 있었어요(10월 카드 혜택 +290원, 실적 덕분에 11월 +4,890원 예상).",
+                   "추천대로였다면 10월 15일 약국 결제에서 1,690원 더 받았어요"
+                   "(추천 카드: 신한카드 Discount Plan+, 추천 이유: 실적 채우기)."]
+
+
+def test_효과_문장_더_받음_항목():
+    # 카드가 바뀐 결제는 모두 덜 받았고 구간 변화도 없으면 가장 많이 늘어난 항목
+    out = lines(total=8_550, card=-1_450, promotion=-1_000, next_month=11_000, top_changes=DEMO4_CHANGES)
+    assert out[1] == "추천대로였다면 지난달 실적으로 11월에 받을 혜택(추정)이 46,820원에서 57,820원으로 늘어요."
+    out = lines(total=290, card=290, next_month=0, top_changes=[])
+    assert out == ["추천대로 냈다면 290원을 더 받을 수 있었어요(10월 카드 혜택 +290원).",
+                   "추천대로였다면 10월 카드 혜택이 47,070원에서 47,360원으로 늘었어요."]
+
+
+def test_효과_문장_덜_받음_구간_내려감():
+    out = lines(total=-700, card=-700, next_month=0, tier_changes=NH_UP + KB_DOWN)
+    assert out == ["추천대로 냈다면 700원 덜 받았어요(10월 카드 혜택 -700원).",
+                   "추천대로였다면 KB ALL 카드 실적이 412,000원에서 371,800원으로 줄어 40만 원 구간을 놓쳤어요."]
+    assert "더 받" not in " ".join(out) and "올랐" not in " ".join(out)
+
+
+def test_효과_문장_덜_받음_결제():
+    # 추천대로면 KB ALL 카드가 40만 원 구간에 닿았다 → '놓쳤어요'는 거짓이다. 가장 많이 덜 받은 결제를 말한다
+    out = lines(total=-700, card=-700, next_month=0, tier_changes=KB_UP)
+    assert out == ["추천대로 냈다면 700원 덜 받았어요(10월 카드 혜택 -700원).",
+                   "추천대로였다면 10월 12일 카페 결제에서 300원 덜 받았어요(추천 카드: KB ALL 카드, 추천 이유: 실적 채우기)."]
+    assert "놓쳤" not in " ".join(out) and "더 받" not in " ".join(out)
+
+
+def test_효과_문장_덜_받음_항목():
     # 카드가 바뀐 결제는 모두 더 받았는데(한도 등으로) 합계가 음수: 줄어든 항목을 그대로 말한다
-    gained = [{"day": "2026-10-19", "category": "카페", "amount": 6500, "actual_card": "KB ALL 카드",
-               "recommended_card": "신한카드 Discount Plan", "diff": 150, "why": "혜택 비교"}]
-    f = facts(total=-110, card=-110, next_month=0, top_changes=gained)
-    text = " ".join(template_copy(f)["points"])
-    assert "110원 덜 받았어요" in text and "추천대로였다면 10월 카드 혜택이 47,070원에서 46,960원으로 줄었어요" in text
-    assert "결제를" not in text
-    assert check_copy(template_copy(f), f) == []
-
-    f = facts(total=-960, card=0, next_month=-960, top_changes=[])
-    text = " ".join(template_copy(f)["points"])
-    assert "추천대로였다면 지난달 실적으로 11월에 받을 혜택(추정)이 46,820원에서 45,860원으로 줄어요" in text
-    assert check_copy(template_copy(f), f) == []
+    out = lines(total=-110, card=-110, next_month=0, top_changes=GAINED[:1])
+    assert out[1] == "추천대로였다면 10월 카드 혜택이 47,070원에서 46,960원으로 줄었어요."
+    out = lines(total=-960, card=0, next_month=-960, top_changes=[])
+    assert out[1] == "추천대로였다면 지난달 실적으로 11월에 받을 혜택(추정)이 46,820원에서 45,860원으로 줄어요."
+    out = lines(total=-700, card=-200, promotion=-500, next_month=0, top_changes=[])
+    assert out[1] == "추천대로였다면 10월 프로모션이 500원에서 0원으로 줄었어요."
 
 
-def test_정해진_문구_효과_없으면_이번_달_방식():
-    f = facts(effect=False)
-    copy = template_copy(f)
-    assert copy["headline"] == "10월에 카드 혜택 47,070원을 받았어요."
-    assert "주력 카드 우선" in " ".join(copy["points"]) and "더 받" not in " ".join(copy["points"])
-    assert check_copy(copy, f) == []
+def test_효과_문장_덜_받은_경우도_부분_합을_보인다():
+    out = lines(total=-1_000, card=-40, next_month=-960, top_changes=[])
+    assert out[0] == "추천대로 냈다면 1,000원 덜 받았어요(10월 카드 혜택 -40원, 실적 차이로 11월 -960원 예상)."
 
+
+def test_효과_문장_같음_이유_없음():
+    assert lines(total=0, card=0, next_month=0) == ["추천대로 냈어도 받는 혜택은 같았어요."]
+    assert lines(total=0, card=0, next_month=0, top_changes=GAINED, tier_changes=NH_UP) == ["추천대로 냈어도 받는 혜택은 같았어요."]
+
+
+def test_효과_없으면_빈_목록():
+    assert lines(effect=False) == []
+
+
+def test_효과_문장은_카드_이름_바로_뒤에_조사를_붙이지_않는다():
+    # 'PACK)'·'Plan+'·'EVerywhere' 처럼 영문·기호로 끝나는 이름은 받침으로 '로/으로'를 고를 수 없다
+    names = ("NH농협 올원더풀 (할인 PACK)", "신한카드 Discount Plan+", "신한카드 EVerywhere", "KB ALL 카드")
+    every = [lines(total=8_550, card=-1_450, promotion=-1_000, next_month=11_000, tier_changes=NH_UP),
+             lines(top_changes=GAINED), lines(total=-700, card=-700, next_month=0, tier_changes=KB_DOWN),
+             lines(total=-700, card=-700, next_month=0, tier_changes=KB_UP),
+             lines(total=-700, card=-700, next_month=0,
+                   top_changes=[{**DEMO4_CHANGES[2], "recommended_card": "신한카드 EVerywhere"}])]
+    seen = 0
+    for line in (x for out in every for x in out):
+        for name in names:
+            for m in re.finditer(re.escape(name), line):
+                seen += 1
+                assert line[m.end():].startswith((" 실적", ",", ")")), line
+    assert seen == 5
+
+
+def test_엔진이_고르는_이유_하나():
+    assert reason(total=-700, card=-700, next_month=0, tier_changes=NH_UP + KB_DOWN) == {
+        "kind": "tier_down", "card": "KB ALL 카드", "actual_perf": 412000, "recommended_perf": 371800, "lost_tier": 400000}
+    assert reason(tier_changes=KB_DOWN + NH_UP) == {
+        "kind": "tier_up", "card": "NH농협 올원더풀 (할인 PACK)", "actual_perf": 140900, "recommended_perf": 443900,
+        "reached_tier": 400000}
+    assert reason(total=-700, card=-700, next_month=0, tier_changes=KB_UP) == {
+        "kind": "payment", "day": "2026-10-12", "category": "카페", "recommended_card": "KB ALL 카드", "less": 300,
+        "why": "실적 채우기"}
+    assert reason(top_changes=GAINED) == {
+        "kind": "payment", "day": "2026-10-15", "category": "약국", "recommended_card": "신한카드 Discount Plan+",
+        "more": 1690, "why": "실적 채우기"}
+    assert reason(total=-700, card=-200, promotion=-500, next_month=0, top_changes=[]) == {
+        "kind": "part", "part": "promotion", "label": "10월 프로모션", "actual": 500, "recommended": 0}
+    assert reason(total=0, card=0, next_month=0) is None
+
+
+# ---------- 정해진 문구 (OpenAI 몫: 제목과 카드·전략 요점) ----------
+
+def test_정해진_문구는_제목과_전략_요점만():
+    copy = template_copy(facts())
+    assert copy == {"headline": "10월에 카드 혜택 47,070원을 받았어요.",
+                    "points": ["이번 달(11월)은 '주력 카드 우선' 방식으로 카드를 쓰고 있어요.",
+                               "지금은 신한카드 Discount Plan 실적을 먼저 채우고 있어요."]}
+    assert check_copy(copy, facts()) == []
+    # 효과가 있든 없든, 더 받든 덜 받든 같다 (효과 문장은 엔진이 따로 쓴다)
+    for f in (facts(effect=False), facts(total=-700, card=-700, next_month=0, tier_changes=KB_DOWN),
+              facts(total=0, card=0, next_month=0)):
+        assert template_copy(f) == copy and check_copy(template_copy(f), f) == []
+
+
+def test_정해진_문구_기본_카드_이유와_기본_카드_없음():
+    r = report()
+    r["strategy"]["base_reason"] = "어느 방식이든 지난달 받은 구간을 지킬 수 있으면 그 카드를 먼저 채워요"
+    copy = template_copy(facts_of(r))
+    assert copy["points"][1] == "지금은 지난달 받은 구간을 지키려고 신한카드 Discount Plan 실적을 먼저 채우고 있어요."
+    assert check_copy(copy, facts_of(r)) == []
+    r["strategy"]["base_card"], r["strategy"]["base_reason"] = None, None
+    copy = template_copy(facts_of(r))
+    assert copy["points"] == ["이번 달(11월)은 '주력 카드 우선' 방식으로 카드를 쓰고 있어요."]
+    assert check_copy(copy, facts_of(r)) == []
+
+
+# ---------- 검사 ----------
 
 def test_검사_통과():
     assert check_copy(good(), facts()) == []
 
 
 def test_검사_모르는_숫자():
-    copy = {"headline": "10월 혜택", "points": ["추천대로 냈다면 12,345원을 더 받을 수 있었어요."]}
+    copy = {"headline": "10월 혜택", "points": ["10월에 12,345원을 받았어요."]}
     assert len(check_copy(copy, facts())) == 1
 
 
+def test_검사_효과_금액은_사실에_없어_걸린다():
+    copy = {"headline": "10월에 카드 혜택 47,070원을 받았어요.", "points": ["SOL페이 덕분에 5,180원 이득이에요."]}
+    assert any("5,180" in p for p in check_copy(copy, facts()))
+
+
 def test_검사_반올림_허용():
-    copy = {"headline": "10월에 약 5만 원을 받았어요.", "points": ["약 5,000원 더 받을 수 있었어요."]}
+    copy = {"headline": "10월에 약 5만 원을 받았어요.", "points": ["신한카드 Discount Plan 혜택이 43,220원으로 가장 컸어요."]}
     assert check_copy(copy, facts()) == []
 
 
-def test_검사_음수인데_더_받았다():
-    f = facts(total=-700, card=-700, next_month=0)
-    copy = {"headline": "10월 혜택", "points": ["추천대로 냈다면 700원을 더 받았어요."]}
-    assert any("더 받" in p for p in check_copy(copy, f))
-
-
-def test_검사_음수인데_덜_받은_금액이_없다():
-    f = facts(total=-700, card=-700, next_month=0)
-    copy = {"headline": "10월에 카드 혜택 47,070원을 받았어요.", "points": ["추천 카드와 비교하면 덜 받았어요."]}
-    assert any("덜 받은 금액" in p for p in check_copy(copy, f))
+def test_검사_OpenAI_문장에_효과_표현이_있으면_문제():
+    head = "10월에 카드 혜택 47,070원을 받았어요."
+    for claim in ("추천대로 냈다면 혜택이 늘었어요.", "카드 혜택을 더 받을 수 있었어요.", "추천 카드보다 덜 받았어요.",
+                  "KB ALL 카드 실적이 줄어 구간을 놓쳤어요.", "KB ALL 카드가 다음 구간에 올라요.", "KB ALL 카드가 구간에 올랐어요."):
+        problems = check_copy({"headline": head, "points": [claim]}, facts())
+        assert any("효과" in p for p in problems), claim
+    assert any("효과" in p for p in check_copy({"headline": "추천대로면 더 받았어요", "points": ["한 줄이에요."]}, facts()))
 
 
 def test_검사_저장_주장과_소비_권유():
@@ -156,10 +282,12 @@ def test_검사_저장_주장과_소비_권유():
 
 def test_검사_형식():
     assert check_copy({"headline": "", "points": []}, facts())
-    assert check_copy({"headline": "a", "points": ["a", "b", "c", "d"]}, facts())
+    assert check_copy({"headline": "a", "points": ["a", "b", "c"]}, facts())          # points 는 1~2개
     assert check_copy({"headline": 1, "points": "x"}, facts())
     assert check_copy("문자열", facts())
 
+
+# ---------- 작성기 ----------
 
 def test_writer_좋은_답이면_llm():
     client = FakeClient([json.dumps(good(), ensure_ascii=False)])
@@ -167,12 +295,24 @@ def test_writer_좋은_답이면_llm():
     assert source == "llm" and copy == good() and log["retries"] == 0
     req = client.requests[0]
     assert req["response_format"]["json_schema"]["name"] == "report_copy"
-    assert json.loads(req["messages"][1]["content"])["effect"]["diff"]["total"] == 5180
-    assert log["prompt_version"] == "2026-11-22.2"
+    schema = req["response_format"]["json_schema"]["schema"]
+    assert set(schema["properties"]) == {"headline", "points"} and schema["properties"]["points"]["maxItems"] == 2
+    sent = json.loads(req["messages"][1]["content"])
+    assert "effect" not in sent and sent["prev_month_benefit"] == 47070
+    assert log["prompt_version"] == "2026-11-22.3"
+
+
+def test_writer_효과_표현을_쓰면_다시_쓰고_정해진_문구():
+    f = facts(total=-700, card=-700, next_month=0, tier_changes=KB_DOWN)
+    wrong = json.dumps({"headline": "10월에 카드 혜택 47,070원을 받았어요.",
+                        "points": ["추천대로 냈다면 혜택이 늘었어요.", "KB ALL 카드 구간 덕분이에요."]}, ensure_ascii=False)
+    copy, source, log = ReportCopyWriter(FakeClient([wrong, wrong]), CopySettings()).write(f)
+    assert source == "template" and log["reason"] == "guard" and log["retries"] == 1
+    assert copy == template_copy(f) and check_copy(copy, f) == []
 
 
 def test_writer_검사_실패면_다시_쓰고_정해진_문구():
-    bad = json.dumps({"headline": "x", "points": ["12,345원을 더 받았어요."]}, ensure_ascii=False)
+    bad = json.dumps({"headline": "x", "points": ["12,345원을 받았어요."]}, ensure_ascii=False)
     client = FakeClient([bad, bad])
     copy, source, log = ReportCopyWriter(client, CopySettings()).write(facts())
     assert source == "template" and log["retries"] == 1 and log["reason"] == "guard"
@@ -180,7 +320,7 @@ def test_writer_검사_실패면_다시_쓰고_정해진_문구():
 
 
 def test_writer_다시_쓰면_통과():
-    bad = json.dumps({"headline": "x", "points": ["12,345원을 더 받았어요."]}, ensure_ascii=False)
+    bad = json.dumps({"headline": "x", "points": ["12,345원을 받았어요."]}, ensure_ascii=False)
     client = FakeClient([bad, json.dumps(good(), ensure_ascii=False)])
     _, source, log = ReportCopyWriter(client, CopySettings()).write(facts())
     assert source == "llm" and log["retries"] == 1
@@ -201,109 +341,12 @@ def test_설정_환경_변수(monkeypatch):
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
     s = CopySettings.from_env(ReportCopyWriter.settings_env)
     assert s.timeout_sec == 3 and s.model == "gpt-4o-mini"
-    assert ReportCopyWriter.prompt_version == "2026-11-22.2" and PageCopyWriter.settings_env == "PAGE_COPY_TIMEOUT_SEC"
-
-
-def test_검사_음수인데_이유가_없다():
-    f = facts(total=-700, card=-700, next_month=0, tier_changes=KB_DOWN)
-    amount_only = {"headline": "10월에 카드 혜택 47,070원을 받았어요.", "points": ["추천대로 냈다면 700원 덜 받았어요."]}
-    assert any("이유" in p for p in check_copy(amount_only, f))
-    with_reason = {"headline": amount_only["headline"],
-                   "points": ["추천대로 냈다면 700원 덜 받았어요.", "KB ALL 카드로 실적을 모았어요."]}
-    assert check_copy(with_reason, f) == []
-    by_category = {"headline": amount_only["headline"], "points": ["카페 결제에서 700원 덜 받았어요."]}
-    assert check_copy(by_category, f) == []
-
-
-def test_정해진_문구_덜_받은_모든_변형이_검사를_통과():
-    for kw in ({"tier_changes": KB_DOWN}, {"tier_changes": KB_UP}, {}, {"top_changes": []},
-               {"tier_changes": KB_UP, "top_changes": []}):
-        f = facts(total=-700, card=-700, next_month=0, **kw)
-        assert check_copy(template_copy(f), f) == []
-    f = facts(total=-700, card=-200, promotion=-500, next_month=0, top_changes=[])
-    assert "프로모션" in " ".join(template_copy(f)["points"]) and check_copy(template_copy(f), f) == []
-
-
-# ---------- 최종 검토 (2026-11-22): 덜 받은 경우의 숫자·방향, 부분 합, 더/덜 받 검사 ----------
-
-def test_사실에_구간_방향과_덜_받은_금액의_절댓값이_있다():
-    f = facts(total=-1_000, card=-1_000, next_month=0, tier_changes=KB_DOWN)
-    ef = f["effect"]
-    assert ef["tier_changes"][0]["direction"] == "down"
-    assert ef["tier_changes"][0]["perf_gap"] == 412000 - 371800
-    assert ef["top_changes"][0]["diff"] == -300 and ef["top_changes"][0]["less"] == 300
-    assert ef["less_by_part"] == {"card": 1_000} and ef["shortfall"] == 1_000
-    assert "less_by_part" not in facts()["effect"]                        # 줄어든 항목이 없으면 넣지 않는다
-    assert "less" not in facts(top_changes=[{**report()["solpay_effect"]["top_changes"][0], "diff": 500}])["effect"]["top_changes"][0]
-
-
-def test_검사_덜_받은_결제_금액을_양수로_써도_통과():
-    f = facts(total=-1_000, card=-1_000, next_month=0)
-    copy = {"headline": "10월에 카드 혜택 47,070원을 받았어요.",
-            "points": ["추천대로 냈다면 1,000원 덜 받았어요.", "10월 12일 카페 결제를 KB ALL 카드로 냈다면 300원 덜 받았어요."]}
-    assert check_copy(copy, f) == []
-
-
-def test_정해진_문구_더_받았지만_줄어든_항목도_부호와_함께_보인다():
-    f = facts(total=8_550, card=-1_450, promotion=-1_000, next_month=11_000)
-    point = template_copy(f)["points"][0]
-    assert point == ("추천대로 냈다면 8,550원을 더 받을 수 있었어요"
-                     "(10월 카드 혜택 -1,450원, 10월 프로모션 -1,000원, 실적 덕분에 11월 +11,000원 예상).")
-    assert check_copy(template_copy(f), f) == []
-
-
-def test_정해진_문구_덜_받은_경우도_부분_합을_보인다():
-    f = facts(total=-1_000, card=-40, next_month=-960, top_changes=[])
-    point = template_copy(f)["points"][0]
-    assert point == "추천대로 냈다면 1,000원 덜 받았어요(10월 카드 혜택 -40원, 실적 차이로 11월 -960원 예상)."
-    assert check_copy(template_copy(f), f) == []
-
-
-def test_검사_더_받은_경우_덜_받았다고_하면_걸린다():
-    copy = {"headline": "10월에 카드 혜택 47,070원을 받았어요.", "points": ["추천대로 냈다면 5,180원 덜 받았어요."]}
-    assert any("덜 받" in p for p in check_copy(copy, facts()))
-
-
-def test_검사_차이_0원이면_더_받도_덜_받도_걸린다():
-    f = facts(total=0, card=0, next_month=0)
-    for claim in ("추천대로 냈다면 더 받았어요.", "추천대로 냈다면 덜 받았어요."):
-        copy = {"headline": "10월에 카드 혜택 47,070원을 받았어요.", "points": [claim]}
-        assert check_copy(copy, f), claim
-    assert check_copy(template_copy(f), f) == []
-
-
-def test_writer_덜_받았는데_더_받았다고_쓰면_정해진_문구():
-    f = facts(total=-700, card=-700, next_month=0, tier_changes=KB_DOWN)
-    wrong = json.dumps({"headline": "10월에 카드 혜택 47,070원을 받았어요.",
-                        "points": ["추천대로 냈다면 700원을 더 받았어요.", "KB ALL 카드 40만 원 구간 덕분이에요."]},
-                       ensure_ascii=False)
-    copy, source, log = ReportCopyWriter(FakeClient([wrong, wrong]), CopySettings()).write(f)
-    assert source == "template" and log["reason"] == "guard" and log["retries"] == 1
-    assert copy == template_copy(f) and check_copy(copy, f) == []
-    assert "더 받" not in " ".join([copy["headline"], *copy["points"]])
+    assert ReportCopyWriter.prompt_version == "2026-11-22.3" and PageCopyWriter.settings_env == "PAGE_COPY_TIMEOUT_SEC"
 
 
 def test_프롬프트에_실제_카드_이름과_금액_예시가_없다():
     from engine.chat.report_copy import SYSTEM
-    assert "KB ALL" not in SYSTEM and "40만" not in SYSTEM and "닿지 못했어요" not in SYSTEM
-    assert "direction" in SYSTEM and "base_reason" in SYSTEM and "less" in SYSTEM
-
-
-def test_사실에_기본_카드_이유가_있다():
-    r = report()
-    r["strategy"]["base_reason"] = "어느 방식이든 지난달 받은 구간을 지킬 수 있으면 그 카드를 먼저 채워요"
-    assert facts_of(r)["strategy"]["base_reason"] == r["strategy"]["base_reason"]
-    assert "base_reason" not in facts()["strategy"]                      # 없으면 넣지 않는다
-
-
-def test_사실에_엔진이_고른_덜_받은_이유가_하나_있다():
-    # 이유는 엔진이 고르고(구간이 내려간 카드 → 가장 많이 덜 받은 결제 → 가장 많이 줄어든 항목) LLM 은 그 하나만 문장으로 쓴다
-    down = facts(total=-700, card=-700, next_month=0, tier_changes=KB_UP + KB_DOWN)["effect"]["reason"]
-    assert down == {"kind": "tier_down", "card": "KB ALL 카드", "actual_perf": 412000, "recommended_perf": 371800,
-                    "lost_tier": 400000}
-    pay_ = facts(total=-700, card=-700, next_month=0, tier_changes=KB_UP)["effect"]["reason"]
-    assert pay_ == {"kind": "payment", "day": "2026-10-12", "category": "카페", "recommended_card": "KB ALL 카드",
-                    "less": 300, "why": "실적 채우기"}
-    part = facts(total=-700, card=-200, promotion=-500, next_month=0, top_changes=[])["effect"]["reason"]
-    assert part == {"kind": "part", "part": "promotion", "label": "10월 프로모션", "actual": 500, "recommended": 0}
-    assert "reason" not in facts()["effect"] and "reason" not in facts(total=0, card=0, next_month=0)["effect"]
+    for word in ("KB ALL", "40만", "닿지 못했어요", "-1,450원", "5,180원", "1,450", "올원더풀", "EVerywhere", "Discount Plan"):
+        assert word not in SYSTEM, word
+    assert not re.search(r"\d,\d{3}", SYSTEM)                      # 예시 금액은 자리표시로만
+    assert "base_reason" in SYSTEM and "추천대로" in SYSTEM          # 효과 표현은 쓰지 말라고 말한다

@@ -36,7 +36,8 @@ API 명세서 64번 '이번 달 혜택 리포트'(백엔드 미구현, 앱 화�
 ```json
 {
   "user_id": 1, "at": "...", "month": "2026-11", "prev_month": "2026-10", "cached": false,
-  "summary": {"headline": "...", "points": ["...", "..."]}, "copy_source": "llm | template",
+  "summary": {"headline": "... (OpenAI)", "effect": ["금액 문장 (엔진)", "이유 문장 (엔진)"], "points": ["카드·전략 요점 (OpenAI)", "..."]},
+  "copy_source": "llm | template",
   "totals": {"this_month_benefit": 1180, "prev_month_benefit": 47070},
   "cards": [{
     "user_card_id": 1, "card_id": 2, "name": "신한카드 Discount Plan", "issuer": "SHINHAN", "display_order": 1,
