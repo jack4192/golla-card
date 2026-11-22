@@ -46,6 +46,7 @@ class Decision:
     evidence: float
     threshold: float = 0.0              # v4 교체 기준 (기본 카드의 실적 가치, 원)
     hold: bool = False                  # v4 기본 카드가 구간 지키기로 정해졌는지
+    base_source: str = ""               # 기본 카드를 정한 단계 (choose_base, 실적 채울 카드가 모두 빠졌으면 no_fill)
 
 
 def month_end(budget: Budget, params: Params) -> bool:
@@ -219,15 +220,29 @@ def choose_base_card(state: UserState, cards: list[UserCard], plan: MonthPlan, b
     """실적을 채울 기본 카드. 전략(A 첫 구간 / B 주력 카드 높은 구간 / C 예산 배분)은 params.base_order 로 정하고,
     auto 면 이번 달 사용자 맞춤 전략(plan.strategy)을 쓴다. 채울 가치가 없는 구간(구간 증분 혜택 < 포기하는 혜택)은 건너뛴다.
     채울 카드가 없으면 지난달 현장 결제 기준 혜택률 1위 카드 (base_fallback=first 면 원래 1번 카드)."""
+    return choose_base(state, cards, plan, budget, params)[0]
+
+
+def choose_base(state: UserState, cards: list[UserCard], plan: MonthPlan, budget: Budget,
+                params: Params) -> tuple[int, str]:
+    """choose_base_card 와 같은 카드와, 그 카드를 정한 단계 (월간 리포트의 전략 문장이 엔진이 하는 일과 맞도록):
+    loss_guard(손해 방지로 실적 채우기를 멈춤, 혜택률 1위) → month_end(월말 가장 가까운 구간) → hold(구간 지키기)
+    → strategy(이번 달 방식이 고른 카드) → nothing(방식이 채울 카드를 못 찾음, 실적 안 채움 포함. 혜택률 1위).
+    loss_guard·nothing 의 카드는 실적을 채우는 카드가 아니다."""
     if getattr(state, "loss_guard", False) and params.loss_guard_stop_filling:
-        return _fallback(cards, plan, params)          # 손해 방지: 실적 채우기를 멈추고 혜택률 1위 카드
-    chosen = (_closest_tier(state, cards, plan, budget, params)
-              if month_end(budget, params) and params.month_end_closest else None)
-    if chosen is None and params.hold_tiers:
+        return _fallback(cards, plan, params), "loss_guard"     # 손해 방지: 실적 채우기를 멈추고 혜택률 1위 카드
+    if month_end(budget, params) and params.month_end_closest:
+        chosen = _closest_tier(state, cards, plan, budget, params)
+        if chosen is not None:
+            return chosen, "month_end"
+    if params.hold_tiers:
         chosen = _hold_tier(state, cards, plan, budget, params)
-    if chosen is None:
-        chosen = STRATEGY_FUNCS[strategy_of(plan, params)](state, cards, plan, budget, params)
-    return chosen if chosen is not None else _fallback(cards, plan, params)
+        if chosen is not None:
+            return chosen, "hold"
+    chosen = STRATEGY_FUNCS[strategy_of(plan, params)](state, cards, plan, budget, params)
+    if chosen is not None:
+        return chosen, "strategy"
+    return _fallback(cards, plan, params), "nothing"
 
 
 def _promotion_value(promotions: list[Promotion], merchants: dict[int, float], card: UserCard,
@@ -363,9 +378,9 @@ def decide(state: UserState, cards: list[UserCard], scenarios: ScenarioSet, at: 
     budget = schedule_adjusted_budget(plan, at, state, schedules)
     fill_cards = [c for c in cards if c.user_card_id not in no_fill]
     if fill_cards:
-        base = choose_base_card(state, fill_cards, plan, budget, params)
+        base, source = choose_base(state, fill_cards, plan, budget, params)
     else:
-        base = _fallback(cards, plan, params)
+        base, source = _fallback(cards, plan, params), "no_fill"
     hold = (params.hold_tiers and not getattr(state, "loss_guard", False) and bool(fill_cards)
             and base == _hold_tier(state, fill_cards, plan, budget, params))
     # 점수 = 즉시 혜택 + 프로모션 (설계서 v4.2). 실적 가치는 점수에서 빼고 교체 기준으로 쓴다.
@@ -384,7 +399,7 @@ def decide(state: UserState, cards: list[UserCard], scenarios: ScenarioSet, at: 
     rest = [uc for uc in order if uc not in (first, second)]
     final_order = [first] + ([second] if second is not None else []) + rest
     return Decision(base, first, second, final_order, scores, swapped, REASON_BENEFIT if swapped else None,
-                    repeat_applied, gain, evidence, threshold, hold)
+                    repeat_applied, gain, evidence, threshold, hold, source)
 
 
 def _decide_v3(state: UserState, cards: list[UserCard], scenarios: ScenarioSet, at: datetime, params: Params,
@@ -393,7 +408,7 @@ def _decide_v3(state: UserState, cards: list[UserCard], scenarios: ScenarioSet, 
     budget = schedule_adjusted_budget(plan, at, state, schedules)
     if getattr(state, "loss_guard", False):
         params = params.with_(w2=params.w2 * params.loss_guard_w2)
-    base = choose_base_card(state, cards, plan, budget, params)
+    base, source = choose_base(state, cards, plan, budget, params)
     scores = score_cards(state, cards, scenarios, at, plan, budget, params, promotions, base)
     positions = {c.user_card_id: i for i, c in enumerate(cards)}
     order = sorted(positions, key=lambda uc: (-scores[uc].total, positions[uc]))
@@ -413,4 +428,5 @@ def _decide_v3(state: UserState, cards: list[UserCard], scenarios: ScenarioSet, 
         reason = REASON_PERFORMANCE if perf_part >= gain / 2 else REASON_BENEFIT
     rest = [uc for uc in order if uc not in (first, second)]
     final_order = [first] + ([second] if second is not None else []) + rest
-    return Decision(base, first, second, final_order, scores, swapped, reason, repeat_applied, gain, evidence)
+    return Decision(base, first, second, final_order, scores, swapped, reason, repeat_applied, gain, evidence,
+                    base_source=source)

@@ -254,7 +254,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from engine.api import create_app
-from engine.chat.report_copy import effect_lines
+from engine.chat.report_copy import effect_lines, strategy_lines
 from engine.domain import Promotion
 from engine.loader import ARTIFACTS
 from engine.team_db import team_db_dir
@@ -291,7 +291,8 @@ def test_monthly_report_형식과_캐시(report_svc):
     assert first["at"] == at(10, 7).isoformat()
     assert first["copy_source"] == "template" and first["cached"] is False
     assert first["summary"]["headline"] == "9월에 카드 혜택 3,000원을 받았어요." and first["summary"]["points"]
-    assert list(first["summary"]) == ["headline", "effect", "points"]          # 앱은 effect 다음에 points 를 보인다
+    assert list(first["summary"]) == ["headline", "effect", "strategy", "points"]   # 앱은 이 순서로 보인다
+    assert first["summary"]["strategy"] == strategy_lines(first) and first["summary"]["strategy"]
 
     cards = {c["user_card_id"]: c for c in first["cards"]}
     assert (cards[101]["this_month"]["perf"], cards[101]["this_month"]["benefit"]) == (610_000, 1_000)
@@ -301,7 +302,8 @@ def test_monthly_report_형식과_캐시(report_svc):
 
     st = first["strategy"]
     assert {"current", "label", "description", "chosen_by", "chosen_by_label", "compare_months", "compare",
-            "base_card", "current_order", "message"} <= set(st)
+            "base_card", "base_source", "current_order", "message"} <= set(st)
+    assert st["base_source"] in {"strategy", "nothing"}               # V3·구간 지키기 끔: 방식이 고르거나 채울 곳이 없다
     assert st["current_order"][0]["rank"] == 1 and st["current_order"][0]["name"] in {c["name"] for c in first["cards"]}
     assert isinstance(st["message"], str) and st["message"]
     base = cards[st["base_card"]["user_card_id"]]           # 구간 칸은 그 카드의 this_month_tiers 그대로 (구간 지키기 문구와 같은 기준)
@@ -346,10 +348,11 @@ def test_monthly_report_지난달_결제화면_결제가_없으면_효과_없음
     r = svc.monthly_report(1, at(10, 7))
     assert r["solpay_effect"] is None and r["effect_note"] == "지난달 결제화면 결제가 없어 비교하지 않았어요"
     assert r["summary"]["headline"] and r["copy_source"] == "template" and r["summary"]["effect"] == []
+    assert r["summary"]["strategy"] == strategy_lines(r) and r["summary"]["strategy"]
 
 
 def test_서비스_요약은_엔진_효과와_AI_요점(report_svc):
-    # 효과 문장은 엔진(effect_lines), 제목·요점만 OpenAI 작성기. 작성기에는 효과를 보내지 않는다
+    # 효과·전략 문장은 엔진(effect_lines·strategy_lines), 제목·카드 요점만 OpenAI 작성기. 작성기에는 효과·전략을 보내지 않는다
     seen = []
 
     class Writer:
@@ -359,12 +362,16 @@ def test_서비스_요약은_엔진_효과와_AI_요점(report_svc):
 
     r = report_svc.monthly_report(1, at(10, 7), Writer())
     assert r["summary"]["headline"] == "AI 제목" and r["summary"]["points"] == ["AI 요점"]
+    assert list(r["summary"]) == ["headline", "effect", "strategy", "points"]
     assert r["summary"]["effect"] == effect_lines(r) and r["summary"]["effect"]
     assert r["summary"]["effect"][0].startswith("추천대로 ")
-    assert "effect" not in seen[0] and "solpay_effect" not in json.dumps(seen[0], ensure_ascii=False)
+    assert r["summary"]["strategy"] == strategy_lines(r) and r["summary"]["strategy"][0].startswith("결제 이력이 짧아")
+    sent = json.dumps(seen[0], ensure_ascii=False)
+    assert "effect" not in seen[0] and "strategy" not in seen[0] and "solpay_effect" not in sent and "base_card" not in sent
     report_svc.reports.clear()
     template = report_svc.monthly_report(1, at(10, 7))               # 작성기가 없어도 효과 문장은 같다
     assert template["summary"]["effect"] == r["summary"]["effect"] and template["copy_source"] == "template"
+    assert template["summary"]["strategy"] == r["summary"]["strategy"]
 
 
 def test_monthly_report_문구_작성기는_하루_한_번(report_svc):
@@ -377,7 +384,8 @@ def test_monthly_report_문구_작성기는_하루_한_번(report_svc):
 
     first = report_svc.monthly_report(1, at(10, 7), Writer())
     again = report_svc.monthly_report(1, at(10, 7, 22), Writer())
-    assert first["summary"] == {"headline": "요약", "effect": effect_lines(first), "points": ["한 줄"]}
+    assert first["summary"] == {"headline": "요약", "effect": effect_lines(first), "strategy": strategy_lines(first),
+                                "points": ["한 줄"]}
     assert first["copy_source"] == "llm"
     assert again["cached"] is True and len(seen) == 1
     assert "user_id" not in json.dumps(seen[0], ensure_ascii=False)
@@ -428,8 +436,11 @@ def test_monthly_report_구간_지키기면_전략에_기본_카드_이유(catal
     svc = PlacementService(HoldStore(), PlacementEngine(catalog, priors, params))
     st = svc.monthly_report(1, at(10, 2))["strategy"]
     assert st["base_card"]["user_card_id"] == 101 and st["base_card"]["remaining_to_keep"] == 400_000
-    assert st["base_reason"] == HOLD_REASON
-    assert svc.monthly_report(1, at(10, 2))["copy_source"] == "template"
+    assert st["base_reason"] == HOLD_REASON and st["base_source"] == "hold"
+    r = svc.monthly_report(1, at(10, 2))
+    assert r["copy_source"] == "template"
+    assert r["summary"]["strategy"][-1] == ("다만 지난달 실적으로 닿은 구간은 어느 방식이든 먼저 지켜서, "
+                                           f"지금은 {st['base_card']['name']} 실적부터 채우고 있어요.")
 
 
 def test_결제를_더하면_그_사용자_리포트_캐시를_버린다(report_svc):
@@ -480,3 +491,8 @@ def test_팀DB_1번_10월_숫자가_card_month_status_와_같다(service):
     assert report["summary"]["effect"] == [
         "추천대로 냈다면 5,180원을 더 받을 수 있었어요(10월 카드 혜택 +290원, 실적 덕분에 11월 +4,890원 예상).",
         "추천대로였다면 신한카드 Discount Plan+ 실적이 1,542,790원에서 1,925,990원으로 늘어 180만 원 구간에 올랐어요."]
+    assert report["strategy"]["base_source"] == "hold"
+    assert report["summary"]["strategy"] == [
+        "최근 6개월 결제로 방식을 비교해 혜택이 가장 큰 방식이 여럿이어서, 그중 '주력 카드 우선' 방식을 이번 달에 써요"
+        "(구간 혜택이 가장 큰 주력 카드의 높은 구간부터 채우고 남으면 다른 카드).",
+        "다만 지난달 실적으로 닿은 구간은 어느 방식이든 먼저 지켜서, 지금은 신한카드 Discount Plan+ 실적부터 채우고 있어요."]

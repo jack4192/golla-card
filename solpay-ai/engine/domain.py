@@ -173,3 +173,6 @@ class RankResult:
     scenarios: list[dict] = field(default_factory=list)
     card_scores: dict[int, dict] = field(default_factory=dict)
     hold: bool = False                  # 기본 카드를 구간 지키기로 정했는지 (ranker.Decision.hold, 월간 리포트 base_reason)
+    # 기본 카드를 정한 단계 (ranker.choose_base: loss_guard·month_end·hold·strategy·nothing, 실적 채울 카드가 없으면 no_fill,
+    # 고정 규칙 화면 forced, 프로모션 카드 화면 promotion(기본 카드를 다시 정하지 않고 직전 값). 월간 리포트 전략 문장)
+    base_source: str | None = None

@@ -312,7 +312,9 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
                        svc: PlacementService = Depends(current)) -> dict:
         """월간 카드 리포트. 이번 달(at 이 속한 달, at 까지)·지난달 카드별 실적·혜택, 배치 전략과 근거,
         지난달 SOL페이 효과(결제화면 결제를 추천 1순위 카드로 냈다면: 카드 혜택·프로모션·이번 달 혜택 추정 차이와 이유),
-        요약 문장(summary). 숫자는 엔진, 문장은 OpenAI (실패하면 정해진 문구 copy_source=template). 같은 날 다시 부르면 cached=true."""
+        요약 문장(summary): headline·points(카드 숫자)는 OpenAI (실패하면 정해진 문구 copy_source=template),
+        effect(SOL페이 효과와 이유)·strategy(방식·고른 근거·지금 기본 카드)는 엔진이 쓴 정해진 문장. 숫자는 엔진.
+        같은 날 다시 부르면 cached=true."""
         try:
             return svc.monthly_report(user_id, (at or datetime.now(KST)).astimezone(KST),
                                       request.app.state.report_writer)
