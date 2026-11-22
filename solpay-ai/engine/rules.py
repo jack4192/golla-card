@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from engine.benefit_calc import DAYS
 from engine.domain import UserCard
@@ -30,6 +31,7 @@ class Rule:
     source_text: str = ""
     created_seq: int = 0                     # 클수록 최근 규칙
     active: bool = True
+    created_at: datetime | None = None       # 만든 시각 (모르면 None). 지난달 효과는 그때 있던 규칙만 쓴다 (rules_at)
 
     @property
     def specificity(self) -> int:
@@ -47,12 +49,31 @@ class Rule:
                 if c.user_card_id in self.user_card_ids or (self.issuer is not None and c.issuer == self.issuer)]
 
 
+def _is_int(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _object(value, name: str) -> dict:
+    """condition·target·settings 칸: 없으면 빈 객체, 객체가 아니면 RuleError (형식이 틀려도 500 이 나지 않게)."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise RuleError(f"{name} 은 객체여야 합니다: {value!r}")
+    return value
+
+
 def _parse_days(values) -> tuple[int, ...] | None:
     if not values:
         return None
+    if not isinstance(values, (list, tuple)):
+        raise RuleError(f"요일은 목록이어야 합니다: {values!r}")
     out: list[int] = []
     for value in values:
-        if value not in DAYS:
+        if not isinstance(value, str) or value not in DAYS:
             raise RuleError(f"알 수 없는 요일: {value}")
         day = DAYS[value]
         out.extend(day if isinstance(day, tuple) else (day,))
@@ -62,21 +83,55 @@ def _parse_days(values) -> tuple[int, ...] | None:
 def _parse_hours(values) -> tuple[int, int] | None:
     if not values:
         return None
-    if len(values) != 2 or not 0 <= values[0] < values[1] <= 24:
-        raise RuleError(f"시각은 [시작, 끝] 형식이어야 합니다: {values}")
+    if (not isinstance(values, (list, tuple)) or len(values) != 2 or not all(_is_int(v) for v in values)
+            or not 0 <= values[0] < values[1] <= 24):
+        raise RuleError(f"시각은 [시작, 끝] 형식의 정수 두 개여야 합니다 (0~24): {values!r}")
     return int(values[0]), int(values[1])
+
+
+def _parse_time(value) -> datetime | None:
+    """만든 시각: ISO 문자열이나 datetime. 시간대가 없으면 한국 시간으로 본다."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            raise RuleError(f"created_at 은 날짜·시각이어야 합니다: {value!r}")
+    if not isinstance(value, datetime):
+        raise RuleError(f"created_at 은 날짜·시각이어야 합니다: {value!r}")
+    return value.replace(tzinfo=ZoneInfo("Asia/Seoul")) if value.tzinfo is None else value
+
+
+def rules_at(rules, when: datetime) -> list[Rule]:
+    """when 에 이미 있던 규칙 (만든 시각을 모르는 규칙은 늘 있던 것으로 본다)."""
+    return [r for r in rules if r.created_at is None or r.created_at <= when]
 
 
 def parse_rule(data: dict, rule_id: int = 0, created_seq: int = 0) -> Rule:
     """user_rules 한 행(또는 챗봇이 만든 JSON)을 검증해 Rule 로 바꾼다."""
+    if not isinstance(data, dict):
+        raise RuleError(f"규칙은 객체여야 합니다: {data!r}")
     rule_type = data.get("rule_type")
-    if rule_type not in RULE_TYPES:
+    if not isinstance(rule_type, str) or rule_type not in RULE_TYPES:
         raise RuleError(f"알 수 없는 규칙 종류: {rule_type}")
-    condition = data.get("condition") or {}
-    target = data.get("target") or {}
-    settings = data.get("settings") or {}
-    user_card_ids = tuple(target.get("user_card_ids") or ())
+    condition = _object(data.get("condition"), "condition")
+    target = _object(data.get("target"), "target")
+    settings = _object(data.get("settings"), "settings")
+    ids = target.get("user_card_ids") or ()
+    if not isinstance(ids, (list, tuple)) or not all(_is_int(i) for i in ids):
+        raise RuleError(f"user_card_ids 는 카드 번호(정수) 목록이어야 합니다: {ids!r}")
+    user_card_ids = tuple(ids)
     issuer = target.get("issuer")
+    if issuer is not None and not isinstance(issuer, str):
+        raise RuleError(f"issuer 는 카드사 코드(문자열)여야 합니다: {issuer!r}")
+    for name in ("w1", "w2"):
+        if settings.get(name) is not None and not _is_number(settings[name]):
+            raise RuleError(f"{name} 은 숫자여야 합니다: {settings[name]!r}")
+    if not _is_int(data.get("priority", 0)):
+        raise RuleError(f"priority 는 정수여야 합니다: {data.get('priority')!r}")
+    if not isinstance(data.get("active", True), bool):
+        raise RuleError(f"active 는 true/false 여야 합니다: {data.get('active')!r}")
     if rule_type in ("force", "exclude", "no_fill") and not (issuer or user_card_ids):
         raise RuleError(f"{rule_type} 규칙에는 대상 카드가 필요합니다")
     base_order = settings.get("base_order")
@@ -90,6 +145,7 @@ def parse_rule(data: dict, rule_id: int = 0, created_seq: int = 0) -> Rule:
         w1=settings.get("w1"), w2=settings.get("w2"), base_order=base_order,
         priority=data.get("priority", 0), source_text=data.get("source_text", ""),
         created_seq=data.get("created_seq", created_seq), active=data.get("active", True),
+        created_at=_parse_time(data.get("created_at")),
     )
 
 

@@ -8,8 +8,10 @@
 """
 
 import json
+import logging
 import os
 import re
+from dataclasses import replace
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
@@ -49,6 +51,9 @@ def _aware(v: datetime | None) -> datetime | None:
     if v is None:
         return None
     return v.replace(tzinfo=KST) if v.tzinfo is None else v.astimezone(KST)
+
+
+log = logging.getLogger("solpay.db_store")
 
 
 class AppSchemaMissing(RuntimeError):
@@ -148,7 +153,7 @@ class TeamDbPgStore:
 
     def _payments(self, c, user_id: int, since: datetime, at: datetime) -> list[Payment]:
         rows = c.execute(
-            f"select p.payment_id, p.user_card_id, p.merchant_name, p.category, p.amount, p.paid_at, "
+            f"select p.payment_id, p.user_card_id, p.merchant_name, p.category, p.amount, p.paid_at, p.promotion_amount, "
             f"coalesce(d.channel, 'offline_qr') as channel, coalesce(d.card_select_mode, 'manual') as card_select_mode, "
             f"d.synced_at from {self.s}.payments p join {self.s}.user_cards uc on uc.user_card_id = p.user_card_id "
             f"left join {self.s}.payment_details d on d.payment_id = p.payment_id "
@@ -156,7 +161,8 @@ class TeamDbPgStore:
             (user_id, _naive_kst(since), _naive_kst(at))).fetchall()
         out = [Payment(int(r["payment_id"]), user_id, int(r["user_card_id"]),
                        self.merchant_key.get((r["merchant_name"], r["category"])), r["category"], r["channel"],
-                       r["card_select_mode"], int(r["amount"]), _aware(r["paid_at"]), _aware(r["synced_at"]))
+                       r["card_select_mode"], int(r["amount"]), _aware(r["paid_at"]), _aware(r["synced_at"]),
+                       int(r["promotion_amount"] or 0))             # 실제로 받은 프로모션 (월간 리포트 효과의 실제 쪽)
                for r in rows]
         demo = c.execute(
             f"select * from {self.a}.demo_payments where user_id = %s and paid_at >= %s and paid_at <= %s",
@@ -175,16 +181,17 @@ class TeamDbPgStore:
                 raise UnknownUser(user_id)
             cards = self._cards(c, user_id)
             payments = self._payments(c, user_id, since, at)
-            rules = c.execute(f"select rule_id, rule, created_seq from {self.a}.user_rules "
+            rules = c.execute(f"select rule_id, rule, created_seq, created_at from {self.a}.user_rules "
                               f"where user_id = %s and active order by created_seq, rule_id", (user_id,)).fetchall()
             last = c.execute(f"select base_card from {self.a}.recommendation_logs where user_id = %s "
                              f"order by recommendation_id desc limit 1", (user_id,)).fetchone()
         return UserContext(
             User(user_id), cards, [p for p in payments if p.visible_at <= at],
-            [parse_rule(r["rule"], int(r["rule_id"]), r["created_seq"]) for r in rules],
+            [replace(parse_rule(r["rule"], int(r["rule_id"]), r["created_seq"]), created_at=_aware(r["created_at"]))
+             for r in rules],
             promotions=[p for p in self.promotions if p.active(at)],
             last_base=int(last["base_card"]) if last and last["base_card"] is not None else None,
-            benefit_start=self.benefit_start, schedules=self.schedules(user_id, at.date()))
+            benefit_start=self.benefit_start, schedules=self.schedules_or_empty(user_id, at.date()))
 
     # ---------- 추천 기록 ----------
     def log_recommendation(self, record: dict) -> int:
@@ -285,6 +292,15 @@ class TeamDbPgStore:
         items = self.cipher.decrypt(bytes(row["payload"]))["items"]
         return [ScheduleItem(i + 1, user_id, datetime.fromisoformat(x["start"]), datetime.fromisoformat(x["end"]),
                              x["category"], int(x["amount"])) for i, x in enumerate(items)]
+
+    def schedules_or_empty(self, user_id: int, day) -> list[ScheduleItem]:
+        """배치용 일정. 읽지 못하면(암호 키가 바뀜, 값이 깨짐) 일정이 없는 것으로 보고 소비 패턴으로 배치하게 한다
+        (2026-11-22 사용자 결정: 추천은 계속 주기). 일정 조회 API 는 schedules 를 그대로 써서 오류를 알린다."""
+        try:
+            return self.schedules(user_id, day)
+        except Exception:
+            log.warning("일정을 읽지 못해 일정 없이 배치합니다 (user_id=%s, day=%s)", user_id, day, exc_info=True)
+            return []
 
     def purge_schedules(self, today) -> int:
         with self._connect() as c:

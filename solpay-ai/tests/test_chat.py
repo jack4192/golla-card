@@ -384,3 +384,17 @@ def test_agent_makes_no_draft_from_quoted_instruction(service):
     ])
     out = agent.answer(DEMO, INJECTION, AT)
     assert out["rule_draft"] is None and not any(b["type"] == "rule_card" for b in out["blocks"])
+
+
+def test_카드가_없는_사용자도_도구가_멈추지_않는다(service, monkeypatch):
+    # 2026-11-22 재검토 2번: 등록한 카드가 없으면 배치가 빈 목록이라 결제 추천 도구가 IndexError 로 죽었다
+    from dataclasses import replace
+    orig = service.store.context
+    monkeypatch.setattr(service.store, "context", lambda u, when: replace(orig(u, when), cards=[], payments=[]))
+    for name, args in (("recommend_for_payment", {"amount": 5000, "category_name": "카페"}),
+                       ("simulate_payment", {"category_name": "카페", "amount": 5000}),
+                       ("explain_ranking", {}), ("get_card_status", {}), ("recommend_new_card", {})):
+        out = ToolBox(service, DEMO, AT, message="카페 5000원").run(name, args)
+        assert isinstance(out, dict), name
+    out = ToolBox(service, DEMO, AT, message="카페 5000원").run("recommend_for_payment", {"amount": 5000, "category_name": "카페"})
+    assert "등록한 카드가 없" in out["error"]

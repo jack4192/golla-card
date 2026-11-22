@@ -23,6 +23,7 @@ BASE_CHANGED = "BASE_CHANGED"
 REPEAT = "REPEAT"
 HABIT = "HABIT"
 NEUTRAL = "NEUTRAL"                 # 혜택으로 말할 것이 없고 습관 문구도 사실이 아닐 때
+NO_CARD = "NO_CARD"                 # 등록한 카드가 없어 보여 줄 카드가 없을 때 (cards=[], 문구 없음)
 HOLD = "HOLD"                       # v4 구간 지키기로 기본 카드가 된 경우
 PROMOTION_CARD = "PROMOTION_CARD"   # 일정 팝업에서 추천한 프로모션의 신한카드
 

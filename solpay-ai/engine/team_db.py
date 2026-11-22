@@ -317,9 +317,11 @@ def load_team(src: TableSource | None = None, cmap: CardMap | None = None) -> Te
         uc = int(r.user_card_id)
         user_id = owner[uc]
         synced = None if pd.isna(r.synced_at) else r.synced_at.to_pydatetime()
+        promo = getattr(r, "promotion_amount", None)            # 실제로 받은 프로모션 (칸이 없으면 기록 없음)
         payments.setdefault(user_id, []).append(Payment(
             int(r.payment_id), user_id, uc, key.get((r.merchant_name, r.category)), r.category, r.channel,
-            r.card_select_mode, int(r.amount), r.paid_at.to_pydatetime(), synced))
+            r.card_select_mode, int(r.amount), r.paid_at.to_pydatetime(), synced,
+            None if promo is None else (0 if pd.isna(promo) else int(promo))))
 
     users = {int(u): User(int(u)) for u in src.read("users").user_id}
     return TeamData(catalog, load_promotions(src, catalog, cmap), users, user_cards, payments, key,

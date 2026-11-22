@@ -321,8 +321,11 @@ def test_monthly_report_형식과_캐시(report_svc):
 
     assert st["base_reason"] is None                       # 구간 지키기로 정한 기본 카드가 아니다 (V3, hold_tiers 끔)
 
+    # 숫자는 부를 때마다 다시 계산한다 (2026-11-22 사용자 결정). 결제가 그대로면 at 만 다르고 나머지는 같다
     second = report_svc.monthly_report(1, at(10, 7, 20))
-    assert second["cached"] is True and {**second, "cached": False} == first
+    assert second["cached"] is False and second["at"] == at(10, 7, 20).isoformat()
+    for key in ("cards", "totals", "solpay_effect", "month", "prev_month"):      # 전략의 '지금 순서'는 시각에 따라 다를 수 있다
+        assert second[key] == first[key], key
 
 
 def test_monthly_report_지난달에_끝난_행사도_효과에_넣는다(report_svc):
@@ -394,10 +397,13 @@ def test_서비스_요점은_OpenAI_가_고른_엔진_후보_문장(report_svc):
     assert sent["candidates"] == candidates and "cards" not in sent
 
 
-def test_monthly_report_문구_작성기는_하루_한_번(report_svc):
+def test_monthly_report_사실이_같으면_OpenAI_를_다시_부르지_않는다(report_svc):
+    # 2026-11-22 사용자 결정: 숫자는 매번 계산하고, OpenAI 답(제목·고른 문장)만 보내는 사실이 같을 때 다시 쓴다
     seen = []
 
     class Writer:
+        prompt_version = "t1"
+
         def write(self, facts):
             seen.append(facts)
             return {"headline": "요약", "points": ["한 줄"]}, "llm", {"ms": 3}
@@ -406,11 +412,58 @@ def test_monthly_report_문구_작성기는_하루_한_번(report_svc):
     again = report_svc.monthly_report(1, at(10, 7, 22), Writer())
     assert first["summary"] == {"headline": "요약", "effect": effect_lines(first), "strategy": strategy_lines(first),
                                 "points": ["한 줄"]}
-    assert first["copy_source"] == "llm"
-    assert again["cached"] is True and len(seen) == 1
+    assert first["copy_source"] == "llm" and first["cached"] is False
+    assert again["cached"] is True and again["copy_source"] == "llm" and len(seen) == 1
+    assert again["summary"] == first["summary"] and again["at"] == at(10, 7, 22).isoformat()
     assert "user_id" not in json.dumps(seen[0], ensure_ascii=False)
-    report_svc.monthly_report(1, at(10, 8), Writer())               # 날짜가 바뀌면 다시 계산
-    assert len(seen) == 2
+    report_svc.monthly_report(1, at(10, 8), Writer())               # 날이 바뀌어도 사실이 같으면 그대로 쓴다
+    assert len(seen) == 1
+    report_svc.store.payments.append(pay(101, 50_000, when=at(10, 8, 9)))      # Spring 이 결제를 넣은 것처럼 (캐시를 지우는 호출 없음)
+    after = report_svc.monthly_report(1, at(10, 8, 10), Writer())
+    assert len(seen) == 2 and after["cached"] is False                 # 사실이 달라지면 다시 쓴다
+    perf = [next(c for c in r["cards"] if c["user_card_id"] == 101)["this_month"]["perf"] for r in (again, after)]
+    assert perf[1] == perf[0] + 50_000
+
+
+def test_monthly_report_결제가_들어오면_지우는_호출_없이도_숫자가_바뀐다(report_svc):
+    # 운영에서는 Spring 이 결제를 DB 에 넣는다 (예전에는 그날 처음 만든 리포트가 하루 종일 그대로였다)
+    first = report_svc.monthly_report(1, at(10, 7))
+    report_svc.store.payments.append(pay(101, 50_000, when=at(10, 7, 13)))
+    after = report_svc.monthly_report(1, at(10, 7, 14))
+    perf = [next(c for c in r["cards"] if c["user_card_id"] == 101)["this_month"]["perf"] for r in (first, after)]
+    assert perf[1] == perf[0] + 50_000
+
+
+def test_monthly_report_정해진_문구로_떨어진_답은_다시_시도한다(report_svc):
+    seen = []
+
+    class Failing:
+        prompt_version = "t1"
+
+        def write(self, facts):
+            seen.append(facts)
+            return {"headline": "정해진 제목", "points": ["정해진 한 줄"]}, "template", {"reason": "APITimeoutError"}
+
+    first = report_svc.monthly_report(1, at(10, 7), Failing())
+    again = report_svc.monthly_report(1, at(10, 7, 22), Failing())
+    assert first["copy_source"] == "template" and again["cached"] is False and len(seen) == 2
+
+
+def test_monthly_report_프롬프트가_바뀌면_다시_쓴다(report_svc):
+    seen = []
+
+    class Writer:
+        def __init__(self, version):
+            self.prompt_version = version
+
+        def write(self, facts):
+            seen.append(self.prompt_version)
+            return {"headline": "요약", "points": ["한 줄"]}, "llm", {}
+
+    report_svc.monthly_report(1, at(10, 7), Writer("a"))
+    report_svc.monthly_report(1, at(10, 7), Writer("a"))
+    report_svc.monthly_report(1, at(10, 7), Writer("b"))
+    assert seen == ["a", "b"]
 
 
 def test_api_404_와_응답(report_svc):
@@ -423,7 +476,7 @@ def test_api_404_와_응답(report_svc):
     body = r.json()
     assert r.status_code == 200 and body["month"] == "2026-10" and isinstance(body["cards"], list)
     assert body["copy_source"] == "template" and body["copy_log"]["reason"] == "no_api_key"     # 앱의 작성기 (키 없음)
-    assert isinstance(body["summary"]["headline"], str) and again.json()["cached"] is True
+    assert isinstance(body["summary"]["headline"], str) and again.json()["cached"] is False     # 정해진 문구는 재사용 표시 없음
     assert dev.status_code == 200 and "monthly-report" in dev.text and "월간 리포트 보기" in dev.text
 
 
@@ -479,9 +532,9 @@ def test_결제를_더하면_그_사용자_리포트_캐시를_버린다(report_
 
 
 def test_forget_reports_는_그_사용자만_버린다(report_svc):
-    report_svc.reports = {(1, at(10, 7).date()): {}, (1, at(10, 8).date()): {}, (2, at(10, 7).date()): {}}
+    report_svc.reports = {1: ("사실", {}, {}), 2: ("사실", {}, {})}        # 사용자마다 마지막 OpenAI 답 하나
     report_svc.forget_reports(1)
-    assert list(report_svc.reports) == [(2, at(10, 7).date())]
+    assert list(report_svc.reports) == [2]
 
 
 # ---------- 팀 DB CSV (없으면 건너뜀) ----------
@@ -516,3 +569,79 @@ def test_팀DB_1번_10월_숫자가_card_month_status_와_같다(service):
         "최근 6개월 결제로 방식을 비교해 혜택이 가장 큰 방식이 여럿이어서, 그중 '주력 카드 우선' 방식을 이번 달에 써요"
         "(구간 혜택이 가장 큰 주력 카드의 높은 구간부터 채우고 남으면 다른 카드).",
         "다만 지난달 실적으로 닿은 구간은 어느 방식이든 먼저 지켜서, 지금은 신한카드 Discount Plan+ 실적부터 채우고 있어요."]
+
+
+# ---------- 지난달 효과: 프로모션은 기록값, 규칙은 만든 뒤 결제에만 (2026-11-22 재검토 7·8번, 사용자 결정) ----------
+from dataclasses import replace as _replace  # noqa: E402
+
+from engine.report import promotion_of  # noqa: E402
+from engine.rules import parse_rule, rules_at  # noqa: E402
+
+SEPT = (datetime(2026, 9, 1, tzinfo=KST), datetime(2026, 9, 30, 23, 59, tzinfo=KST))
+CARD_OF = {101: ("SHINHAN", 1), 102: ("SHINHAN", 2), 103: ("KB", 3)}
+EVENT = Promotion(1, "카페", *SEPT, frozenset({10}), issuer="SHINHAN", amount=500, title="카페 500원", kind="event")
+MYSHOP = Promotion(2, "식당", *SEPT, frozenset({11, 12}), issuer="SHINHAN", amount=2_000, title="마이샵 혜택", kind="myshop")
+
+
+def _recorded(p, amount):
+    return _replace(p, promotion_amount=amount)
+
+
+def test_효과_프로모션_실제_쪽은_기록값():
+    cafe = _recorded(pay(101, 10_000, "CAFE", at(9, 5)), 0)             # 조건은 맞지만 실제로는 못 받았다
+    rest = _recorded(pay(102, 20_000, "REST", at(9, 10), merchant=11), 1_500)
+    promo = promotion_of([cafe, rest], [EVENT, MYSHOP], CARD_OF)
+    assert promo(101, cafe) == 0 and promo(102, rest) == 1_500
+
+
+def test_효과_프로모션_추천_쪽_이벤트는_받는다고_본다():
+    cafe = _recorded(pay(103, 10_000, "CAFE", at(9, 5)), 0)             # KB 카드로 내서 못 받았다
+    promo = promotion_of([cafe], [EVENT, MYSHOP], CARD_OF)
+    assert promo(101, cafe) == 500 and promo(103, cafe) == 0
+
+
+def test_효과_프로모션_추천_쪽_마이샵은_그달_받은_기록이_있을_때만():
+    rest = _recorded(pay(103, 20_000, "REST", at(9, 10), merchant=11), 0)
+    assert promotion_of([rest], [EVENT, MYSHOP], CARD_OF)(102, rest) == 0          # 마이샵을 켰는지 알 수 없다
+    other = _recorded(pay(102, 30_000, "REST", at(9, 20), merchant=12), 2_000)     # 같은 브랜드의 다른 가맹점에서 받았다 = 켜 둠
+    promo = promotion_of([rest, other], [EVENT, MYSHOP], CARD_OF)
+    assert promo(102, rest) == 2_000 and promo(103, rest) == 0
+
+
+def test_효과_프로모션_기록이_없는_결제는_조건이_맞으면_받았다고_본다():
+    # 시연 결제(POST /internal/payments)·예전 저장소는 기록값이 없다 (promotion_amount None): 실제·추천 모두 조건으로 계산
+    rest = pay(103, 20_000, "REST", at(9, 10), merchant=11)
+    cafe = pay(101, 10_000, "CAFE", at(9, 5))
+    promo = promotion_of([rest, cafe], [EVENT, MYSHOP], CARD_OF)
+    assert rest.promotion_amount is None
+    assert promo(102, rest) == 2_000 and promo(103, rest) == 0 and promo(101, cafe) == 500
+    nowhere = _recorded(pay(101, 5_000, "ONLINE", at(9, 6), channel="online", merchant=None), 300)
+    assert promotion_of([nowhere], [EVENT], CARD_OF)(101, nowhere) == 300 and promotion_of([nowhere], [EVENT], CARD_OF)(102, nowhere) == 0
+
+
+def test_monthly_report_효과의_실제_프로모션은_기록값(report_svc):
+    report_svc.store.payments = [_recorded(p, 0) for p in report_svc.store.payments]
+    assert report_svc.monthly_report(1, at(10, 7))["solpay_effect"]["actual"]["promotion"] == 0
+    report_svc.store.payments = [_recorded(p, 300 if p.category == "CAFE" and p.paid_at.month == 9 else 0)
+                                 for p in report_svc.store.payments]
+    assert report_svc.monthly_report(1, at(10, 7))["solpay_effect"]["actual"]["promotion"] == 300
+
+
+def test_규칙은_만든_시각_이후에만():
+    old = parse_rule({"rule_type": "force", "target": {"user_card_ids": [103]}, "created_at": "2026-08-01T09:00:00+09:00"})
+    new = parse_rule({"rule_type": "force", "target": {"user_card_ids": [103]}, "created_at": "2026-10-05T09:00:00+09:00"})
+    always = parse_rule({"rule_type": "force", "target": {"user_card_ids": [103]}})       # 만든 시각을 모르면 늘 적용
+    assert old.created_at == datetime(2026, 8, 1, 9, tzinfo=KST) and always.created_at is None
+    assert rules_at([old, new, always], at(9, 10)) == [old, always]
+    assert rules_at([old, new, always], at(10, 6)) == [old, new, always]
+
+
+def test_monthly_report_지난달_효과에는_그때_있던_규칙만(report_svc):
+    force = {"rule_type": "force", "target": {"user_card_ids": [103]}}
+    plain = report_svc.monthly_report(1, at(10, 7))["solpay_effect"]
+    report_svc.store.rules = [parse_rule({**force, "created_at": "2026-10-05T09:00:00+09:00"}, 1, 0)]   # 이번 달에 만든 규칙
+    assert report_svc.monthly_report(1, at(10, 7))["solpay_effect"] == plain
+    report_svc.store.rules = [parse_rule({**force, "created_at": "2026-08-01T09:00:00+09:00"}, 1, 0)]   # 지난달에도 있던 규칙
+    ef = report_svc.monthly_report(1, at(10, 7))["solpay_effect"]
+    assert ef["changed_payments"] == 2 and {c["why"] for c in ef["top_changes"]} <= {"사용자 규칙"}
+    assert ef["top_changes"] and all("교통" in c["recommended_card"] for c in ef["top_changes"])

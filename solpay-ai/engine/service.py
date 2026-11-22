@@ -1,6 +1,7 @@
 """배치 엔진 진입점 (설계서 v4.1).
 하루 일정으로 상황 파악 → 사용자 규칙 → 일정 프로모션 카드 → 방식·기본 카드 → 점수 → 교체 → 문구."""
 
+import logging
 from dataclasses import dataclass, replace
 from datetime import datetime
 
@@ -17,6 +18,9 @@ from engine.rules import Rule, resolve
 from engine.scenarios import MODE_SCHEDULE, active_schedule, build
 from engine.slots import ym_of
 from engine.state import UserState
+
+
+log = logging.getLogger("solpay.service")
 
 
 @dataclass
@@ -37,6 +41,9 @@ class PlacementEngine:
                    promo_offers: dict[int, list[tuple[int, int, str]]] | None = None) -> RankResult:
         """promo_offers: 일정 팝업에서 추천한 프로모션 (engine.popup.offers_by_item). 그 일정 시간이면 3~6단계 대신
         받을 금액이 가장 큰 신한카드를 1순위로 둔다. 고정 규칙이 더 우선이고, 제외된 카드는 건너뛴다."""
+        if not state.cards:                 # 등록한 카드가 없으면 빈 순서 (2026-11-22 사용자 결정: 200 + 빈 목록, 기록 없음)
+            from engine.messages import NO_CARD
+            return RankResult([], 0, NO_CARD, None, "pattern", "none", None)
         if self.models is not None:
             state.models = self.models
         if state.strategy_cache is None:
@@ -142,7 +149,8 @@ class PlacementService:
         self.popups: dict = {}
         # 맞춤 추천 페이지 결과 (사용자, 날짜) → 응답. 같은 날 다시 열면 그대로 준다 (재시작하면 다시 계산).
         self.pages: dict = {}
-        # 월간 리포트 (사용자, 날짜) → 응답. 리포트는 저장하지 않고 하루 단위 메모리 캐시만 둔다 (OpenAI 비용 절약).
+        # 월간 리포트의 OpenAI 답: 사용자 → (보낸 사실, 문구, 기록). 숫자는 부를 때마다 다시 계산하고, OpenAI 답만
+        # 보낸 사실이 같을 때 다시 쓴다 (2026-11-22 사용자 결정. 사용자마다 마지막 답 하나, 정해진 문구는 두지 않는다).
         self.reports: dict = {}
         self._popup_promotions: list[Promotion] | None = None
 
@@ -159,9 +167,11 @@ class PlacementService:
         self._popup_promotions = list(value)
 
     def _all_promotions(self, context) -> list[Promotion]:
-        """팀 DB 행사 + 일정 팝업용 행사(promotions.yml). 두 목록의 번호가 겹칠 수 있어 합치기만 하고,
-        한 결제는 행사 하나(가장 큰 것)만 받으므로 같은 행사가 두 번 들어 있어도 두 번 세지 않는다."""
-        return list(context.promotions) + list(self.popup_promotions)
+        """팀 DB 행사 + 일정 팝업용 행사(promotions.yml). 한 결제는 행사 하나(가장 큰 것)만 받으므로 같은 행사가 두 번
+        들어 있어도 두 번 세지 않는다. yml 에서 '확인 필요'(응모·신규 조건 등)인 번호는 팀 DB 사본도 뺀다
+        (page.merge_promotions. 예전에는 사본이 배치 점수·안내 문구·결제 평가에 그대로 들어갔다)."""
+        from engine.page import merge_promotions
+        return merge_promotions(list(context.promotions), self.popup_promotions)
 
     def _strategy_promotions(self):
         """v4 는 방식 비교(최초·월간 맞춤·손해 방지)에 프로모션을 넘기지 않는다 (v4.2 도 점수에만 넣는다)."""
@@ -294,6 +304,9 @@ class PlacementService:
         context = self.store.context(user_id, at)
         state = self.build_state(context, at)
         state.roll_to(ym_of(at))
+        if not state.cards:                 # 등록한 카드가 없으면 비교할 것이 없다
+            return {"cards": [], "best_card": None, "best_benefit": 0, "used_card": used_card, "used_benefit": None,
+                    "used_promotion": None}
         values, promos, labels = {}, {}, {}
         for uc in state.cards:
             got, _ = evaluate(self.engine.catalog.cards[uc.card_id], category, amount, state.ledger[uc.user_card_id], at,
@@ -326,13 +339,21 @@ class PlacementService:
         lookup = getattr(self.store, "recommendation", None)
         return lookup(user_id, recommendation_id) if lookup is not None else None
 
-    def rank(self, req: RankRequest) -> tuple[int, RankResult]:
+    def rank(self, req: RankRequest) -> tuple[int | None, RankResult]:
+        """(추천 기록 번호, 배치 결과). 등록한 카드가 없으면 기록을 남기지 않고 번호는 None 이다."""
         context = self.store.context(req.user_id, req.at)
         state = self.build_state(context, req.at)
         result = self.engine.rank_state(state, req, context.rules, context.weights, self._all_promotions(context),
                                         context.last_base, schedules=context.schedules,
                                         promo_offers=self.popups.get((req.user_id, req.at.date())))
-        recommendation_id = self.store.log_recommendation({
+        if not result.cards:
+            return None, result
+        return self._log_rank(req, result), result
+
+    def _log_rank(self, req: RankRequest, result: RankResult) -> int | None:
+        """추천 기록을 남기고 번호를 준다. 저장에 실패해도(읽기 전용 계정, DB 장애) 배치는 돌려주도록 None 을 준다
+        (2026-11-22 사용자 결정: 추천은 계속 주기. 그 추천은 챗봇의 '이 추천 이유 설명'에 쓸 수 없다)."""
+        record = {
             "user_id": req.user_id, "at": req.at,
             "version": result.version, "scenario_mode": result.scenario_mode, "base_card": result.base_card,
             "scenarios": result.scenarios, "scores": result.card_scores,
@@ -341,8 +362,19 @@ class PlacementService:
             # 챗봇 '추천 이유 설명'용 (Postgres 저장소는 위 칸만 저장한다)
             "messages": {c.user_card_id: c.message for c in result.cards if c.message},
             "swapped": result.swapped, "rule_applied": result.rule_applied,
-        })
-        return recommendation_id, result
+        }
+        try:
+            return self.store.log_recommendation(record)
+        except Exception:
+            log.warning("추천 기록을 남기지 못했습니다 (user_id=%s). 배치는 그대로 돌려줍니다", req.user_id, exc_info=True)
+            return None
+
+    def _log_card(self, record: dict) -> None:
+        """신규 카드 추천 기록. 저장에 실패해도 추천 화면은 보여 준다 (다음 추천 간격 계산에만 빠진다)."""
+        try:
+            self.store.log_card_recommendation(record)
+        except Exception:
+            log.warning("카드 추천 기록을 남기지 못했습니다 (user_id=%s)", record.get("user_id"), exc_info=True)
 
     # ---------- 하루 일정 ----------
     def put_schedule(self, user_id: int, day, items: list[dict], now) -> list[ScheduleItem]:
@@ -369,9 +401,8 @@ class PlacementService:
         self.pages.pop((user_id, day), None)
 
     def forget_reports(self, user_id: int) -> None:
-        """결제·규칙이 바뀌면 그 사용자의 월간 리포트 캐시를 모두 버린다 (결제·규칙은 그날 이후 리포트에 모두 영향을 준다)."""
-        for key in [k for k in self.reports if k[0] == user_id]:
-            del self.reports[key]
+        """그 사용자의 월간 리포트 OpenAI 답을 버린다. 숫자는 늘 다시 계산하므로 없어도 틀린 숫자는 나오지 않는다."""
+        self.reports.pop(user_id, None)
 
     # ---------- 맞춤 추천 페이지 (설계서 2026-11-19-recommendation-page-design.md) ----------
     def recommendation_page(self, user_id: int, at, writer=None) -> dict:
@@ -402,7 +433,7 @@ class PlacementService:
             copy, source, log = template_copy(facts), "template", {"reason": "no_writer"}
         if page.card is not None and not any(
                 h["card_id"] == page.card.card_id and h["at"].astimezone(at.tzinfo).date() == at.date() for h in history):
-            self.store.log_card_recommendation({"user_id": user_id, "at": at, "card_id": page.card.card_id,
+            self._log_card({"user_id": user_id, "at": at, "card_id": page.card.card_id,
                                                 "trigger": page.trigger, "gain": page.card.gain})
         real = [o for o in page.offers if o.item_id > 0]         # 평소 소비 항목의 행사는 결제 화면에 쓰지 않는다
         if real:
@@ -430,7 +461,7 @@ class PlacementService:
         if popup["kind"] == "card":
             rec = popup["recommendation"]
             self.popups.pop(key, None)
-            self.store.log_card_recommendation({"user_id": user_id, "at": at, "card_id": rec.card_id,
+            self._log_card({"user_id": user_id, "at": at, "card_id": rec.card_id,
                                                 "trigger": rec.trigger, "gain": rec.gain})
             return {"kind": "card", "card_id": rec.card_id, "card_name": rec.card_name, "gain": rec.gain,
                     "trigger": rec.trigger, "reason": rec.reason, "first_month_note": rec.first_month_note}
@@ -452,7 +483,7 @@ class PlacementService:
                         at, self.engine.params)
         if rec is None:
             return {"recommend": False}
-        self.store.log_card_recommendation({"user_id": user_id, "at": at, "card_id": rec.card_id,
+        self._log_card({"user_id": user_id, "at": at, "card_id": rec.card_id,
                                             "trigger": rec.trigger, "gain": rec.gain})
         return {"recommend": True, "card_id": rec.card_id, "card_name": rec.card_name, "gain": rec.gain,
                 "trigger": rec.trigger, "reason": rec.reason, "first_month_note": rec.first_month_note}
@@ -473,12 +504,12 @@ class PlacementService:
         writer(ReportCopyWriter)는 제목을 쓰고 보여 줄 후보 1~2개를 고른다 (None 이면 정해진 문구. 고른 번호는 copy_log.picks).
         SOL페이 효과 문장·이유(summary.effect, report_copy.effect_lines)와 배치 전략 문장(summary.strategy, strategy_lines)은
         엔진이 쓴다 (2026-11-22 사용자 결정).
-        저장하지 않고, 같은 날 다시 부르면 메모리에 둔 결과를 준다 (cached)."""
+        숫자·효과·전략은 부를 때마다 다시 계산한다 (운영에서는 Spring 이 결제를 DB 에 넣으므로 캐시를 지울 계기가 없다).
+        OpenAI 답만, 보낸 사실과 프롬프트가 지난번과 같으면 다시 쓴다 (cached=true). 정해진 문구로 떨어진 답은 두지 않아
+        다음에 다시 시도한다."""
+        import json
         from engine.chat.report_copy import effect_lines, facts_of, strategy_lines, template_copy
         from engine.report import card_rows, month_starts, strategy_now, totals_of
-        key = (user_id, at.date())
-        if key in self.reports:
-            return {**self.reports[key], "cached": True}
         context = self.store.context(user_id, at)
         prev_start, this_start = month_starts(at)
         month, prev_month = ym_of(this_start), ym_of(prev_start)
@@ -497,45 +528,46 @@ class PlacementService:
                   # 이번 달 전에 결제가 하나라도 있었나 (없으면 요약 제목이 '첫 리포트예요', report_copy.fixed_headline)
                   "has_history": any(p.paid_at < this_start for p in context.payments)}
         facts = facts_of(report)
-        if writer is not None:
+        sent = json.dumps([getattr(writer, "prompt_version", None), facts], ensure_ascii=False, sort_keys=True)
+        kept = self.reports.get(user_id) if writer is not None else None
+        reused = kept is not None and kept[0] == sent
+        if reused:
+            copy, source, log = kept[1], "llm", kept[2]
+        elif writer is not None:
             copy, source, log = writer.write(facts)
+            if copy.get("picks"):
+                log = {**log, "picks": copy["picks"]}         # OpenAI 가 고른 후보 번호 (facts.candidates 의 id)
+            if source == "llm":
+                self.reports[user_id] = (sent, copy, log)
         else:
             copy, source, log = template_copy(facts), "template", {"reason": "no_writer"}
-        if copy.get("picks"):
-            log = {**log, "picks": copy["picks"]}             # OpenAI 가 고른 후보 번호 (facts.candidates 의 id)
         summary = {"headline": copy["headline"], "effect": effect_lines(report), "strategy": strategy_lines(report),
                    "points": copy["points"]}
-        result = {**report, "summary": summary, "copy_source": source, "copy_log": log}
-        self.reports[key] = result
-        return {**result, "cached": False}
+        return {**report, "summary": summary, "copy_source": source, "copy_log": log, "cached": reused}
 
     def _last_month_effect(self, user_id: int, context, prev_start, this_start) -> dict | None:
         """지난달 SOL페이 효과 (engine.report.replay_month): 지난달 결제화면 결제를 그때 엔진의 1순위 카드로 냈다면.
         시작 상태는 지난달 1일 전 결제로 그때마다 새로 만든다 (월간 맞춤 방식도 지난달 기준, 늦게 들어온 결제 포함).
-        규칙은 지금 규칙, 일정·일정 팝업은 쓰지 않는다. 프로모션은 조건이 맞으면 받았다고 본다 (실제·추천 같은 조건).
+        일정·일정 팝업은 쓰지 않는다. 2026-11-22 사용자 결정:
+        - 규칙은 그 결제 때 이미 있던 규칙만 쓴다 (rules.rules_at. 오늘 만든 규칙이 지난달 효과를 바꾸지 않게).
+        - 프로모션: 실제 쪽은 기록값, 추천 쪽은 이벤트와 그달 켜 둔 것이 확인된 마이샵만 (report.promotion_of).
         행사는 저장소 전체 목록에서 결제 시각에 진행 중인 것만 쓴다 (context 의 행사는 at 기준이라 지난달에 끝난 행사가 빠진다)."""
-        from engine.report import replay_month
+        from engine.report import promotion_of, replay_month
+        from engine.rules import rules_at
         before = replace(context, payments=[p for p in context.payments if p.paid_at < prev_start])
         payments = sorted((p for p in context.payments if prev_start <= p.paid_at < this_start),
                           key=lambda p: (p.paid_at, p.payment_id))
-        promotions = list(getattr(self.store, "promotions", context.promotions)) + list(self.popup_promotions)
+        from engine.page import merge_promotions
+        promotions = merge_promotions(list(getattr(self.store, "promotions", context.promotions)), self.popup_promotions)
         card_of = {c.user_card_id: (c.issuer, c.card_id) for c in context.cards}
         last_base = None
 
         def choose(view, p):
             nonlocal last_base
-            result = self.engine.rank_state(view, RankRequest(user_id, p.paid_at), context.rules, context.weights,
-                                            [x for x in promotions if x.active(p.paid_at)], last_base)
+            result = self.engine.rank_state(view, RankRequest(user_id, p.paid_at), rules_at(context.rules, p.paid_at),
+                                            context.weights, [x for x in promotions if x.active(p.paid_at)], last_base)
             last_base = result.base_card
             return result.cards[0].user_card_id, result.reason_code
 
-        def promo(user_card_id, p):
-            if p.merchant_id is None:
-                return 0
-            issuer, card_id = card_of[user_card_id]
-            return max((x.value(p.merchant_id, issuer, card_id, p.amount, p.paid_at)
-                        for x in promotions if x.active(p.paid_at)), default=0)
-
-        return replay_month(lambda: self.build_state(before, prev_start), payments, choose, promo,
-                            self.engine.catalog, ym_of(prev_start))
-
+        return replay_month(lambda: self.build_state(before, prev_start), payments, choose,
+                            promotion_of(payments, promotions, card_of), self.engine.catalog, ym_of(prev_start))
