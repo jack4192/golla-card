@@ -469,7 +469,8 @@ class PlacementService:
     # ---------- 월간 리포트 (설계서 2026-11-22-monthly-report-design.md) ----------
     def monthly_report(self, user_id: int, at, writer=None) -> dict:
         """이번 달(at 까지, 진행 중)·지난달(확정) 카드별 숫자, 배치 전략과 근거, 지난달 SOL페이 효과, 요약 문장.
-        숫자는 엔진이 정하고 writer(ReportCopyWriter)는 제목과 카드 숫자 요점만 쓴다 (None 이면 정해진 문구).
+        숫자는 엔진이 정한다. 카드 숫자 요점(summary.points)도 엔진이 후보 문장으로 쓰고 (report_copy.candidates_of),
+        writer(ReportCopyWriter)는 제목을 쓰고 보여 줄 후보 1~2개를 고른다 (None 이면 정해진 문구. 고른 번호는 copy_log.picks).
         SOL페이 효과 문장·이유(summary.effect, report_copy.effect_lines)와 배치 전략 문장(summary.strategy, strategy_lines)은
         엔진이 쓴다 (2026-11-22 사용자 결정).
         저장하지 않고, 같은 날 다시 부르면 메모리에 둔 결과를 준다 (cached)."""
@@ -492,12 +493,16 @@ class PlacementService:
         effect = self._last_month_effect(user_id, context, prev_start, this_start)
         report = {"user_id": user_id, "at": at.isoformat(), "month": month, "prev_month": prev_month,
                   "totals": totals_of(cards), "cards": cards, "strategy": strategy, "solpay_effect": effect,
-                  "effect_note": None if effect else "지난달 결제화면 결제가 없어 비교하지 않았어요"}
+                  "effect_note": None if effect else "지난달 결제화면 결제가 없어 비교하지 않았어요",
+                  # 이번 달 전에 결제가 하나라도 있었나 (없으면 요약 제목이 '첫 리포트예요', report_copy.fixed_headline)
+                  "has_history": any(p.paid_at < this_start for p in context.payments)}
         facts = facts_of(report)
         if writer is not None:
             copy, source, log = writer.write(facts)
         else:
             copy, source, log = template_copy(facts), "template", {"reason": "no_writer"}
+        if copy.get("picks"):
+            log = {**log, "picks": copy["picks"]}             # OpenAI 가 고른 후보 번호 (facts.candidates 의 id)
         summary = {"headline": copy["headline"], "effect": effect_lines(report), "strategy": strategy_lines(report),
                    "points": copy["points"]}
         result = {**report, "summary": summary, "copy_source": source, "copy_log": log}
