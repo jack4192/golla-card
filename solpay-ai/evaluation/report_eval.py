@@ -68,7 +68,9 @@ def main() -> None:
         for line in report["summary"]["effect"] + report["summary"]["strategy"]:    # 엔진이 쓴 효과·전략 문장
             print(f"  [엔진] {line}")
         for point in report["summary"]["points"]:
-            print(f"  [{'AI' if report['copy_source'] == 'llm' else '정해진 문구'}] {point}")
+            print(f"  [{'엔진 문장, AI 가 고름' if report['copy_source'] == 'llm' else '정해진 문구'}] {point}")
+        if log.get("picks"):
+            print(f"  고른 후보 번호: {log['picks']}")
         for problem in log.get("first_problems", []):
             print(f"  첫 답 검사: {problem}")
         for problem in log.get("problems", []):

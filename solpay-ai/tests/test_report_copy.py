@@ -1,12 +1,13 @@
-"""월간 리포트 요약 문장: 사실 고르기, 엔진 효과·전략 문장, 정해진 문구, 검사, 작성기
-(설계서 2026-11-22-monthly-report-design.md '변경 (2026-11-22 저녁): 효과 문장은 엔진이 쓴다'·'전략 문장도 엔진')."""
+"""월간 리포트 요약 문장: 사실과 후보 문장, 엔진 효과·전략 문장, 정해진 문구, 검사, 작성기
+(설계서 2026-11-22-monthly-report-design.md '변경 (2026-11-22 저녁): 효과 문장은 엔진이 쓴다'·'전략 문장도 엔진'·
+'변경 (2026-11-22 심야): 요점 문장도 엔진이 쓰고 OpenAI 는 고르기만')."""
 
 import json
 import re
 
 from engine.chat.page_copy import CopySettings, PageCopyWriter
-from engine.chat.report_copy import (ReportCopyWriter, check_copy, effect_lines, facts_of, reason_of,
-                                     strategy_lines, template_copy)
+from engine.chat.report_copy import (ReportCopyWriter, check_copy, check_headline, effect_lines, facts_of, points_of,
+                                     reason_of, strategy_lines, template_copy)
 from tests.test_page_copy import FakeClient
 
 
@@ -86,10 +87,25 @@ def strategy(**kw):
     return strategy_lines(report(**kw))
 
 
-def good():
-    return {"headline": "10월에 카드 혜택 47,070원을 받았어요.",
-            "points": ["10월에 신한카드 Discount Plan 혜택은 43,220원이었어요.",
-                       "KB ALL 카드 첫 구간까지 28,200원 모자랐어요."]}
+def cid(f, card, kind):
+    """사실의 후보 문장 번호 (카드 이름, 종류)."""
+    return next(c["id"] for c in f["candidates"] if c["card"] == card and c["kind"] == kind)
+
+
+def text_of(f, card, kind):
+    return next(c["text"] for c in f["candidates"] if c["card"] == card and c["kind"] == kind)
+
+
+HEAD = "10월에 카드 혜택 47,070원을 받았어요."
+
+
+def good(f=None):
+    """OpenAI 의 좋은 답: 제목 + 후보 번호 두 개 (Discount Plan 지난달 혜택, KB ALL 첫 구간까지 모자란 금액)."""
+    f = f or facts()
+    return {"headline": HEAD, "picks": [cid(f, "신한카드 Discount Plan", "prev_benefit"), cid(f, "KB ALL 카드", "prev_short")]}
+
+
+GOOD_POINTS = ["10월에 신한카드 Discount Plan 혜택은 43,220원이었어요.", "KB ALL 카드 첫 구간까지 28,200원 모자랐어요."]
 
 
 # ---------- 사실 (OpenAI 에 보내는 것) ----------
@@ -111,17 +127,12 @@ def test_사실에_전략이_없다():
     assert "주력 카드 우선" not in text and "구간을 지킬" not in text
 
 
-def test_사실에_카드별_구간_숫자가_있다():
-    cards = {c["name"]: c for c in facts()["cards"]}
-    assert cards["신한카드 Discount Plan"] == {
-        "name": "신한카드 Discount Plan", "prev_month_benefit": 43220, "prev_month_perf": 1542790, "this_month_benefit": 1140,
-        "first_tier": 400000, "first_tier_achieved": True, "next_tier": 400000, "remaining_to_next": 351560}
-    assert cards["KB ALL 카드"]["first_tier_achieved"] is False and cards["KB ALL 카드"]["short_of_first"] == 28200
-    r = report()
-    r["cards"][0]["prev_month"].update(first_tier=None, achieved=None, tier_reached=None)      # 실적 조건 없는 카드
-    r["cards"][0]["this_month"].update(next_tier=None, remaining_to_next=None)
-    plain = facts_of(r)["cards"][0]
-    assert set(plain) == {"name", "prev_month_benefit", "prev_month_perf", "this_month_benefit"}
+def test_사실에는_합계와_후보_문장만_있다():
+    f = facts()
+    assert set(f) == {"month", "prev_month", "this_month_benefit", "prev_month_benefit", "this_total_line", "fixed_headline",
+                      "candidates"}
+    assert all(set(c) == {"id", "card", "kind", "amount", "text"} for c in f["candidates"])
+    assert [c["id"] for c in f["candidates"]] == list(range(1, len(f["candidates"]) + 1))      # 번호는 1부터 차례로
 
 
 def test_사실에_효과가_없다():
@@ -330,85 +341,7 @@ def test_전략_문장은_카드_이름_바로_뒤에_조사를_붙이지_않는
             assert line[line.index(name) + len(name):].startswith((" 실적", "부터")), line
 
 
-# ---------- 정해진 문구 (OpenAI 몫: 제목과 카드 숫자 요점) ----------
-
-def test_정해진_문구는_제목과_카드_숫자_요점만():
-    copy = template_copy(facts())
-    assert copy == {"headline": "10월에 카드 혜택 47,070원을 받았어요.",
-                    "points": ["10월에는 신한카드 Discount Plan 혜택이 43,220원으로 가장 컸어요.",
-                               "이번 달(11월)은 지금까지 카드 혜택 1,180원을 받았어요."]}
-    assert check_copy(copy, facts()) == []
-    # 효과·전략이 무엇이든 같다 (효과·전략 문장은 엔진이 따로 쓴다)
-    for f in (facts(effect=False), facts(total=-700, card=-700, next_month=0, tier_changes=KB_DOWN),
-              facts(base_reason=HOLD, base_source="hold"), facts(current="none", label="실적 안 채움")):
-        assert template_copy(f) == copy and check_copy(template_copy(f), f) == []
-
-
-def test_정해진_문구_지난달_혜택이_없거나_같은_카드가_여럿이면():
-    r = report()
-    for c in r["cards"]:
-        c["prev_month"]["benefit"] = 0
-    r["totals"]["prev_month_benefit"] = 0
-    assert template_copy(facts_of(r))["points"] == ["이번 달(11월)은 지금까지 카드 혜택 1,180원을 받았어요."]
-    for c in r["cards"]:
-        c["prev_month"]["benefit"] = 500
-    points = template_copy(facts_of(r))["points"]
-    assert points[0] == "10월에는 신한카드 Discount Plan 혜택이 500원이었어요." and "가장" not in points[0]
-    assert check_copy(template_copy(facts_of(r)), facts_of(r)) == []
-
-
-# ---------- 검사 ----------
-
-def test_검사_통과():
-    assert check_copy(good(), facts()) == []
-
-
-def test_검사_모르는_숫자():
-    copy = {"headline": "10월 혜택", "points": ["10월에 12,345원을 받았어요."]}
-    assert len(check_copy(copy, facts())) == 1
-
-
-def test_검사_효과_금액은_사실에_없어_걸린다():
-    copy = {"headline": "10월에 카드 혜택 47,070원을 받았어요.", "points": ["SOL페이 덕분에 5,180원 이득이에요."]}
-    assert any("5,180" in p for p in check_copy(copy, facts()))
-
-
-def test_검사_반올림_허용():
-    copy = {"headline": "10월에 약 5만 원을 받았어요.", "points": ["신한카드 Discount Plan 혜택이 43,220원으로 가장 컸어요."]}
-    assert check_copy(copy, facts()) == []
-
-
-def test_검사_OpenAI_문장에_전략_표현이_있으면_문제():
-    head = "10월에 카드 혜택 47,070원을 받았어요."
-    for claim in ("SOL페이 추천 카드로 냈어요.", "이번 달은 주력 카드 우선 방식이에요.", "지금은 KB ALL 카드 실적을 먼저 채우고 있어요.",
-                  "KB ALL 카드 실적을 채워요.", "지난달 첫 구간을 채웠어요.", "기본 카드는 KB ALL 카드예요."):
-        problems = check_copy({"headline": head, "points": [claim]}, facts())
-        assert any("전략" in p or "효과" in p for p in problems), claim
-
-
-def test_검사_OpenAI_문장에_효과_표현이_있으면_문제():
-    head = "10월에 카드 혜택 47,070원을 받았어요."
-    for claim in ("추천대로 냈다면 혜택이 늘었어요.", "카드 혜택을 더 받을 수 있었어요.", "추천 카드보다 덜 받았어요.",
-                  "KB ALL 카드 실적이 줄어 구간을 놓쳤어요.", "KB ALL 카드가 다음 구간에 올라요.", "KB ALL 카드가 구간에 올랐어요.",
-                  "카드 혜택을 더받았어요.", "카드 혜택을 덜받았어요.", "KB ALL 카드는 첫 구간을 놓친 달이에요."):
-        problems = check_copy({"headline": head, "points": [claim]}, facts())
-        assert any("효과" in p for p in problems), claim
-    assert any("효과" in p for p in check_copy({"headline": "추천대로면 더 받았어요", "points": ["한 줄이에요."]}, facts()))
-
-
-def test_검사_저장_주장과_소비_권유():
-    copy = {"headline": "10월 혜택", "points": ["규칙을 저장했어요.", "카페에서 더 쓰세요."]}
-    assert len(check_copy(copy, facts())) == 2
-
-
-def test_검사_형식():
-    assert check_copy({"headline": "", "points": []}, facts())
-    assert check_copy({"headline": "a", "points": ["a", "b", "c"]}, facts())          # points 는 1~2개
-    assert check_copy({"headline": 1, "points": "x"}, facts())
-    assert check_copy("문자열", facts())
-
-
-# ---------- 카드별 숫자 검사·문장 모양 (2026-11-22 사용자 결정: 카드별 숫자 검사) ----------
+# ---------- 후보 문장 (엔진이 쓴다. 2026-11-22 사용자 결정: OpenAI 는 고르기만, 닿은 구간·지킬 구간도 후보에) ----------
 NO_TIER = dict(first_tier=None, tier_reached=None, achieved=None, short_of_first=None)
 
 
@@ -426,115 +359,214 @@ def report23():
     return r
 
 
-def ai(*points, headline="10월에 카드 혜택 21,110원을 받았어요."):
-    return {"headline": headline, "points": list(points)}
+def kinds(f, card):
+    return [c["kind"] for c in f["candidates"] if c["card"] == card]
 
 
-def test_사실_실적_조건_없는_카드에는_구간_숫자가_없다():
-    cards = {c["name"]: c for c in facts_of(report23())["cards"]}
-    assert cards["BC 케이퍼스트 카드"] == {"name": "BC 케이퍼스트 카드", "prev_month_benefit": 12070,
-                                     "prev_month_perf": 1151700, "this_month_benefit": 1950}
-    assert cards["신한카드 SOL트래블 체크"]["first_tier"] == 300000
-    r = report23()                                                     # 이번 달 칸에 구간이 잘못 들어와도 넣지 않는다
-    r["cards"][0]["this_month"].update(next_tier=300000, remaining_to_next=99200)
-    assert "next_tier" not in facts_of(r)["cards"][0] and "remaining_to_next" not in facts_of(r)["cards"][0]
+def test_후보_높은_구간에_닿은_카드():
+    f, name = facts(), "신한카드 Discount Plan"
+    assert kinds(f, name) == ["prev_benefit", "prev_tier", "keep_tier", "next_tier", "this_benefit"]
+    assert [c["text"] for c in f["candidates"] if c["card"] == name] == [
+        "10월에 신한카드 Discount Plan 혜택은 43,220원이었어요.",
+        "신한카드 Discount Plan 지난달 실적은 1,542,790원으로 150만 원 구간에 닿았어요.",
+        "이번 달 신한카드 Discount Plan 150만 원 구간을 지키기까지 1,451,560원 남았어요.",
+        "이번 달 신한카드 Discount Plan 다음 구간 400,000원까지 351,560원 남았어요.",
+        "이번 달 신한카드 Discount Plan 혜택은 지금까지 1,140원이에요."]
+    assert [c["amount"] for c in f["candidates"] if c["card"] == name] == [43220, 1500000, 1451560, 351560, 1140]
 
 
-def test_검사_카드_이름이_나온_문장은_그_카드_숫자만():
+def test_후보_첫_구간에_못_닿은_카드는_모자란_금액만():
+    f = facts()
+    assert text_of(f, "KB ALL 카드", "prev_short") == "KB ALL 카드 첫 구간까지 28,200원 모자랐어요."
+    assert "prev_tier" not in kinds(f, "KB ALL 카드")                 # '넘겼어요'·'닿았어요' 문장은 만들지 않는다
+    assert not any("KB ALL 카드" in c["text"] and ("넘겼" in c["text"] or "닿았" in c["text"]) for c in f["candidates"])
+
+
+def test_후보_첫_구간만_닿은_카드는_넘겼어요():
     f = facts_of(report23())
-    # 23번 실제 출력: 300,000원은 SOL트래블 체크의 첫 구간 (BC 케이퍼스트 카드는 실적 조건이 없다). 숫자는 사실에 있어 전체 검사는 통과했다
-    wrong = ai("BC 케이퍼스트 카드 지난달 실적은 1,151,700원으로 첫 구간 300,000원을 넘겼어요.")
-    problems = check_copy(wrong, f)
-    assert len(problems) == 1 and "300,000원" in problems[0] and "BC 케이퍼스트 카드" in problems[0]
-    assert check_copy(ai("BC 케이퍼스트 카드 지난달 실적은 1,151,700원, 혜택은 12,070원이었어요."), f) == []
-    assert check_copy(ai("신한카드 SOL트래블 체크 지난달 실적은 581,500원으로 첫 구간 300,000원을 넘겼어요."), f) == []
-    assert check_copy(ai("BC 케이퍼스트 카드 지난달 혜택은 약 1만 원이었어요."), f) == []          # 반올림 허용은 그대로
-    assert check_copy(ai("BC 케이퍼스트 카드 혜택은 21,110원이었어요."), f)                          # 합계도 그 카드 값이 아니다
+    assert text_of(f, "신한카드 SOL트래블 체크", "prev_tier") == \
+        "신한카드 SOL트래블 체크 지난달 실적은 581,500원으로 첫 구간 300,000원을 넘겼어요."
 
 
-def test_검사_카드_두_장이_나온_문장은_두_카드_숫자를_쓸_수_있다():
+def test_후보_지킬_구간과_다음_구간이_같으면_지킬_구간만():
     f = facts_of(report23())
-    assert check_copy(ai("BC 케이퍼스트 카드는 12,070원, 신한카드 SOL트래블 체크는 80원을 받았어요."), f) == []
-    assert check_copy(ai("BC 케이퍼스트 카드와 신한카드 SOL트래블 체크 혜택은 합쳐 8,960원 정도예요."), f)   # Simple Plan 값
+    assert kinds(f, "신한카드 SOL트래블 체크") == ["prev_benefit", "prev_tier", "keep_tier", "this_benefit"]
+    assert text_of(f, "신한카드 SOL트래블 체크", "keep_tier") == \
+        "이번 달 신한카드 SOL트래블 체크 30만 원 구간을 지키기까지 161,650원 남았어요."
 
 
-def test_검사_카드_이름이_없는_문장은_전체_사실로():
-    f = facts_of(report23())
-    assert check_copy(ai("지난달 첫 구간 300,000원을 넘긴 카드가 있어요."), f) == []
-    # 쉼표로 이은 뒤 문장은 따로 본다: 카드 이름이 없으니 전체 사실로
-    assert check_copy(ai("신한카드 SOL트래블 체크 지난달 실적은 581,500원이었어요, 지난달 혜택은 모두 21,110원이에요."), f) == []
+def test_후보_실적_조건_없는_카드는_혜택만():
+    r = report23()
+    r["cards"][0]["this_month"].update(tier_min=300000, remaining_to_keep=99200, next_tier=300000, remaining_to_next=99200)
+    f = facts_of(r)                                                    # 이번 달 칸에 구간이 잘못 들어와도 쓰지 않는다
+    assert kinds(f, "BC 케이퍼스트 카드") == ["prev_benefit", "this_benefit"]
+    assert kinds(f, "신한카드 Simple Plan") == ["prev_benefit", "this_benefit"]
 
 
-def test_검사_이번_달_다음_구간은_이번_달을_붙인다():
-    f = facts_of(report23())
-    problems = check_copy(ai("신한카드 SOL트래블 체크 다음 구간 300,000원까지 161,650원 남았어요."), f)
-    assert any("이번 달" in p for p in problems)
-    assert check_copy(ai("이번 달 신한카드 SOL트래블 체크 다음 구간 300,000원까지 161,650원 남았어요."), f) == []
+def test_후보_0원과_이미_채운_구간은_만들지_않는다():
+    r = report()
+    r["cards"][0]["prev_month"]["benefit"] = 0
+    r["cards"][0]["this_month"].update(benefit=0, remaining_to_keep=0, next_tier=None, remaining_to_next=0)
+    assert kinds(facts_of(r), "신한카드 Discount Plan") == ["prev_tier"]
 
 
-def test_검사_요점은_짧은_문장_1_2개():
-    f = facts_of(report23())
-    three = ai("BC 케이퍼스트 카드 혜택은 12,070원이었어요. 신한카드 SOL트래블 체크 혜택은 80원이었어요. "
-               "신한카드 Simple Plan 혜택은 8,960원이었어요.")
-    assert any("1~2" in p for p in check_copy(three, f))
-    long_one = ai("신한카드 SOL트래블 체크 지난달 실적은 581,500원으로 첫 구간 300,000원을 넘겼고 " + "혜택도 받았고 " * 12 + "좋았어요.")
-    assert len(long_one["points"][0]) > 120 and any("120자" in p for p in check_copy(long_one, f))
-    two = ai("BC 케이퍼스트 카드 혜택은 12,070원이었어요. 신한카드 SOL트래블 체크 혜택은 80원이었어요.")
-    assert check_copy(two, f) == []
+def test_후보_마지막은_이번_달_합계():
+    last = facts()["candidates"][-1]
+    assert last == {"id": 11, "card": None, "kind": "this_total", "amount": 1180,
+                    "text": "이번 달(11월)은 지금까지 카드 혜택 1,180원을 받았어요."}
 
 
-def test_검사_금액은_천_단위_쉼표():
-    f = facts_of(report23())
-    problems = check_copy(ai("BC 케이퍼스트 카드 지난달 실적은 1151700원이었어요."), f)
-    assert any("쉼표" in p and "1151700" in p for p in problems)
-    assert check_copy(ai("2026년 10월 BC 케이퍼스트 카드 혜택은 12,070원이었어요."), f) == []       # 연도는 금액이 아니다
+def test_후보_문장은_카드_이름_바로_뒤에_조사를_붙이지_않는다():
+    r = report23()
+    for c, name in zip(r["cards"], ("NH농협 올원더풀 (할인 PACK)", "신한카드 Discount Plan+", "삼성 iD SIMPLE 카드")):
+        c["name"] = name
+    r["cards"][0]["prev_month"].update(first_tier=400000, tier_reached=None, achieved=False, short_of_first=1000)
+    for c in facts_of(r)["candidates"]:
+        if c["card"]:
+            assert c["text"][c["text"].index(c["card"]) + len(c["card"])] == " ", c["text"]
 
 
-def test_정해진_문구는_새_검사도_통과():
-    for r in (report23(), report(), report(effect=False)):
-        assert check_copy(template_copy(facts_of(r)), facts_of(r)) == []
+def test_후보_숫자는_리포트_값_그대로():
+    # 틀린 문장 7종(2026-11-22 재검토) 가운데 요점 쪽: 실적을 혜택이라고, 남은 금액을 넘겼다고, 모자랐는데 넘겼다고 → 엔진 문장이라 나올 수 없다
+    f = facts()
+    assert "1,542,790원" not in text_of(f, "신한카드 Discount Plan", "prev_benefit")
+    assert "넘겼" not in text_of(f, "신한카드 Discount Plan", "next_tier")
+    assert points_of(good()["picks"], f) == GOOD_POINTS
+
+
+# ---------- 정해진 문구 ----------
+
+def test_정해진_문구는_제목과_카드_숫자_요점만():
+    copy = template_copy(facts())
+    assert copy == {"headline": HEAD,
+                    "points": ["10월에는 신한카드 Discount Plan 혜택이 43,220원으로 가장 컸어요.",
+                               "이번 달(11월)은 지금까지 카드 혜택 1,180원을 받았어요."]}
+    assert check_headline(copy["headline"], facts()) == []
+    # 효과·전략이 무엇이든 같다 (효과·전략 문장은 엔진이 따로 쓴다)
+    for f in (facts(effect=False), facts(total=-700, card=-700, next_month=0, tier_changes=KB_DOWN),
+              facts(base_reason=HOLD, base_source="hold"), facts(current="none", label="실적 안 채움")):
+        assert template_copy(f) == copy
+
+
+def test_정해진_문구_지난달_혜택이_없거나_같은_카드가_여럿이면():
+    r = report()
+    for c in r["cards"]:
+        c["prev_month"]["benefit"] = 0
+    r["totals"]["prev_month_benefit"] = 0
+    assert template_copy(facts_of(r))["points"] == ["이번 달(11월)은 지금까지 카드 혜택 1,180원을 받았어요."]
+    for c in r["cards"]:
+        c["prev_month"]["benefit"] = 500
+    points = template_copy(facts_of(r))["points"]
+    assert points[0] == "10월에는 신한카드 Discount Plan 혜택이 500원이었어요." and "가장" not in points[0]
+
+
+def test_정해진_문구의_제목은_검사를_통과한다():
     long_name = report()
     long_name["cards"][0]["name"] = "삼성월렛 하나 트래블로그 체크카드 (아주 긴 이름을 가진 시험용 카드 상품)"
-    assert check_copy(template_copy(facts_of(long_name)), facts_of(long_name)) == []
+    for r in (report23(), report(), report(effect=False), long_name):
+        f = facts_of(r)
+        assert check_headline(template_copy(f)["headline"], f) == []
+
+
+# ---------- 검사 (OpenAI 답: headline + picks) ----------
+
+def test_검사_통과():
+    assert check_copy(good(), facts()) == []
+    assert check_copy({"headline": HEAD, "picks": [11]}, facts()) == []           # 하나만 골라도 된다
+
+
+def test_검사_형식():
+    f = facts()
+    assert check_copy("문자열", f)
+    assert check_copy({"headline": "", "picks": [1]}, f)
+    assert check_copy({"headline": 1, "picks": [1]}, f)
+    for picks in ([], [1, 2, 3], [1, 1], [0], [99], ["1"], [True], "1", None):
+        assert check_copy({"headline": HEAD, "picks": picks}, f), picks
+
+
+def test_검사_요점을_직접_쓴_답은_받지_않는다():
+    # 예전 모양(points 문장)으로 답하면 picks 가 없어 걸린다. 요점 문장은 엔진 후보만 쓴다
+    f = facts()
+    assert check_copy({"headline": HEAD, "points": ["10월에 신한카드 Discount Plan 혜택은 1,542,790원이었어요."]}, f)
+
+
+def test_검사_제목의_숫자는_지난달과_지난달_혜택_합계만():
+    f = facts()
+    for ok in (HEAD, "지난달 카드 혜택은 47,070원이었어요", "2026년 10월 카드 혜택 47,070원", "10월 카드 혜택을 정리했어요"):
+        assert check_headline(ok, f) == [], ok
+    wrong = {
+        "100배": "10월에 카드 혜택 4,707,000원을 받았어요.",
+        "약 없이 반올림": "10월에 카드 혜택 50,000원을 받았어요.",
+        "약 붙인 반올림": "10월에 카드 혜택 약 5만 원을 받았어요.",
+        "달 바꿔치기": "11월에 카드 혜택 47,070원을 받았어요.",
+        "이번 달이라고": "이번 달 카드 혜택 47,070원을 받았어요.",
+        "달 없음": "카드 혜택 47,070원을 받았어요.",
+        "건수 지어내기": "10월에 250번 결제하고 카드 혜택 47,070원을 받았어요.",
+        "이번 달 합계": "10월에 카드 혜택 1,180원을 받았어요.",
+        "카드 한 장 값": "10월에 카드 혜택 43,220원을 받았어요.",
+        "쉼표 없음": "10월에 카드 혜택 47070원을 받았어요.",
+        "단위 없음": "10월 카드 혜택 47,070",
+    }
+    for why, headline in wrong.items():
+        assert check_headline(headline, f), why
+
+
+def test_검사_제목에_카드_이름과_효과_전략_표현은_쓰지_않는다():
+    f = facts()
+    for headline in ("10월에 KB ALL 카드 혜택 47,070원을 받았어요.", "10월에 추천대로 냈다면 더 받았어요", "10월은 주력 카드 우선 방식이에요",
+                     "10월 실적을 채웠어요", "10월 혜택을 저장했어요.", "10월처럼 더 쓰세요", "10월에 카드 혜택을 놓쳤어요"):
+        assert check_headline(headline, f), headline
+    assert any("40자" in p for p in check_headline("10월에 카드 혜택 47,070원을 받았어요. " + "정말 좋은 달이었어요 " * 3, f))
 
 
 # ---------- 작성기 ----------
 
 def test_writer_좋은_답이면_llm():
+    f = facts()
     client = FakeClient([json.dumps(good(), ensure_ascii=False)])
-    copy, source, log = ReportCopyWriter(client, CopySettings()).write(facts())
-    assert source == "llm" and copy == good() and log["retries"] == 0
+    copy, source, log = ReportCopyWriter(client, CopySettings()).write(f)
+    assert source == "llm" and log["retries"] == 0
+    assert copy == {"headline": HEAD, "points": GOOD_POINTS, "picks": good()["picks"]}     # 요점은 고른 후보 문장 그대로
     req = client.requests[0]
     assert req["response_format"]["json_schema"]["name"] == "report_copy"
     schema = req["response_format"]["json_schema"]["schema"]
-    assert set(schema["properties"]) == {"headline", "points"} and schema["properties"]["points"]["maxItems"] == 2
+    assert set(schema["properties"]) == {"headline", "picks"} and schema["properties"]["picks"]["maxItems"] == 2
+    assert schema["properties"]["picks"]["items"] == {"type": "integer"}
     sent = json.loads(req["messages"][1]["content"])
-    assert "effect" not in sent and "strategy" not in sent and sent["prev_month_benefit"] == 47070
-    assert log["prompt_version"] == "2026-11-22.5"
+    assert "effect" not in sent and "strategy" not in sent and "cards" not in sent
+    assert sent["prev_month_benefit"] == 47070 and sent["candidates"] == f["candidates"]
+    assert log["prompt_version"] == "2026-11-22.7"
 
 
-def test_writer_효과_표현을_쓰면_다시_쓰고_정해진_문구():
-    f = facts(total=-700, card=-700, next_month=0, tier_changes=KB_DOWN)
-    wrong = json.dumps({"headline": "10월에 카드 혜택 47,070원을 받았어요.",
-                        "points": ["추천대로 냈다면 혜택이 늘었어요.", "주력 카드 우선 방식으로 채우고 있어요."]}, ensure_ascii=False)
-    copy, source, log = ReportCopyWriter(FakeClient([wrong, wrong]), CopySettings()).write(f)
+def test_writer_답에_다른_문장이_섞여도_요점은_후보_문장만():
+    f = facts()
+    reply = {**good(), "points": ["10월에 신한카드 Discount Plan 혜택은 1,542,790원이었어요."]}
+    copy, source, _ = ReportCopyWriter(FakeClient([json.dumps(reply, ensure_ascii=False)]), CopySettings()).write(f)
+    assert source == "llm" and copy["points"] == GOOD_POINTS
+
+
+def test_writer_제목이_틀리면_다시_쓰고_정해진_문구():
+    f = facts()
+    wrong = json.dumps({"headline": "10월에 카드 혜택 4,707,000원을 받았어요.", "picks": [1]}, ensure_ascii=False)
+    client = FakeClient([wrong, wrong])
+    copy, source, log = ReportCopyWriter(client, CopySettings()).write(f)
     assert source == "template" and log["reason"] == "guard" and log["retries"] == 1
-    assert copy == template_copy(f) and check_copy(copy, f) == []
+    assert copy == template_copy(f)
+    assert "4,707,000" in client.requests[1]["messages"][-1]["content"]          # 다시 쓸 때 걸린 이유를 알려 준다
 
 
-def test_writer_검사_실패면_다시_쓰고_정해진_문구():
-    bad = json.dumps({"headline": "x", "points": ["12,345원을 받았어요."]}, ensure_ascii=False)
-    client = FakeClient([bad, bad])
-    copy, source, log = ReportCopyWriter(client, CopySettings()).write(facts())
+def test_writer_없는_번호를_고르면_다시_쓰고_정해진_문구():
+    bad = json.dumps({"headline": HEAD, "picks": [99]}, ensure_ascii=False)
+    copy, source, log = ReportCopyWriter(FakeClient([bad, bad]), CopySettings()).write(facts())
     assert source == "template" and log["retries"] == 1 and log["reason"] == "guard"
     assert copy == template_copy(facts())
 
 
 def test_writer_다시_쓰면_통과():
-    bad = json.dumps({"headline": "x", "points": ["12,345원을 받았어요."]}, ensure_ascii=False)
+    bad = json.dumps({"headline": HEAD, "picks": [99]}, ensure_ascii=False)
     client = FakeClient([bad, json.dumps(good(), ensure_ascii=False)])
-    _, source, log = ReportCopyWriter(client, CopySettings()).write(facts())
-    assert source == "llm" and log["retries"] == 1
+    copy, source, log = ReportCopyWriter(client, CopySettings()).write(facts())
+    assert source == "llm" and log["retries"] == 1 and copy["points"] == GOOD_POINTS
 
 
 def test_writer_키_없으면_정해진_문구():
@@ -552,7 +584,7 @@ def test_설정_환경_변수(monkeypatch):
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
     s = CopySettings.from_env(ReportCopyWriter.settings_env)
     assert s.timeout_sec == 3 and s.model == "gpt-4o-mini"
-    assert ReportCopyWriter.prompt_version == "2026-11-22.5" and PageCopyWriter.settings_env == "PAGE_COPY_TIMEOUT_SEC"
+    assert ReportCopyWriter.prompt_version == "2026-11-22.7" and PageCopyWriter.settings_env == "PAGE_COPY_TIMEOUT_SEC"
 
 
 def test_프롬프트에_실제_카드_이름과_금액_예시가_없다():
@@ -562,5 +594,58 @@ def test_프롬프트에_실제_카드_이름과_금액_예시가_없다():
     for word in ("주력 카드 우선", "실적 안 채움", "base_reason", "strategy."):
         assert word not in SYSTEM, word                              # 전략 사실은 보내지 않는다
     assert not re.search(r"\d,\d{3}", SYSTEM) and not re.search(r"\d{4,}", SYSTEM)   # 예시 금액은 자리표시로만
-    assert "이번 달 {name} 다음 구간" in SYSTEM and "쉼표" in SYSTEM and "120자" in SYSTEM
+    assert "picks" in SYSTEM and "candidates" in SYSTEM and "고쳐 쓰지" in SYSTEM     # 요점은 후보에서 고르기만
     assert "추천" in SYSTEM and "방식" in SYSTEM and "채우" in SYSTEM  # 효과·전략 표현은 쓰지 말라고 말한다
+
+
+# ---------- 혜택 0원·결제 없는 달 (2026-11-22 사용자 결정: 문장 표현) ----------
+
+def _zero(r, month, payments):
+    """month('this_month'·'prev_month')의 혜택을 0원으로, 결제 수를 payments 로."""
+    for c in r["cards"]:
+        c[month].update(benefit=0, payments=payments)
+    r["totals"]["this_month_benefit" if month == "this_month" else "prev_month_benefit"] = 0
+    return r
+
+
+def test_이번_달_혜택이_0원이면_합계_문장을_바꾼다():
+    f = facts_of(_zero(report(), "this_month", 3))
+    assert " 0원" not in json.dumps(f["candidates"], ensure_ascii=False)
+    assert "this_total" not in [c["kind"] for c in f["candidates"]]          # 다른 후보가 있으면 0원 합계는 후보에서 뺀다
+    assert template_copy(f)["points"][-1] == "이번 달(11월)은 아직 받은 카드 혜택이 없어요."
+    f = facts_of(_zero(report(), "this_month", 0))
+    assert template_copy(f)["points"][-1] == "이번 달(11월)은 아직 결제가 없어요. 결제하면 받은 혜택을 여기서 알려 드려요."
+
+
+def test_후보가_하나도_없으면_0원_합계_후보만_남긴다():
+    r = _zero(_zero(report23(), "this_month", 0), "prev_month", 0)
+    r["cards"] = [r["cards"][0]]                                              # 실적 조건 없는 카드 한 장, 혜택 0원
+    f = facts_of(r)
+    assert f["candidates"] == [{"id": 1, "card": None, "kind": "this_total", "amount": 0,
+                                "text": "이번 달(11월)은 아직 결제가 없어요. 결제하면 받은 혜택을 여기서 알려 드려요."}]
+
+
+def test_지난달_혜택이_0원이면_제목은_엔진이_쓴다():
+    cases = [(dict(payments=5), {}, "10월에는 아쉽게도 받은 카드 혜택이 없었어요."),
+             (dict(payments=0), {"has_history": True}, "10월에는 결제 기록이 없어요."),
+             (dict(payments=0), {"has_history": False}, "첫 리포트예요. 다음 달부터 지난달 혜택을 정리해 드려요.")]
+    for kw, extra, headline in cases:
+        f = facts_of({**_zero(report(), "prev_month", **kw), **extra})
+        assert f["fixed_headline"] == headline and template_copy(f)["headline"] == headline
+        # OpenAI 가 제목을 뭐라고 쓰든 엔진 제목을 쓰고, 고르기만 받는다
+        reply = json.dumps({"headline": "10월에 카드 혜택 0원을 받았어요", "picks": [1]}, ensure_ascii=False)
+        copy, source, _ = ReportCopyWriter(FakeClient([reply]), CopySettings()).write(f)
+        assert source == "llm" and copy["headline"] == headline
+    assert facts()["fixed_headline"] is None
+
+
+def test_제목에_0원은_쓰지_못한다():
+    f = facts()
+    f["prev_month_benefit"] = 0                                               # 엔진 제목이 없는데 0원이 온 경우에도 막는다
+    assert check_headline("10월에 카드 혜택 0원을 받았어요.", f)
+
+
+def test_지난달_쓰지_않은_카드는_모자랐다고_하지_않는다():
+    r = report()
+    r["cards"][1]["prev_month"].update(perf=0, payments=0, short_of_first=400000)
+    assert "prev_short" not in kinds(facts_of(r), "KB ALL 카드")

@@ -374,6 +374,26 @@ def test_서비스_요약은_엔진_효과와_AI_요점(report_svc):
     assert template["summary"]["strategy"] == r["summary"]["strategy"]
 
 
+def test_서비스_요점은_OpenAI_가_고른_엔진_후보_문장(report_svc):
+    # 실제 작성기(ReportCopyWriter) + 가짜 OpenAI: 답의 picks 번호가 가리키는 엔진 후보 문장이 그대로 points 가 된다
+    from engine.chat.report_copy import ReportCopyWriter
+    from tests.test_page_copy import FakeClient
+
+    plain = report_svc.monthly_report(1, at(10, 7))                  # 후보 번호를 알기 위해 정해진 문구로 한 번
+    report_svc.reports.clear()
+    from engine.chat.report_copy import facts_of
+    candidates = facts_of(plain)["candidates"]
+    assert len(candidates) >= 2
+    reply = {"headline": plain["summary"]["headline"], "picks": [candidates[-1]["id"], candidates[0]["id"]]}
+    client = FakeClient([json.dumps(reply, ensure_ascii=False)])
+    r = report_svc.monthly_report(1, at(10, 7), ReportCopyWriter(client))
+    assert r["copy_source"] == "llm" and r["copy_log"]["picks"] == reply["picks"]
+    assert r["summary"]["points"] == [candidates[-1]["text"], candidates[0]["text"]]
+    assert list(r["summary"]) == ["headline", "effect", "strategy", "points"]
+    sent = json.loads(client.requests[0]["messages"][1]["content"])
+    assert sent["candidates"] == candidates and "cards" not in sent
+
+
 def test_monthly_report_문구_작성기는_하루_한_번(report_svc):
     seen = []
 
