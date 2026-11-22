@@ -194,3 +194,27 @@ def test_팀DB_1번_10월_숫자가_card_month_status_와_같다(service):  # at
 - [ ] **Step 1: 구현** — 데모 사용자 1~5 × `2026-11-05T12:00+09:00` 리포트를 실제 OpenAI 로: copy_source, 다시 쓴 수, ms, 요약 문장 출력. `--sample 60` 이면 사용자 1~60 효과 total 중앙값·음수 인원·최소·최대만(OpenAI 없이).
 - [ ] **Step 2: 실행** — `uv run python -m evaluation.report_eval` (OPENAI_API_KEY 필요) → LLM 통과 수/5 기록. `--sample 60` → 중앙값 +3,735원·음수 10명 근처(사전 측정)인지 확인. 크게 다르면 원인을 보고한다.
 - [ ] **Step 3: README 'AI' 절에 평가 결과 한 줄**
+
+### Task 7: 효과 문장은 엔진이 쓴다 (2026-11-22 저녁 사용자 결정)
+
+**Spec:** 설계서 끝 '변경 (2026-11-22 저녁): 효과 문장은 엔진이 쓴다'.
+
+**Files:**
+- Modify: `engine/chat/report_copy.py` (facts_of 에서 solpay_effect 제외, `effect_lines(report) -> list[str]` 새 함수, reason 선택을 더 받은 경우까지, template_copy·check_copy·SYSTEM·SCHEMA·prompt_version), `engine/service.py` (summary 조립), `engine/static/dev_console.html` (summary.effect 표시), README, 설계서 JSON 예시
+- Test: `tests/test_report_copy.py`, `tests/test_report.py`
+
+**Interfaces:**
+- Produces: `effect_lines(report: dict) -> list[str]` — 0~2개(금액 문장, 이유 문장). 효과 None 이면 []. `summary = {"headline", "effect", "points"}`; OpenAI SCHEMA 는 `{"headline", "points"(1~2)}`.
+- 엔진 이유 선택 `reason_of(effect, prev, this)` 는 total > 0 에서도 하나를 고른다: direction up 인 카드 → top_changes 중 diff 가 가장 큰 결제 → 가장 많이 늘어난 부분.
+
+- [ ] **Step 1: 실패하는 테스트**
+  - `test_효과_문장_더_받음_구간_올라감`: 데모 4번 모양(diff card −1,450 / promotion −1,000 / next_month +11,000 / total 8,550, tier_changes NH 올원더풀 140,900→443,900, actual_tier None, recommended_tier 400,000, up) → 금액 문장에 "8,550원을 더" 와 세 부분 부호, 이유 문장에 "NH 올원더풀"·"140,900원"·"443,900원"·"40만 원", "놓쳤" 없음.
+  - `test_효과_문장_덜_받음_구간_내려감`, `test_효과_문장_덜_받음_결제`, `test_효과_문장_같음_이유_없음`, `test_효과_없으면_빈_목록`.
+  - `test_사실에_효과가_없다`: facts_of 결과에 solpay_effect·diff·top_changes·tier_changes 키가 없다.
+  - `test_검사_OpenAI_문장에_효과_표현이_있으면_문제`: points 에 "추천대로 냈다면" → 문제.
+  - `test_서비스_요약은_엔진_효과와_AI_요점`: monthly_report 의 summary 에 effect·points 가 따로 있고 effect 는 effect_lines 와 같다.
+  - `test_프롬프트에_실제_카드_이름과_금액_예시가_없다` 를 '-1,450원'·'5,180원'·'1,450' 까지 넓힌다.
+- [ ] **Step 2: 실패 확인**
+- [ ] **Step 3: 구현** (정해진 문구는 effect_lines + 카드·전략 요점 틀. 카드 이름 뒤 조사 없는 문장)
+- [ ] **Step 4: 통과 확인** — 전체 테스트
+- [ ] **Step 5: 실제 OpenAI** — `uv run python -m evaluation.report_eval` 과 `--users 23,28,44` 각 한 번 (요약 문장 그대로 보고)
