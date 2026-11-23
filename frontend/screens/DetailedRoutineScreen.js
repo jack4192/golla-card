@@ -6,8 +6,24 @@ import { dateKey, deleteEvent, eventTimeCaption, eventTitle, readEvents, saveEve
 import { INDUSTRIES, INDUSTRY_ICONS, ROUTINE_TITLE_LIMIT } from '../utils/routineDetails';
 
 const icons = INDUSTRY_ICONS;
-const activities = INDUSTRIES.filter(([id]) => id !== 'other' && icons[id]);
-const activityNames = Object.fromEntries(activities);
+const activityNames = Object.fromEntries(INDUSTRIES.filter(([id]) => id !== 'other'));
+const categoryByName = new Map(INDUSTRIES.filter(([id]) => id !== 'other').map(([id, name]) => [name, id]));
+const eventThemes = [
+  { category: 'cafe', keywords: /커피|카페|라떼|아메리카노|coffee|caf[eé]/iu, icon: 'cafe-outline', background: '#FAF0E3', border: '#E4D0B5', accent: '#79552F' },
+  { category: 'restaurant', keywords: /밥|식사|외식|아침|점심|저녁|브런치|먹기|식당|맛집|lunch|dinner|breakfast/iu, icon: 'restaurant-outline', background: '#FFF0E4', border: '#F4CDAF', accent: '#A74C20' },
+  { category: 'fitness', keywords: /운동|헬스|러닝|달리기|조깅|필라테스|요가|수영|gym|workout|fitness/iu, icon: 'fitness-outline', background: '#E8F5EC', border: '#BCDCC7', accent: '#32764B' },
+];
+const neutralEventTheme = { icon: 'calendar-outline', background: '#EFF1F4', border: '#D6DCE5', accent: '#566477' };
+const knownEventColors = { background: '#E3EDFF', border: '#BFCEF2', accent: '#2D62DF' };
+
+function eventAppearance(category, title) {
+  if (category !== 'other' && icons[category]) {
+    return eventThemes.find(theme => theme.category === category) ?? { ...knownEventColors, icon: icons[category] };
+  }
+  const text = title.normalize('NFKC').replace(/\s+/g, '');
+  return eventThemes.find(theme => theme.keywords.test(text)) ?? neutralEventTheme;
+}
+
 const empty = { category: '', start: '', end: '', title: '' };
 const hours = Array.from({ length: 25 }, (_, hour) => String(hour).padStart(2, '0') + ':00');
 const DAY_END = 24 * 60;
@@ -52,11 +68,11 @@ function arrangeEvents(events) {
   );
 }
 
-function Action({ label, onPress, disabled, primary, accessibilityLabel }) {
+function Action({ label, onPress, disabled, primary, destructive, accessibilityLabel }) {
   return (
     <TouchableOpacity accessibilityRole="button" accessibilityLabel={accessibilityLabel || label} disabled={disabled}
-      onPress={onPress} style={[s.button, primary && s.primary, disabled && s.dim]}>
-      <Text style={primary ? s.white : s.blue}>{label}</Text>
+      onPress={onPress} style={[s.button, primary && s.primary, destructive && s.deleteButton, disabled && s.dim]}>
+      <Text style={primary ? s.white : destructive ? s.danger : s.blue}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -68,6 +84,7 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
   const [savedRange, setSavedRange] = useState(null);
   const [editing, setEditing] = useState(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -77,14 +94,11 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
   const scroll = useRef(null);
   const timelineTop = useRef(0);
 
-  // 입력창을 열었을 때의 값(초기화 버튼이 이 값으로 되돌린다)
-  const initialForm = useRef(empty);
   // 시간 칸에 타이핑 중인 글자(칸을 벗어나면 09:30 형식으로 맞춰 반영)
   const [timeDraft, setTimeDraft] = useState({});
   const edit = event => {
-    initialForm.current = { category: event.category, start: event.start, end: event.end, title: event.title || '' };
     setTimeDraft({});
-    setForm({ category: event.category, start: event.start, end: event.end, title: event.title || '' });
+    setForm({ category: event.category, start: event.start, end: event.end, title: event.title || activityNames[event.category] || '', memo: event.memo });
     setEditing(event.id);
     setEditorOpen(true);
     setError('');
@@ -128,7 +142,6 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
     setSavedRange(null);
     setEditing(null);
     const next = { ...empty, start: toTime(from), end: toTime(Math.min(DAY_END, from + 60)) };
-    initialForm.current = next;
     setTimeDraft({});
     setForm(next);
     setError('');
@@ -143,8 +156,7 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
   };
   const returnToTimeline = () => {
     if (lock.current) return;
-    setEditorOpen(false);
-    setError('');
+    resetForm();
   };
   // 시작을 옮긴다. 시작이 종료와 같거나 늦어지면 종료를 시작 + 1시간으로 민다.
   const setStartAt = minutes => {
@@ -199,20 +211,9 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
     if (masked.length === 5) commitTyped(key, masked);
     else setTimeDraft(current => ({ ...current, [key]: masked }));
   };
-  const resetEditor = () => {
-    if (lock.current || disabled) return;
-    setTimeDraft({});
-    setForm(initialForm.current);
-    setError('');
-  };
-  const update = (key, value) => {
-    if (lock.current || disabled) return;
-    setForm(current => ({ ...current, [key]: value }));
-    setError('');
-  };
   const enterTitle = title => {
     if (lock.current || disabled) return;
-    setForm(current => ({ ...current, category: 'other', title }));
+    setForm(current => ({ ...current, category: categoryByName.get(title.trim()) ?? 'other', title }));
     setError('');
   };
   const resetForm = () => {
@@ -220,6 +221,7 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
     setSavedRange(null);
     setEditing(null);
     setEditorOpen(false);
+    setConfirmRemove(false);
     setError('');
   };
   const run = async action => {
@@ -238,8 +240,8 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
   };
   const save = continueAfter => run(async () => {
     if (!continueAfter) {
-      if (!form.category || (form.category === 'other' && !form.title.trim())) {
-        throw Error('업종을 고르거나 직접 입력해주세요.');
+      if (!form.title.trim()) {
+        throw Error('업종을 입력해주세요.');
       }
       const saved = await saveEvent({ ...form, id: editing, date: scheduleDate });
       setEvents(current => [saved, ...current.filter(event => event.id !== saved.id)]);
@@ -273,7 +275,7 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
         </Text>
       </View>
       <ScrollView ref={scroll} style={s.scroll} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
-        <FlowHeading brand icon="time-outline">오늘의 특별한 일정을 알려주세요</FlowHeading>
+        <FlowHeading brand icon="time-outline">일정 관리</FlowHeading>
         <Text style={s.date}>{scheduleDate}</Text>
 
         {loading && <ActivityIndicator color="#1854D8" />}
@@ -312,8 +314,7 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
             {arrangeEvents(events).map(({ event, start: offset, height, lane, lanes }) => {
               const title = eventTitle(event);
               const time = eventTimeCaption(event);
-              const label = activityNames[event.category] ?? title;
-              const icon = icons[event.category] || 'calendar-outline';
+              const { icon, background, border, accent } = eventAppearance(event.category, title);
               const compact = height < eventIconStackMinHeight;
               return (
                 <View key={event.id} pointerEvents="box-none" style={[
@@ -326,13 +327,15 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
                     accessibilityHint="일정 수정 또는 삭제"
                     disabled={disabled}
                     onPress={() => edit(event)}
-                    style={[s.eventBlock, editing === event.id && s.selected]}>
+                    style={[s.eventBlock,
+                      { backgroundColor: background, borderColor: border, borderLeftColor: accent },
+                      editing === event.id && { borderColor: accent }]}>
                     {!compact && <View style={s.eventIcon} accessible={false}>
-                      <Ionicons name={icon} size={23} color="#245DE5" />
+                      <Ionicons name={icon} size={23} color={accent} accessible={false} />
                     </View>}
                     <View style={s.eventTitleRow}>
-                      {compact && <Ionicons name={icon} size={14} color="#245DE5" accessible={false} />}
-                      <Text style={[s.eventTitle, compact && s.eventTitleCompact]} numberOfLines={1}>{label}</Text>
+                      {compact && <Ionicons name={icon} size={14} color={accent} accessible={false} />}
+                      <Text style={[s.eventTitle, compact && s.eventTitleCompact]} numberOfLines={1}>{title}</Text>
                     </View>
                     <Text style={s.eventTime} numberOfLines={1}>{time}</Text>
                   </TouchableOpacity>
@@ -381,7 +384,13 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
       <Modal visible={editorOpen} transparent animationType="fade" onRequestClose={returnToTimeline}>
         <KeyboardAvoidingView style={s.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={s.editor} accessibilityViewIsModal>
-            <Text accessibilityRole="header" style={s.editorTitle}>{editing ? '일정 수정' : '일과 입력'}</Text>
+            <View style={s.editorHeader}>
+              <Text accessibilityRole="header" style={s.editorTitle}>{editing ? '일정 수정' : '일과 입력'}</Text>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="일과 입력 창 닫기"
+                onPress={returnToTimeline} disabled={busy} style={s.editorClose}>
+                <Ionicons name="close" size={26} color="#385988" accessible={false} />
+              </TouchableOpacity>
+            </View>
             {/* 시간: 직접 타이핑하거나 −1시간·−30분·+30분·+1시간 버튼으로 조절 */}
             {[['start', '시작', start, setStartAt], ['end', '종료', end, setEndAt]].map(([key, label, value, setAt]) => {
               // −10분 −30분 −1시간 [시간] +10분 +30분 +1시간
@@ -409,29 +418,25 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
             <ScrollView style={s.editorScroll} keyboardShouldPersistTaps="handled">
               <View style={s.directEntry}>
                 <Text style={s.directTitle}>업종 직접 입력</Text>
-                <TextInput accessibilityLabel="업종 직접 입력" style={[s.input, form.category === 'other' && s.selected]}
-                  value={form.title} onFocus={() => update('category', 'other')} onChangeText={enterTitle}
+                <TextInput accessibilityLabel="업종 직접 입력" style={s.input}
+                  value={form.title} onChangeText={enterTitle}
                   maxLength={ROUTINE_TITLE_LIMIT} editable={!disabled} placeholder="예: 헬스장, 영화관, 미용실"
                   placeholderTextColor="#697C98" returnKeyType="done" />
-                <Text style={s.directHint}>아래에 없는 업종은 직접 적어주세요. 적은 업종으로 카드 혜택을 찾아 추천해요.</Text>
-              </View>
-              <View style={s.options}>
-                {activities.map(([id, label]) => (
-                  <TouchableOpacity key={id} accessibilityRole="radio" accessibilityLabel={label} aria-checked={form.category === id} disabled={disabled}
-                    onPress={() => update('category', id)} style={[s.option, form.category === id && s.selected]}>
-                    <Ionicons name={icons[id]} size={19} color="#1854D8" />
-                    <Text style={s.optionLabel}>{label}</Text>
-                  </TouchableOpacity>
-                ))}
+                <Text style={s.directHint}>입력한 업종으로 카드 혜택을 추천해요.</Text>
               </View>
             </ScrollView>
             {!!error && <Text accessibilityRole="alert" style={s.danger}>{error}</Text>}
-            <View style={s.actions}>
-              <Action disabled={disabled} onPress={resetForm} label="입력 취소" />
-              <Action disabled={disabled} onPress={resetEditor} label="초기화" />
-              {editing && <Action disabled={disabled} onPress={() => remove(editing)} label="삭제" />}
-              <Action primary disabled={disabled} onPress={() => save(false)} label={editing ? '수정 저장' : '일정 추가'} />
-            </View>
+            {confirmRemove ? <>
+              <Text style={s.confirmText} accessibilityLiveRegion="polite">이 일정을 삭제할까요?</Text>
+              <View style={s.actions}>
+                <Action disabled={disabled} onPress={() => setConfirmRemove(false)} label="취소" />
+                <Action destructive disabled={disabled} onPress={() => remove(editing)} label="일정 삭제" />
+              </View>
+            </> : <View style={s.actions}>
+                <Action destructive disabled={disabled}
+                  onPress={editing ? () => setConfirmRemove(true) : returnToTimeline} label="삭제" />
+                <Action primary disabled={disabled} onPress={() => save(false)} label={editing ? '수정 저장' : '일정 추가'} />
+              </View>}
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -492,24 +497,22 @@ const s = StyleSheet.create({
   hourText: { color: '#18365F', fontSize: 13, fontWeight: '700' },
   eventTrack: { position: 'absolute', left: 86, right: 0, top: hourRowHeight / 2, bottom: 0 },
   eventSlot: { position: 'absolute', paddingHorizontal: 2 },
-  eventBlock: { flex: 1, borderRadius: 12, borderWidth: 1, borderColor: '#BFCEF2', borderLeftWidth: 3, borderLeftColor: '#2D62DF', backgroundColor: '#E3EDFF', justifyContent: 'center', alignItems: 'center', paddingLeft: 4, paddingRight: 6, overflow: 'hidden' },
-  eventIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F5F9FF', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  eventBlock: { flex: 1, borderRadius: 12, borderWidth: 1, borderLeftWidth: 3, justifyContent: 'center', alignItems: 'center', paddingLeft: 4, paddingRight: 6, overflow: 'hidden' },
+  eventIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFFB3', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   eventTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, maxWidth: '100%' },
   eventTitle: { flexShrink: 1, color: '#18365F', fontSize: 15, lineHeight: 20, fontWeight: '800', textAlign: 'center' },
   eventTitleCompact: { fontSize: 13, lineHeight: 17 },
   eventTime: { color: '#385988', fontSize: 11, lineHeight: 15, textAlign: 'center' },
   overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16, backgroundColor: '#11234380' },
   editor: { width: '100%', maxWidth: 480, maxHeight: '92%', borderRadius: 24, padding: 16, gap: 12, backgroundColor: '#FFFFFF' },
-  editorTitle: { color: '#152D50', fontSize: 20, fontWeight: '800' },
+  editorHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  editorTitle: { color: '#152D50', fontSize: 26, fontWeight: '800' },
+  editorClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   editorTime: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   editorScroll: { flexGrow: 0, flexShrink: 1 },
-  options: { gap: 6, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  directEntry: { alignSelf: 'center', width: '100%', maxWidth: 340, gap: 8, marginBottom: 12 },
+  directEntry: { alignSelf: 'center', width: '100%', maxWidth: 340, gap: 8, marginBottom: 4 },
   directTitle: { color: '#1854D8', fontSize: 15, fontWeight: '800', textAlign: 'center' },
   directHint: { color: '#5A6E89', fontSize: 12, lineHeight: 18, textAlign: 'center' },
-  option: { width: '48%', minHeight: 46, flexDirection: 'row', gap: 6, paddingHorizontal: 6, paddingVertical: 8, alignItems: 'center', borderRadius: 16, borderWidth: 1, borderColor: 'transparent' },
-  optionLabel: { color: '#152D50', flexShrink: 1, fontSize: 13, fontWeight: '700' },
-  selected: { backgroundColor: '#E2EDFF', borderColor: '#8CA8EF' },
   selectedHour: { backgroundColor: '#1854D8', borderColor: '#1854D8' },
   inRange: { backgroundColor: '#EAF1FF' },
   input: { backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#D9E5F7', textAlign: 'center', minHeight: 48, paddingHorizontal: 8, color: '#152D50', fontSize: 16 },
@@ -518,6 +521,7 @@ const s = StyleSheet.create({
   draftText: { color: '#385988', textAlign: 'center', fontWeight: '700', fontSize: 13 },
   skip: { alignSelf: 'center', justifyContent: 'center', minHeight: 36, paddingHorizontal: 8 },
   button: { backgroundColor: '#EAF1FF', borderRadius: 22, borderWidth: 1, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 13, minHeight: 44 },
+  deleteButton: { backgroundColor: '#FFF0F2', paddingHorizontal: 18 },
   footer: { backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#DEE7F5', padding: 14, gap: 8 },
   footerRow: { flexDirection: 'row', gap: 8, width: '100%', maxWidth: 688, alignSelf: 'center' },
   primary: { flex: 1, minHeight: 52, backgroundColor: '#104FE7', borderRadius: 26 },

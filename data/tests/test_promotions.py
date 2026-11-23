@@ -79,3 +79,39 @@ def test_마이샵은_ON_인_사용자_달에만():
     off = [u for u in range(200) if not myshop_on(u, hollys["promotion_id"], "2026-03")]
     assert best_promotion(idx, on[0], 7, "SHINHAN", 6_000, date(2026, 3, 2))[1] > 0
     assert best_promotion(idx, off[0], 7, "SHINHAN", 6_000, date(2026, 3, 2)) == (None, 0)
+
+
+# ---------- 화면용 칸 (2026-11-23 행사 목록 DB 이전) ----------
+
+def test_display_frame_has_29_rows_with_screen_values():
+    from generate.promotions import display_frame
+    df = display_frame().set_index("promotion_id")
+    assert len(df) == 29 and 30 not in df.index and 31 not in df.index
+    assert df.loc[2, "display_name"] == "온라인 다이소몰" and df.loc[2, "benefit_text"] == "1,000 마이신한포인트 적립"
+    assert str(df.loc[3, "display_start"]) == "2026-11-16" and str(df.loc[5, "display_end"]) == "2026-12-25"
+    assert df.loc[1, "logo_url"] == "/brand-logos/mega.png" and df.loc[1, "note"] == "키오스크에서 바코드 스캔 필요"
+    assert bool(df.loc[5, "needs_check"]) and bool(df.loc[6, "needs_check"]) and not bool(df.loc[1, "needs_check"])
+    assert df.loc[8, "payout"] == "결제일에 따라 다름" and df.loc[8, "pay_method"] == "마이샵 혜택 ON 설정 후 신한카드 결제"
+    assert pd.isna(df.loc[8, "note"]) and df.loc[7, "benefit_type"] == "discount"
+    assert df.loc[21, "display_name"] == "차앤박(CNP)" and df.loc[21, "logo_url"] == "/brand-logos/cnp.png"
+
+
+def test_db_frame_keeps_old_columns_and_adds_display():
+    from generate.promotions import DISPLAY_COLUMNS
+    old = ["promotion_id", "card_id", "issuer", "merchant_id", "promo_name", "category", "merchant_name",
+           "value_type", "value", "max_amount", "start_date", "end_date", "kind", "min_amount"]
+    df = db_frame(pd.DataFrame(columns=["merchant_id", "brand", "brand_code", "place_name", "category_code"]))
+    assert list(df.columns) == old + DISPLAY_COLUMNS
+    assert (df.start_date == "2025-11-01").sum() == 29 and len(df) == 29
+    row = df[df.promotion_id == 2].iloc[0]
+    assert (row.merchant_name, row.display_name) == ("다이소몰", "온라인 다이소몰")
+
+
+def test_migration_sql_updates_29_rows_and_never_inserts():
+    from generate.promotions import migration_sql
+    sql = migration_sql()
+    assert sql.count("UPDATE public.promotions SET") == 29 and "INSERT" not in sql.upper()
+    assert "ADD COLUMN IF NOT EXISTS display_name varchar(100)" in sql
+    assert "ADD COLUMN IF NOT EXISTS needs_check boolean NOT NULL DEFAULT false" in sql
+    assert "BEGIN;" in sql and "COMMIT;" in sql
+    assert "'X-MAS 사전예약 제품 대상. 매일 오전 10:30부터 선착순'" in sql

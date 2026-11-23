@@ -1,15 +1,14 @@
 import BenefitReport from '../components/BenefitReport';
 import { CARD_CATALOG_40, findCatalog40Product } from '../data/cardCatalog40';
-import { PROMOTION_BRANDS } from '../data/promotionBrands';
-import { PROMOTIONS, activePromotions } from '../data/promotions';
-import PinDotsInput from '../components/PinDotsInput';
-import { MYSHOP_LOGOS } from '../data/myshopLogos';
+import PromotionOffer from '../components/PromotionOffer';
+import { usePromotions } from '../utils/promotions';
+import { PROMO_TEXT, activePromotions, benefitStatus as statusOn, benefitSummary, emptyPromotionText, promotionAnswer, visibleLogo } from '../utils/promotionsCore';
 import WalletDeck from '../components/WalletDeck';
 import RecommendationLaunchPopup from '../components/RecommendationLaunchPopup';
 import AccountWithdrawal from '../components/AccountWithdrawal';
 import TodaySchedulePanel from '../components/TodaySchedulePanel';
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform, Vibration } from 'react-native';
+import { ActivityIndicator, View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform, Vibration } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import YearEndReport from '../components/YearEndReport';
 import PaymentCardOrder from '../components/PaymentCardOrder';
@@ -19,7 +18,6 @@ import { PHONE_NOTIFICATIONS_SUPPORTED, addPhoneNotificationOpenListener, refres
 import { eventTitle, readEvents } from '../utils/routineData';
 import { Alert } from '../utils/demoAlert';
 import * as SecureStore from '../utils/demoStore';
-import { createPinSalt, hashPin } from '../utils/pinCrypto';
 import PaymentScreen, { realProductCard, realWalletCards } from './PaymentScreen';
 import { getActiveWalletCard } from '../data/cards';
 import { canRegisterWalletCard } from '../utils/wallet';
@@ -52,28 +50,10 @@ const NAV = [{
   icon: 'card-outline',
   active: 'card'
 }];
-const MYSHOP_ROWS = [['살롱드마샬', '최대 20% 할인', null, null, '2026-11-20', '2026-11-30', ''], ['11번가', '3,000원 캐시백', 50000, null, '2026-11-01', '2026-11-30', ''], ['CU', '500원 캐시백', null, null, '2026-11-01', '2026-11-15', ''], ['마켓컬리', '20% 캐시백', null, 40000, '2026-11-01', '2026-11-30', ''], ['에이치몰', '5% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['알리익스프레스', '10% 캐시백', 20000, 20000, '2026-11-01', '2026-11-30', ''], ['신라아이파크면세점', '10% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['동원몰', '7% 캐시백', 20000, 20000, '2026-11-01', '2026-11-30', ''], ['할리스', '10% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['신세계면세점', '11% 캐시백', null, 100000, '2026-11-01', '2026-11-30', ''], ['닥터자르트', '12% 캐시백', null, 50000, '2026-11-01', '2026-11-30', ''], ['현대백화점', '15% 캐시백', null, 40000, '2026-11-01', '2026-11-30', ''], ['SSG닷컴', '10% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['이마트몰', '10% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['차앤박(CNP)', '12% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['오설록', '10% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['레드캡투어', '12% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['야놀자', '8% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['교보문고', '10% 캐시백', 30000, 20000, '2026-11-01', '2026-11-30', ''], ['위메프', '20% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['올리브영', '25% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['파리바게뜨', '12% 캐시백', 20000, 20000, '2026-11-01', '2026-11-30', ''], ['유니클로', '16% 캐시백', null, 40000, '2026-11-01', '2026-11-30', ''], ['미식 브랜드(식별불가)', '16% 캐시백', 30000, 30000, '2026-11-01', '2026-11-30', '가맹점명 원본 확인 필요'], ['종합쇼핑몰(식별불가)', '8,000원 캐시백', 200000, null, '2026-11-01', '2026-11-30', '가맹점명 원본 확인 필요']];
-const ALL_BENEFITS = [...PROMOTIONS, ...MYSHOP_ROWS.map((row, index) => ({
-  id: `myshop-${index + 1}`,
-  type: '마이샵',
-  merchant: row[0],
-  benefit: row[1],
-  minimum: row[2],
-  cap: row[3],
-  start: row[4],
-  end: row[5],
-  payout: '결제일에 따라 다름',
-  method: '마이샵 혜택 ON 설정 후 신한카드 결제',
-  note: row[6]
-}))];
 const money = value => value == null ? '원본에 미기재' : `${Number(value).toLocaleString('ko-KR')}원`;
 const kstToday = () => new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
-const benefitStatus = benefit => {
-  const today = kstToday();
-  if (today < benefit.start) return '진행 예정';
-  if (today > benefit.end) return '기간 종료';
-  return '기간 내';
-};
+// 행사 기간 상태 (진행 예정·기간 내·기간 종료). 행사 목록은 서버(/api/promotions)에서 읽는다 (2026-11-23)
+const benefitStatus = benefit => statusOn(benefit, kstToday());
 
 // 카드별 혜택 요약.
 // 상품 조건은 시연용 데이터로 제공하며
@@ -210,10 +190,6 @@ const WALLET_CARD_BENEFITS = {
 };
 const UI_SETTINGS_KEY = 'solpay_ui_settings_v1';
 const CONSENT_KEY = 'solpay_demo_consent_v1';
-const PIN_KEY = 'solpay_demo_pin_v1';
-const PIN_ATTEMPTS_KEY = 'solpay_demo_pin_attempts_v1';
-const PIN_FAILURE_LIMIT = 5;
-const PIN_LOCK_MS = 60000;
 const SettingsGroup = ({
   title,
   children
@@ -263,7 +239,6 @@ const SettingsToggle = ({
   </View>;
 export default function MainScreen({
   onLogout,
-  canLock = false,
   onOpenChat,
   onEditRoutine,
   onViewBenefits,
@@ -291,9 +266,18 @@ export default function MainScreen({
   const [selectedCatalog, setSelectedCatalog] = useState(null);
   const [registeringCard, setRegisteringCard] = useState(false);
   const currentCard = getActiveWalletCard(walletCards, activeCardId);
+  const homeWalletCards = useMemo(() => realWalletCards(null, walletCards), [walletCards]);
   const [filter, setFilter] = useState('전체');
   const [search, setSearch] = useState('');
   const [selectedBenefit, setSelectedBenefit] = useState(null);
+  // 행사(카드사 이벤트·마이샵): 서버 모드에서만 서버 목록, 데모 모드에는 없다 (2026-11-23 결정)
+  const promotions = usePromotions();
+  const allBenefits = promotions.rows;
+  const activeNow = activePromotions(allBenefits, kstToday());
+  const summary = benefitSummary(promotions.status, allBenefits, kstToday());   // 다 읽었을 때만 (데모·실패에 0건을 보이지 않는다)
+  // 받지 못한 로고 주소 → 그림 대신 이름 (최종 검토 반영)
+  const [failedLogos, setFailedLogos] = useState(() => new Set());
+  const onLogoError = uri => setFailedLogos(current => (current.has(uri) ? current : new Set([...current, uri])));
   const [walletBenefitDetailsOpen, setWalletBenefitDetailsOpen] = useState(false);
   const [chatVisible, setChatVisible] = useState(false);
   const [chatInput, setChatInput] = useState('');
@@ -317,23 +301,13 @@ export default function MainScreen({
   const openFullPayment = () => {
     const context = paySheet;
     setPaySheet(null);
+    setSettingsOpen(false);
     setSchedulePayment(context);
     setTab('payment');
   };
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [phoneNotifyBusy, setPhoneNotifyBusy] = useState(false);
   const inbox = useInbox();
-  const [pinChangeOpen, setPinChangeOpen] = useState(false);
-  const [pinForm, setPinForm] = useState({
-    old: '',
-    next: '',
-    confirm: ''
-  });
-  const [pinSaving, setPinSaving] = useState(false);
-  // 간편비밀번호 변경: 0 현재 → 1 새 번호 → 2 새 번호 확인 (한 상자 안에서 진행)
-  const [pinStep, setPinStep] = useState(0);
-  const [pinMsg, setPinMsg] = useState('');
-  const [hasPin, setHasPin] = useState(false);
   const [appNotice, setAppNotice] = useState(true);
   const [vibrationOn, setVibrationOn] = useState(true);
   const [savedConsent, setSavedConsent] = useState(null);
@@ -343,7 +317,7 @@ export default function MainScreen({
     let active = true;
     const load = async () => {
       try {
-        const [rawSettings, rawConsent, rawPin] = await Promise.all([SecureStore.getItemAsync(UI_SETTINGS_KEY), SecureStore.getItemAsync(CONSENT_KEY), SecureStore.getItemAsync(PIN_KEY)]);
+        const [rawSettings, rawConsent] = await Promise.all([SecureStore.getItemAsync(UI_SETTINGS_KEY), SecureStore.getItemAsync(CONSENT_KEY)]);
         if (!active) return;
         if (rawSettings) {
           const settings = JSON.parse(rawSettings);
@@ -358,7 +332,6 @@ export default function MainScreen({
           const consentValue = JSON.parse(rawConsent);
           setSavedConsent(consentValue);
         }
-        setHasPin(!!rawPin);
       } catch (error) {
         console.warn('설정 불러오기 실패', error);
       }
@@ -373,13 +346,15 @@ export default function MainScreen({
     let active = true;
     readEvents().catch(() => []).then(events => {
       if (!active) return;
-      refreshDailyNotifications({ events, titleOf: eventTitle, promotions: activePromotions() }).catch(() => {});
+      refreshDailyNotifications({ events, titleOf: eventTitle, promotions: activeNow }).catch(() => {});
       if (savedConsent) {
         syncPhoneNotifications({ agreed: savedConsent.morningNotificationAgreed === true, events, titleOf: eventTitle }).catch(() => {});
       }
     });
     return () => { active = false; };
-  }, [savedConsent]);
+    // 행사 목록을 다 읽으면 한 번 더 (행사 알림)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedConsent, promotions.status]);
   // 알림(알림함 또는 폰 알림)을 눌렀을 때 해당 화면으로 이동
   const openNotificationTarget = target => {
     setNotificationsOpen(false);
@@ -421,135 +396,8 @@ export default function MainScreen({
       setSettingsBusy(false);
     }
   };
-  const resetPinChange = () => {
-    setPinForm({
-      old: '',
-      next: '',
-      confirm: ''
-    });
-    setPinStep(0);
-    setPinMsg('');
-  };
-  const closePinChange = () => {
-    if (pinSaving) return;
-    resetPinChange();
-    setPinChangeOpen(false);
-  };
-  const PIN_STEPS = [['old', '현재 간편비밀번호', '현재 사용 중인 6자리를 입력해주세요.'], ['next', '새 간편비밀번호', '새로 사용할 6자리를 입력해주세요.'], ['confirm', '새 간편비밀번호 확인', '새 번호를 한 번 더 입력해주세요.']];
-  // 6자리가 채워지면 자동으로 다음 단계로 넘어갑니다.
-  const onPinDigits = value => {
-    if (pinSaving) return;
-    const digits = value.replace(/\D/g, '').slice(0, 6);
-    const key = PIN_STEPS[pinStep][0];
-    setPinForm(previous => ({ ...previous, [key]: digits }));
-    setPinMsg('');
-    if (digits.length < 6) return;
-    if (pinStep === 0) {
-      setPinStep(1);
-      return;
-    }
-    if (pinStep === 1) {
-      if (digits === pinForm.old) {
-        setPinMsg('현재와 다른 번호를 입력해주세요.');
-        setPinForm(previous => ({ ...previous, next: '' }));
-        return;
-      }
-      setPinStep(2);
-      return;
-    }
-    if (digits !== pinForm.next) {
-      setPinMsg('새 번호가 서로 달라요. 새 간편비밀번호부터 다시 입력해주세요.');
-      setPinForm(previous => ({ ...previous, next: '', confirm: '' }));
-      setPinStep(1);
-      return;
-    }
-    saveChangedPin(digits);
-  };
-  const saveChangedPin = async confirmValue => {
-    const {
-      old,
-      next
-    } = pinForm;
-    const confirm = confirmValue ?? pinForm.confirm;
-    if (![old, next, confirm].every(v => /^\d{6}$/.test(v))) {
-      Alert.alert('입력 확인', '현재·새·확인 간편비밀번호를 각각 6자리로 입력해주세요.');
-      return;
-    }
-    if (next !== confirm) {
-      Alert.alert('입력 확인', '새 간편비밀번호가 일치하지 않아요.');
-      return;
-    }
-    if (old === next) {
-      Alert.alert('입력 확인', '기존과 다른 6자리 번호를 설정해주세요.');
-      return;
-    }
-    if (pinSaving) return;
-    setPinSaving(true);
-    try {
-      const recordRaw = await SecureStore.getItemAsync(PIN_KEY);
-      if (!recordRaw) {
-        throw new Error('등록된 간편비밀번호를 찾지 못했어요.');
-      }
-      const record = JSON.parse(recordRaw);
-      if (record.version !== 1 || !record.salt || !record.hash) {
-        throw new Error('간편비밀번호 정보가 올바르지 않아요.');
-      }
-      let attempts = {
-        count: 0,
-        lockedUntil: 0
-      };
-      const attemptsRaw = await SecureStore.getItemAsync(PIN_ATTEMPTS_KEY);
-      if (attemptsRaw) {
-        try {
-          attempts = JSON.parse(attemptsRaw);
-        } catch {
-          attempts = {
-            count: 0,
-            lockedUntil: 0
-          };
-        }
-      }
-      const now = Date.now();
-      if (attempts.lockedUntil > now) {
-        const seconds = Math.ceil((attempts.lockedUntil - now) / 1000);
-        throw new Error(`${seconds}초 뒤에 다시 시도할 수 있어요.`);
-      }
-      if (attempts.lockedUntil && attempts.lockedUntil <= now) {
-        attempts = {
-          count: 0,
-          lockedUntil: 0
-        };
-      }
-      const candidateHash = await hashPin(record.salt, old);
-      if (candidateHash !== record.hash) {
-        const count = (attempts.count || 0) + 1;
-        const lock = count >= PIN_FAILURE_LIMIT;
-        await SecureStore.setItemAsync(PIN_ATTEMPTS_KEY, JSON.stringify({
-          count: lock ? 0 : count,
-          lockedUntil: lock ? now + PIN_LOCK_MS : 0
-        }));
-        throw new Error(lock ? '5회 연속 실패하여 60초간 변경이 제한돼요.' : `현재 비밀번호가 다릅니다. 남은 시도: ${PIN_FAILURE_LIMIT - count}회`);
-      }
-      const salt = await createPinSalt();
-      const hash = await hashPin(salt, next);
-      await SecureStore.setItemAsync(PIN_KEY, JSON.stringify({
-        version: 1,
-        salt,
-        hash
-      }));
-      await SecureStore.deleteItemAsync(PIN_ATTEMPTS_KEY);
-      setPinChangeOpen(false);
-      resetPinChange();
-      Alert.alert('변경 완료', '다음 로그인부터 새 6자리 간편비밀번호를 사용해요.');
-    } catch (error) {
-      Alert.alert('변경 실패', error?.message || '다시 시도해주세요.');
-      resetPinChange();
-    } finally {
-      setPinSaving(false);
-    }
-  };
   const resetViewSettings = () => {
-    Alert.alert('화면 설정 초기화', '앱 내 알림과 진동 설정만 기본값으로 바꿀까요? PIN과 동의 기록은 유지돼요.', [{
+    Alert.alert('화면 설정 초기화', '앱 내 알림과 진동 설정만 기본값으로 바꿀까요? 동의 기록은 유지돼요.', [{
       text: '취소',
       style: 'cancel'
     }, {
@@ -561,13 +409,13 @@ export default function MainScreen({
     setSettingsOpen(false);
     selectTab(nextTab);
   };
-  const visibleBenefits = useMemo(() => ALL_BENEFITS.filter(item => {
+  const visibleBenefits = useMemo(() => allBenefits.filter(item => {
     if (filter !== '전체' && item.type !== filter) {
       return false;
     }
     const keyword = search.trim().toLowerCase();
     return !keyword || `${item.merchant} ${item.benefit}`.toLowerCase().includes(keyword);
-  }), [filter, search]);
+  }), [filter, search, allBenefits]);
   const selectTab = nextTab => {
     setSchedulePayment(null);
     setTab(nextTab);
@@ -607,10 +455,7 @@ export default function MainScreen({
   const localAnswer = q => {
     let answer = '카드 정보, 진행 중인 프로모션, 일정 등록 방법을 안내해드려요. 아래 추천 질문을 눌러보세요.';
     if (/프로모션|이벤트|진행/.test(q)) {
-      const list = activePromotions();
-      answer = list.length
-        ? `지금 진행 중인 프로모션이 ${list.length}개 있어요. 예: ${[...new Set(list.map(item => item.merchant))].slice(0, 3).join(', ')}. 혜택 탭에서 각 항목을 누르면 결제 조건과 기간을 볼 수 있어요.`
-        : '지금 진행 중인 프로모션이 없어요.';
+      answer = promotionAnswer(promotions.status, activeNow);
     } else if (/일정.*(추가|등록|어떻게)|어떻게.*일정/.test(q)) {
       answer = '오늘의 일정 탭에서 [+ 일정 추가]를 누르면 반차·회식 같은 일정이나 카페·편의점 같은 장소 일정을 등록할 수 있어요. 등록한 일정에 맞는 카드는 홈에서 추천해드려요.';
     } else if (/일정|추천/.test(q)) {
@@ -672,7 +517,7 @@ export default function MainScreen({
       .then(state => updateChat(item.id, { draft: { ...item.draft, state } }));
   };
   const benefitTile = item => {
-    const logo = PROMOTION_BRANDS[item.merchant]?.image || MYSHOP_LOGOS[item.merchant];
+    const logo = visibleLogo(item.logo, failedLogos);
     return <TouchableOpacity
       key={item.id}
       accessibilityRole="button"
@@ -683,7 +528,7 @@ export default function MainScreen({
     >
       <View style={styles.tileLogoArea}>
         {logo
-          ? <Image source={logo} resizeMode="contain" style={styles.tileLogo} accessible={false} />
+          ? <Image source={logo} resizeMode="contain" style={styles.tileLogo} accessible={false} onError={() => onLogoError(logo.uri)} />
           : <Text style={styles.tileMerchant} numberOfLines={2}>{item.merchant}</Text>}
       </View>
       {logo && <Text style={styles.tileBrandLabel} numberOfLines={1}>{item.merchant}</Text>}
@@ -697,8 +542,8 @@ export default function MainScreen({
   const renderSchedule = (home = false) => <TodaySchedulePanel
     home={home}
     onOpenCards={() => selectTab('cards')}
-    // PaymentCardOrder 는 카드 객체를 넘기고 onSelectCard(App.handleSelectCard)는 카드 id 를 받는다 (전에는 눌러도 결제 카드가 안 바뀜)
-    cardList={home ? <PaymentCardOrder cards={realWalletCards(currentCard, walletCards)} selectedId={currentCard?.id} onSelect={card => onSelectCard(card.id)} /> : null}
+    cardList={home ? <PaymentCardOrder cards={homeWalletCards} selectedId={currentCard?.id}
+      onSelect={onSelectCard} syncSelection={!paySheet} /> : null}
     onOpenSchedule={() => selectTab('schedule')}
     disabled={scheduleDisabled}
     aiRefresh={aiRefresh}
@@ -723,8 +568,8 @@ export default function MainScreen({
     </TouchableOpacity>;
 
   const renderHomeHighlights = () => {
-    const [promotion, ...morePromotions] = activePromotions();
-    const [benefit, ...moreBenefits] = ALL_BENEFITS.filter(item =>
+    const [promotion, ...morePromotions] = activeNow;
+    const [benefit, ...moreBenefits] = allBenefits.filter(item =>
       item.type === '마이샵' && item.merchant !== promotion?.merchant && benefitStatus(item) === '기간 내'
     );
     const highlights = [];
@@ -745,13 +590,13 @@ export default function MainScreen({
       </View>
       <View style={styles.homeHighlightsRow}>
         {highlights.map((item, index) => {
-          const logo = PROMOTION_BRANDS[item.merchant]?.image || MYSHOP_LOGOS[item.merchant];
+          const logo = visibleLogo(item.logo, failedLogos);
           return <TouchableOpacity key={item.id} accessibilityRole="button"
             accessibilityLabel={item.merchant + ' ' + item.benefit + ' 상세 조건'}
             style={[styles.homeHighlight, index === 1 && styles.homeHighlightMint, index === 2 && styles.homeHighlightPeach]}
             onPress={() => setSelectedBenefit(item)}>
             <View style={styles.homeHighlightIcon}>
-              {logo ? <Image source={logo} resizeMode="contain" style={styles.homeHighlightLogo} accessible={false} />
+              {logo ? <Image source={logo} resizeMode="contain" style={styles.homeHighlightLogo} accessible={false} onError={() => onLogoError(logo.uri)} />
                 : <Ionicons name="gift-outline" size={20} color="#245DE5" accessible={false} />}
             </View>
             <Text style={styles.homeHighlightMerchant} numberOfLines={1}>{item.merchant}</Text>
@@ -763,11 +608,11 @@ export default function MainScreen({
   };
   const renderBenefits = () => <>
 
-      <BenefitReport offers={ALL_BENEFITS} date={kstToday()} />
+      {summary && <BenefitReport offers={allBenefits} date={kstToday()} />}
       <Text accessibilityRole="header" style={styles.sectionTitle}>혜택 둘러보기</Text>
-      {appNotice && <View style={styles.noticeStrip}>
+      {appNotice && summary && <View style={styles.noticeStrip}>
         <Ionicons name="notifications-outline" size={16} color="#2C60C2" />
-        <Text style={styles.noticeStripText}>이번 달 혜택 {ALL_BENEFITS.filter(item => benefitStatus(item) === '기간 내').length}건</Text>
+        <Text style={styles.noticeStripText}>이번 달 혜택 {summary?.active ?? 0}건</Text>
       </View>}
       {[['sparkles-outline', '오늘의 카드 추천', 'recommendation'], ['pricetag-outline', '오늘의 프로모션', 'promotion']].map(([icon, label, kind]) =>
         <TouchableOpacity key={kind} accessibilityRole="button" accessibilityLabel={label}
@@ -776,6 +621,14 @@ export default function MainScreen({
           <Text style={styles.homeLinkTitle}>{label}</Text>
           <Ionicons name="chevron-forward" size={17} color="#66768D" />
         </TouchableOpacity>)}
+      {promotions.status !== 'ready' && <View style={styles.promoState} accessibilityLiveRegion="polite">
+          {promotions.status === 'loading' ? <ActivityIndicator color="#245DE5" />
+            : <Text style={styles.promoStateText}>{promotions.status === 'off' ? PROMO_TEXT.demo : PROMO_TEXT.failed}</Text>}
+          {promotions.status === 'failed' && <TouchableOpacity accessibilityRole="button" style={styles.promoRetry} onPress={promotions.reload}>
+              <Text style={styles.promoRetryText}>{PROMO_TEXT.retry}</Text>
+            </TouchableOpacity>}
+        </View>}
+      {promotions.status === 'ready' && <>
       <View style={styles.searchBox}>
         <Ionicons name="search-outline" size={18} color="#8C98AE" />
         <TextInput style={styles.searchInput} placeholder="가맹점 또는 혜택 검색" value={search} onChangeText={setSearch} placeholderTextColor="#99A4B3" />
@@ -802,6 +655,7 @@ export default function MainScreen({
       {visibleBenefits.length === 0 && <Text style={styles.emptyText}>
           검색 결과가 없어요. 검색어를 바꿔주세요.
         </Text>}
+      </>}
 
       <Text style={styles.disclaimer}>
         현재 이용 가능 여부와 카드별 적용 조건은 각 혜택의 상세 안내를 확인해주세요.
@@ -899,17 +753,6 @@ export default function MainScreen({
       </View>
 
       <ScrollView style={styles.settingsScroll} contentContainerStyle={styles.settingsContent} showsVerticalScrollIndicator={false}>
-        <SettingsGroup title="로그인·인증">
-          <SettingsItem icon="keypad-outline" title="현재 로그인 방식" subtitle="앱을 다시 열면 6자리 간편비밀번호로 확인해요" value={hasPin ? '간편 PIN' : '미설정'} />
-          <SettingsItem icon="lock-closed-outline" title="간편비밀번호 변경" subtitle="기존 번호를 확인한 뒤 새 6자리로 변경" onPress={() => {
-          if (!hasPin) {
-            Alert.alert('간편비밀번호 미설정', '가입을 마치고 간편비밀번호를 등록해주세요.');
-            return;
-          }
-          setPinChangeOpen(true);
-        }} />
-        </SettingsGroup>
-
         <SettingsGroup title="결산">
           <SettingsItem icon="stats-chart-outline" title="연말 결산" subtitle="올해 아낀 금액·놓친 금액과 월별 추천 기록" onPress={() => setYearEndOpen(true)} />
         </SettingsGroup>
@@ -919,7 +762,7 @@ export default function MainScreen({
         </SettingsGroup>
 
         <SettingsGroup title="편의 기능">
-          <SettingsItem icon="qr-code-outline" title="결제" subtitle="QR·바코드 및 예상 혜택 확인" onPress={() => goFromSettings('payment')} />
+          <SettingsItem icon="qr-code-outline" title="결제" subtitle="QR·바코드 보기" onPress={() => openPaySheet({ cardId: currentCard?.id })} />
           <SettingsItem icon="card-outline" title="카드 관리" subtitle="등록된 카드 목록" onPress={() => goFromSettings('cards')} />
           <SettingsToggle icon="phone-portrait-outline" title="버튼 진동" value={vibrationOn} disabled={settingsBusy} onChange={value => persistUISettings(appNotice, value)} />
           <SettingsItem icon="pulse-outline" title="진동 확인" subtitle="버튼 진동 설정이 켜져 있을 때만 작동" onPress={() => {
@@ -947,14 +790,14 @@ export default function MainScreen({
           minute: '2-digit'
         })} />
           <SettingsItem icon="refresh-outline" title="화면 설정 초기화" subtitle="혜택 알림·진동만 기본값으로 복원" onPress={resetViewSettings} />
-          <SettingsItem icon="log-out-outline" title="잠금 및 로그아웃" subtitle="간편비밀번호 또는 이메일 로그인 선택" onPress={() => setExitOpen(true)} />
+          <SettingsItem icon="log-out-outline" title="로그아웃" subtitle="이메일과 비밀번호로 다시 로그인" onPress={() => setExitOpen(true)} />
         </SettingsGroup>
 
         <AccountWithdrawal />
 
       </ScrollView>
     </>;
-  return <SafeAreaView style={styles.root}><RecommendationLaunchPopup onClosed={refreshAi} selectedWalletCard={currentCard} allowAutomaticAds={tab === 'home' && allowAutomaticAds} onViewPromotions={() => selectTab('benefits')} promotions={activePromotions()} openRequest={adRequest} enabled={(tab === 'home' || tab === 'benefits') && !settingsOpen && !exitOpen && !pinChangeOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
+  return <SafeAreaView style={styles.root}><RecommendationLaunchPopup onClosed={refreshAi} selectedWalletCard={currentCard} allowAutomaticAds={tab === 'home' && allowAutomaticAds} onViewPromotions={() => selectTab('benefits')} promotions={activeNow} emptyText={emptyPromotionText(promotions.status)} openRequest={adRequest} enabled={(tab === 'home' || tab === 'benefits') && !settingsOpen && !exitOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
       {!settingsOpen && tab !== 'payment' && <View style={[styles.topBar, tab === 'cards' && styles.walletTopBar]}>
           <View>
             <Text style={[styles.brand,{color:tab === 'cards' ? "#FFFFFF" : "#134CCA",fontSize:27}]}>SOL·Pay</Text>
@@ -968,7 +811,7 @@ export default function MainScreen({
               <Ionicons name="settings-outline" size={21} color="#244E9C" />
             </TouchableOpacity>
 
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel="잠금 및 로그아웃" style={styles.iconCircle} onPress={() => setExitOpen(true)}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="로그아웃" style={styles.iconCircle} onPress={() => setExitOpen(true)}>
               <Ionicons name="log-out-outline" size={21} color="#244E9C" />
             </TouchableOpacity>
           </View>
@@ -1017,13 +860,9 @@ export default function MainScreen({
       <Modal visible={exitOpen} transparent animationType="fade" onRequestClose={() => setExitOpen(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.exitSheet}>
-            <Text accessibilityRole="header" style={styles.exitTitle}>잠금 및 로그아웃</Text>
-            {canLock && <TouchableOpacity accessibilityRole="button" style={styles.exitOption} onPress={() => {setExitOpen(false); onLogout?.('lock');}}>
-              <Text style={styles.exitOptionTitle}>잠금</Text>
-              <Text style={styles.exitHint}>간편비밀번호로 다시 열기</Text>
-            </TouchableOpacity>}
-            <TouchableOpacity accessibilityRole="button" style={styles.exitOption} onPress={() => {setExitOpen(false); onLogout?.('logout');}}>
-              <Text style={[styles.exitOptionTitle,{color:'#B93842'}]}>완전 로그아웃</Text>
+            <Text accessibilityRole="header" style={styles.exitTitle}>로그아웃</Text>
+            <TouchableOpacity accessibilityRole="button" style={styles.exitOption} onPress={() => {setExitOpen(false); onLogout?.();}}>
+              <Text style={[styles.exitOptionTitle,{color:'#B93842'}]}>로그아웃</Text>
               <Text style={styles.exitHint}>이메일과 비밀번호로 다시 로그인</Text>
             </TouchableOpacity>
             <TouchableOpacity accessibilityRole="button" style={styles.exitCancel} onPress={() => setExitOpen(false)}>
@@ -1033,35 +872,6 @@ export default function MainScreen({
         </View>
       </Modal>
 
-      <Modal visible={pinChangeOpen} transparent animationType="slide" onRequestClose={closePinChange}>
-        <KeyboardAvoidingView style={styles.pinModalDim} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={styles.pinModalCard}>
-            <Text style={styles.pinModalTitle}>
-              간편비밀번호 변경
-            </Text>
-            <Text style={styles.pinStepText}>{pinStep + 1} / 3 단계</Text>
-            <Text style={styles.pinInputLabel}>{PIN_STEPS[pinStep][1]}</Text>
-            <Text style={styles.pinModalDesc}>{PIN_STEPS[pinStep][2]}</Text>
-
-            <View style={styles.pinDotsWrap}>
-              <PinDotsInput key={pinStep} value={pinForm[PIN_STEPS[pinStep][0]]} onChangeText={onPinDigits} autoFocus editable={!pinSaving} accessibilityLabel={PIN_STEPS[pinStep][1]} />
-            </View>
-
-            {!!pinMsg && <Text style={styles.pinErrorText} accessibilityLiveRegion="polite">{pinMsg}</Text>}
-            {pinSaving && <Text style={styles.pinModalDesc}>저장 중...</Text>}
-
-            <View style={styles.pinModalButtons}>
-              <TouchableOpacity style={styles.pinCancel} onPress={closePinChange} disabled={pinSaving}>
-                <Text style={styles.pinCancelText}>
-                  취소
-                </Text>
-              </TouchableOpacity>
-
-
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
 
       {/* 카드별 혜택 상세보기 */}
       <Modal visible={walletBenefitDetailsOpen} transparent animationType="fade" onRequestClose={() => setWalletBenefitDetailsOpen(false)}>
@@ -1136,7 +946,9 @@ export default function MainScreen({
         <View style={styles.modalOverlay}>
           <View style={styles.modalPanel}>
             <ScrollView contentContainerStyle={styles.modalBody}>
-              {selectedBenefit && <>
+              {selectedBenefit?.type === '이벤트'
+                ? <PromotionOffer key={selectedBenefit.id} offer={selectedBenefit} status={benefitStatus(selectedBenefit)} />
+                : selectedBenefit && <>
                   <Text style={styles.modalEyebrow}>
                     {selectedBenefit.type} 상세 정보
                   </Text>
@@ -1386,6 +1198,10 @@ export default function MainScreen({
     </SafeAreaView>;
 }
 const styles = StyleSheet.create({
+  promoState: { alignItems: 'center', gap: 10, paddingVertical: 24, paddingHorizontal: 16, borderRadius: 16, backgroundColor: '#F4F7FC' },
+  promoStateText: { color: '#4A5D7A', fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  promoRetry: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: '#E4EDFF' },
+  promoRetryText: { color: '#245DE5', fontSize: 13, fontWeight: '700' },
   exitSheet:{width:'100%',maxWidth:400,alignSelf:'center',backgroundColor:'#FFFFFF',borderRadius:24,padding:20,gap:10},
   exitTitle:{fontSize:21,fontWeight:'800',color:'#142D4E',marginBottom:2},
   exitOption:{minHeight:62,backgroundColor:'#F0F5FE',borderRadius:14,padding:12,justifyContent:'center',gap:4},
@@ -2280,92 +2096,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     flex: 1
   },
-  pinModalDim: {
-    flex: 1,
-    backgroundColor: 'rgba(18,30,54,0.6)',
-    justifyContent: 'center',
-    paddingHorizontal: 22
-  },
-  pinModalCard: {
-    borderRadius: 24,
-    padding: 24,
-    backgroundColor: "#FFFFFF",
-    width: "100%",
-    maxWidth: 480,
-    alignSelf: "center"
-  },
-  pinStepText: {
-    marginTop: 14,
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#245DE5'
-  },
-  pinDotsWrap: {
-    marginTop: 14
-  },
-  pinErrorText: {
-    marginTop: 10,
-    fontSize: 12,
-    lineHeight: 18,
-    color: '#B24141'
-  },
-  pinModalTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#142D4E"
-  },
-  pinModalDesc: {
-    fontSize: 12,
-    color: '#718097',
-    marginTop: 9,
-    lineHeight: 19
-  },
-  pinInputSection: {
-    marginTop: 16
-  },
-  pinInputLabel: {
-    fontSize: 12,
-    color: '#43536E',
-    fontWeight: '800',
-    marginBottom: 7
-  },
-  pinInput: {
-    borderColor: '#DDE5F0',
-    borderWidth: 1,
-    borderRadius: 11,
-    height: 48,
-    paddingHorizontal: 15,
-    fontSize: 16,
-    color: '#1E2D47',
-    backgroundColor: '#F9FAFD'
-  },
-  pinModalButtons: {
-    flexDirection: 'row',
-    gap: 9,
-    marginTop: 22
-  },
-  pinCancel: {
-    flex: 1,
-    backgroundColor: '#F0F3F8',
-    borderRadius: 12,
-    alignItems: 'center',
-    paddingVertical: 14
-  },
-  pinCancelText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#50627C'
-  },
-  pinSave: {
-    flex: 1,
-    backgroundColor: "#245DE5",
-    borderRadius: 12,
-    alignItems: 'center',
-    paddingVertical: 14
-  },
-  pinSaveText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: "#FFFFFF"
-  }
 });

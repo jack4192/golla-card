@@ -1,7 +1,9 @@
 """최종 프로모션 (2026-11-18 사용자 결정). 팀 DB 폴더·엔진 데이터·DB 결제의 프로모션을 모두 여기서 만든다.
 
-원본: config/promotions.yml (SOL 페이 혜택 정보.xlsx, 신한 SOL페이 이벤트 6건·마이샵 25건, 2026-11).
-- 가맹점을 식별할 수 없는 2건(30 미식 브랜드, 31 종합쇼핑몰)은 뺀다 → 29건.
+원본: config/promotions.yml (SOL 페이 혜택 정보.xlsx, 신한 SOL페이 이벤트 6건·마이샵 23건, 2026-11).
+- 가맹점을 식별할 수 없는 2건(30 미식 브랜드, 31 종합쇼핑몰)은 2026-11-23 사용자 결정으로 yml 에서도 지웠다 → 29건.
+- 화면용 칸(화면 이름·혜택 문구·실제 기간·지급일·결제 방법·유의사항·확인 필요·로고)은 display_frame → 팀 DB promotions 표의
+  새 칸과 공용 DB 마이그레이션 SQL(migration_sql). 앱 혜택 탭·AI 챗봇·추천이 같은 표를 읽는다 (2026-11-23).
 - 응모·선착순 조건은 생략하고 일반 행사로 본다 (needs_check 를 쓰지 않는다).
 - 11월 행사가 아니라 데이터 전체 기간에 있는 행사로 본다: 시작일 = 2025-11-01, 종료일 = 원래 종료일.
 - 모두 신한카드 결제 대상이다. 팀 DB promotions 표에는 kind(event/myshop)·min_amount 두 칸을 더하고, 원본의 5건은 지운다.
@@ -16,14 +18,16 @@ import pandas as pd
 
 from .common import load_config
 
-EXCLUDE = {30, 31}                    # 원본에서 정확한 가맹점명을 식별할 수 없는 행사
 PERIOD_START = date(2025, 11, 1)      # 데이터 첫날. 전체 기간에 있는 행사로 본다
 MYSHOP_ON = 0.3
 REPLAY_SEED = 20261127                # solpay-ai evaluation/replay.SEED. ON 난수 = default_rng([SEED + 3, 사용자, 행사, 연월])
 ISSUER_DB, ISSUER_CODE = "신한", "SHINHAN"
 
+DISPLAY_COLUMNS = ["display_name", "benefit_type", "benefit_text", "display_start", "display_end", "payout", "pay_method",
+                   "note", "needs_check", "logo_url"]
 DB_COLUMNS = ["promotion_id", "card_id", "issuer", "merchant_id", "promo_name", "category", "merchant_name",
-              "value_type", "value", "max_amount", "start_date", "end_date", "kind", "min_amount"]
+              "value_type", "value", "max_amount", "start_date", "end_date", "kind", "min_amount"] + DISPLAY_COLUMNS
+LOGO_PATH = "/brand-logos/"          # 백엔드 static/brand-logos (카드 이미지 /card-images 와 같은 방식)
 ENGINE_COLUMNS = ["promotion_id", "kind", "brand", "match_brand", "category_code", "title", "issuer_code", "card_id",
                   "benefit_type", "amount", "rate", "min_amount", "max_amount", "starts_at", "ends_at", "payout", "note",
                   "needs_check", "data_origin"]
@@ -32,8 +36,6 @@ ENGINE_COLUMNS = ["promotion_id", "kind", "brand", "match_brand", "category_code
 def final_promotions() -> list[dict]:
     out = []
     for r in load_config("promotions")["promotions"]:
-        if int(r["id"]) in EXCLUDE:
-            continue
         out.append({
             "promotion_id": int(r["id"]), "kind": r.get("kind", "event"), "brand": r["brand"],
             "match": r.get("match") or r["brand"], "title": r.get("title") or r["brand"],
@@ -106,7 +108,7 @@ def _number(v: float) -> int | float:
 
 
 def db_frame(merchants: pd.DataFrame) -> pd.DataFrame:
-    """팀 DB promotions 표 (원본 12칸 + kind·min_amount). 업종은 행사 가맹점의 업종(가장 많은 것), 없으면 비운다."""
+    """팀 DB promotions 표 (원본 12칸 + kind·min_amount + 화면용 10칸). 업종은 행사 가맹점의 업종(가장 많은 것), 없으면 비운다."""
     rows = []
     for p in final_promotions():
         ids = merchant_ids(p, merchants)
@@ -120,7 +122,7 @@ def db_frame(merchants: pd.DataFrame) -> pd.DataFrame:
             "start_date": p["start"].isoformat(), "end_date": p["end"].isoformat(), "kind": p["kind"],
             "min_amount": p["min_amount"],
         })
-    df = pd.DataFrame(rows, columns=DB_COLUMNS)
+    df = pd.DataFrame(rows).merge(display_frame(), on="promotion_id", how="left")[DB_COLUMNS]
     for col in ("card_id", "merchant_id", "max_amount"):
         df[col] = df[col].astype("Int64")
     return df
@@ -141,3 +143,82 @@ def engine_frame() -> pd.DataFrame:
     for col in ("card_id", "amount", "max_amount"):
         df[col] = df[col].astype("Int64")
     return df
+
+
+# ---------- 화면용 칸 (2026-11-23 행사 목록 DB 이전) ----------
+
+def display_frame() -> pd.DataFrame:
+    """yml 의 화면 값 → promotions 표의 새 칸. 기간은 실제 행사 기간 (start_date 는 가상 데이터용으로 그대로 둔다)."""
+    rows = [{
+        "promotion_id": int(r["id"]), "display_name": r["brand"], "benefit_type": r.get("benefit") or "discount",
+        "benefit_text": r.get("benefit_text"), "display_start": r["starts"].isoformat(), "display_end": r["ends"].isoformat(),
+        "payout": None if r.get("payout") is None else str(r["payout"]), "pay_method": r.get("pay_method"),
+        "note": r.get("note") or None, "needs_check": bool(r.get("needs_check", False)),
+        "logo_url": LOGO_PATH + r["logo"] if r.get("logo") else None,
+    } for r in load_config("promotions")["promotions"]]
+    return pd.DataFrame(rows, columns=["promotion_id"] + DISPLAY_COLUMNS)
+
+
+_SQL_COLUMNS = [("display_name", "varchar(100)"), ("benefit_type", "varchar(10)"), ("benefit_text", "varchar(60)"),
+                ("display_start", "date"), ("display_end", "date"), ("payout", "varchar(40)"), ("pay_method", "varchar(60)"),
+                ("note", "varchar(200)"), ("needs_check", "boolean NOT NULL DEFAULT false"), ("logo_url", "varchar(200)")]
+
+
+def _literal(v) -> str:
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return "NULL"
+    if isinstance(v, (bool, np.bool_)):
+        return "true" if v else "false"
+    return "'" + str(v).replace("'", "''") + "'"
+
+
+def migration_sql() -> str:
+    """공용 RDS·로컬 DB 의 promotions 표에 화면용 칸을 더하고 29건을 채운다. 여러 번 실행해도 안전하고 행을 새로 넣지 않는다."""
+    out = ["-- 행사 화면용 칸 (2026-11-23). 생성: data/generate/promotions.py --sql (원본 data/config/promotions.yml)",
+           "-- 기존 칸·기간(start_date)과 결제 데이터는 바꾸지 않는다. 행을 넣지 않고 promotion_id 로 UPDATE 만 한다.",
+           "BEGIN;"]
+    out += [f"ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS {name} {kind};" for name, kind in _SQL_COLUMNS]
+    out += ["DO $$",
+            "BEGIN",
+            "    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'promotions_benefit_type_check') THEN",
+            "        ALTER TABLE public.promotions ADD CONSTRAINT promotions_benefit_type_check",
+            "            CHECK (benefit_type IS NULL OR benefit_type IN ('point', 'cashback', 'discount'));",
+            "    END IF;",
+            "END $$;"]
+    for r in display_frame().to_dict("records"):
+        sets = ", ".join(f"{c} = {_literal(r[c])}" for c in DISPLAY_COLUMNS)
+        out.append(f"UPDATE public.promotions SET {sets} WHERE promotion_id = {int(r['promotion_id'])};")
+    out += ["COMMIT;",
+            "-- 확인: 29 가 나와야 한다",
+            "SELECT count(*) FILTER (WHERE display_name IS NOT NULL) AS filled, count(*) AS total FROM public.promotions;"]
+    return "\n".join(out) + "\n"
+
+
+def update_team_db_csv(folder) -> int:
+    """팀 DB 폴더의 promotions.csv 에 화면용 칸을 붙여 다시 쓴다 (다른 칸·행 순서는 그대로). 채운 행 수를 돌려준다."""
+    from pathlib import Path
+    path = Path(folder) / "promotions.csv"
+    df = pd.read_csv(path).drop(columns=DISPLAY_COLUMNS, errors="ignore")
+    shown = display_frame()
+    out = df.merge(shown, on="promotion_id", how="left")
+    missing = sorted(set(df.promotion_id) - set(shown.promotion_id))
+    if missing:
+        raise ValueError(f"yml 에 없는 행사 번호: {missing}")
+    for col in ("card_id", "merchant_id", "max_amount"):
+        if col in out:
+            out[col] = out[col].astype("Int64")
+    out.to_csv(path, index=False)
+    return int(out.display_name.notna().sum())
+
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+    parser = argparse.ArgumentParser(description="행사 화면용 칸: 팀 DB CSV 갱신 또는 DB 마이그레이션 SQL")
+    parser.add_argument("--update-csv", metavar="팀_DB_폴더")
+    parser.add_argument("--sql", action="store_true")
+    args = parser.parse_args()
+    if args.sql:
+        sys.stdout.write(migration_sql())
+    if args.update_csv:
+        print(f"promotions.csv 화면용 칸 {update_team_db_csv(args.update_csv)}행 채움", file=sys.stderr)

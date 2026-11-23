@@ -187,6 +187,30 @@ class AiServiceTest {
         assertThat(ai.last().body()).isEqualTo("{\"user_id\":7}");
     }
 
+    // ---------- 일정 직접 입력 분류 ----------
+
+    @Test
+    @DisplayName("직접 입력 분류: 이름만 보내고(사용자 번호 없음) AI 답을 그대로 돌려준다")
+    void classifyPlace() {
+        ai.reply("/internal/places/classify", 200, "{\"category\":\"CAFE\",\"brand\":\"STARBUCKS\"}");
+
+        String answer = service.classifyPlace("스타벅스");
+
+        assertThat(answer).isEqualTo("{\"category\":\"CAFE\",\"brand\":\"STARBUCKS\"}");
+        assertThat(ai.last().method()).isEqualTo("POST");
+        assertThat(ai.last().path()).isEqualTo("/internal/places/classify");
+        assertThat(ai.last().body()).isEqualTo("{\"text\":\"스타벅스\"}");
+    }
+
+    @Test
+    @DisplayName("직접 입력 분류: 3초 제한 시간을 넘기면 AiException (일정 저장을 오래 붙잡지 않는다)")
+    void classifyPlaceTimeout() {
+        AiService quick = new AiService(new AiClient(ai.url(), "", 300, 20000, 300), userCards, "");
+        ai.slow("/internal/places/classify", 1500);
+
+        assertThatThrownBy(() -> quick.classifyPlace("스타벅스")).isInstanceOf(AiException.class);
+    }
+
     // ---------- 그 밖 ----------
 
     @Test
