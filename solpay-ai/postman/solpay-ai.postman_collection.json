@@ -151,6 +151,52 @@
 					]
 				},
 				{
+					"name": "test1 미리보기 (record=false, 기록 없음)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/internal/rank",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"internal",
+								"rank"
+							]
+						},
+						"description": "앱 홈 일정 카드 미리보기: 같은 계산, 추천 기록을 남기지 않는다 (2026-11-23).",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"user_id\": 1,\n  \"at\": \"2026-10-07T09:00:00+09:00\",\n  \"record\": false\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+									"const r = pm.response.json();",
+									"pm.test('추천 기록 번호가 없다 (기록 안 남김)', () => pm.expect(r.recommendation_id).to.eql(null));",
+									"pm.test('카드 순서는 그대로 준다', () => pm.expect(r.cards).to.be.an('array').and.not.empty);"
+								]
+							}
+						}
+					]
+				},
+				{
 					"name": "test1 평일 저녁 7시",
 					"request": {
 						"method": "POST",
