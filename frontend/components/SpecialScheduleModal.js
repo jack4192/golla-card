@@ -501,9 +501,11 @@ export default function SpecialScheduleModal({
           </ScrollView>
           {!!message && <Text accessibilityLiveRegion="polite" style={s.message}>{message}</Text>}
           <View style={s.addActions}>
-            {adding && <TouchableOpacity accessibilityRole="button" disabled={busy} style={[s.addDelete, busy && s.dim]}
+            {/* 새 일정 입력을 그만두고 닫는다 (저장된 일정을 지우는 버튼이 아니라서 '취소', 2026-11-23 PR #5 반영 때 이름 바꿈) */}
+            {adding && <TouchableOpacity accessibilityRole="button" accessibilityLabel="일정 입력 취소" disabled={busy}
+              style={[s.addCancel, busy && s.dim]}
               onPress={() => { if (!lock.current) { resetAdd(); close(); } }}>
-              <Text style={s.addDeleteText}>삭제</Text>
+              <Text style={s.addCancelText}>취소</Text>
             </TouchableOpacity>}
             <TouchableOpacity accessibilityRole="button" disabled={!canSaveAdd} style={[s.addSave, !canSaveAdd && s.dim]} onPress={saveEditor}>
               <Text style={s.white}>{busy ? '저장 중…' : editing ? '수정 저장' : '일정 추가'}</Text>
@@ -601,8 +603,8 @@ const s = StyleSheet.create({
   addInput: { textAlign: 'center' },
   addExtra: { flexDirection: 'row', alignSelf: 'center', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 36 },
   addActions: { flexDirection: 'row', alignItems: 'stretch', gap: 6 },
-  addDelete: { backgroundColor: '#FFF0F2', borderRadius: 24, paddingHorizontal: 18, minHeight: 52, justifyContent: 'center' },
-  addDeleteText: { color: '#B4384D', fontSize: 13, fontWeight: '800' },
+  addCancel: { backgroundColor: '#EDF3FF', borderRadius: 24, paddingHorizontal: 18, minHeight: 52, justifyContent: 'center' },
+  addCancelText: { color: '#245DE5', fontSize: 13, fontWeight: '800' },
   addSave: { flex: 1, minHeight: 52, alignItems: 'center', justifyContent: 'center', borderRadius: 26, backgroundColor: '#104FE7' },
   screen: {
     flex: 1,
