@@ -40,6 +40,8 @@ class PromotionOffer:
     card_value: int
     alternatives: tuple[tuple[int, int], ...] = ()     # 다른 신한카드 (user_card_id, 받을 금액), 큰 순서
     card_benefit_type: str = ""                        # 카드 건당 혜택 종류 (discount / cashback / point, 없으면 "")
+    display_name: str = ""                             # 화면 이름 (2026-11-23, DB promotions.display_name, 없으면 brand)
+    logo_url: str | None = None                        # 로고 주소 (백엔드 /brand-logos/)
 
     @property
     def total(self) -> int:
@@ -71,7 +73,7 @@ def promotion_offers(state, schedules: list[ScheduleItem], promotions: list[Prom
         blocked = excluded(item.start) if excluded is not None else set()
         cards = [c for c in shinhan if c.user_card_id not in blocked]
         for promo in promotions:
-            if promo.needs_check or not promo.active(item.start):
+            if promo.needs_check or not promo.shown(item.start):     # 실제 행사 기간 (2026-11-23)
                 continue
             merchant = next((m for m in sorted(promo.merchant_ids)
                              if m in catalog.merchants and catalog.merchants[m].category == item.category
@@ -96,7 +98,8 @@ def promotion_offers(state, schedules: list[ScheduleItem], promotions: list[Prom
             offers.append(PromotionOffer(
                 item.item_id, item.start, item.end, item.category, item.amount, promo.promotion_id, promo.brand,
                 promo.title, promo.kind, uc.user_card_id, uc.card_id, catalog.card_label(uc.card_id),
-                promo_value, card_value, tuple((f[4].user_card_id, f[0]) for f in found[1:]), benefit_type))
+                promo_value, card_value, tuple((f[4].user_card_id, f[0]) for f in found[1:]), benefit_type,
+                promo.name, promo.logo_url))
     return sorted(offers, key=lambda o: (-o.total, o.start, o.promotion_id))
 
 
