@@ -23,10 +23,13 @@ const PERSONAL = [
   ['solpay_today_card_plan_v1', '오늘 카드 계획'],
   ['solpay_wallet_selection_v1', '지갑 선택 카드'],
   [PREVIEW_CARDS_KEY, '미리보기 카드'],
+  ['solpay_savings_records_v1', '연말 결산 추천 기록'],
+  ['solpay_notifications_v1', '앱 알림함'],
 ];
 
 const ACCOUNT = [
   ['solpay_demo_account_v1', '가입 정보'],
+  ['solpay_signup_job_v1', '가입 시 선택한 직장'],
   ['solpay_demo_session_v1', '로그인 상태'],
   ['solpay_demo_login_email_v1', '마지막 로그인 계정'],
   ['solpay_demo_full_logout_v1', '로그아웃 상태'],

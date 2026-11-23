@@ -10,7 +10,7 @@ import { isScheduleBenefitAt, matchesScheduleBenefit } from '../utils/schedulePa
 import { SCHEDULE_SAMPLES } from '../data/samplePayment';
 import { resolveWalletProduct } from './WalletProductCard';
 import SpecialScheduleModal from './SpecialScheduleModal';
-import { CATEGORIES, dailyBasicSchedule, dateKey, effectiveDetailedRoutine, eventBenefitCategories, eventEndDate, eventTimeCaption, eventTitle, isTodayConfirmed, makeSignals, readEvents, readProfile, shiftDate } from '../utils/routineData';
+import { CATEGORIES, categoryLabel, dailyBasicSchedule, dateKey, effectiveDetailedRoutine, eventBenefitCategories, eventEndDate, eventTimeCaption, eventTitle, isTodayConfirmed, makeSignals, readEvents, readProfile, shiftDate } from '../utils/routineData';
 
 const categoryIcons = {
   cafe: 'cafe-outline',
@@ -210,7 +210,7 @@ export default function TodaySchedulePanel({
     event.date === previousDay && event.start && event.end < event.start &&
     isCurrentDay && clock < eventEndDate(event)
   ));
-  const signals = makeSignals(profile, events, day).map(signal => CATEGORIES[signal.id].label);
+  const signals = makeSignals(profile, events, day).map(signal => categoryLabel(signal.id));
   const refresh = () => setRevision(value => value + 1);
   const products = cards.map(toScheduleProduct);
   const selectedProduct = resolveWalletProduct(selectedCard);
