@@ -17,6 +17,7 @@ import { makeSchedulePaymentScenario } from '../utils/schedulePayment';
 import { estimateCatalogBenefit, matchesCatalogPaymentBenefit } from '../utils/catalogPayment';
 import { SERVER_MODE } from '../utils/api';
 import { loadPlacement } from '../utils/aiPlacement';
+import { useAutoPlacement } from '../utils/autoPlacement';
 import { loadAiEstimates } from '../utils/aiEstimate';
 import { chooseEstimateScenario, exampleBasisLine, exampleNote, exampleScenario } from '../utils/aiEstimateCore';
 import { scheduleAiPaymentExample } from '../utils/scheduleAiCore';
@@ -338,6 +339,10 @@ export default function PaymentScreen({
   // AI 카드 배치 (서버 모드). status: off(데모 모드) / loading / ready / failed
   const [placement, setPlacement] = useState({ status: SERVER_MODE ? 'loading' : 'off', result: null });
   const userPicked = useRef(false);   // 사용자가 직접 카드를 고르면 AI 가 다시 바꾸지 않는다
+  // 카드 자동 배치 ON/OFF (홈 '내 지갑' 스위치와 같은 값). OFF 면 목록·결제 카드를 AI 로 바꾸지 않는다
+  const auto = useAutoPlacement();
+  const autoOnRef = useRef(auto.on);
+  autoOnRef.current = auto.on;
   const mounted = useRef(true);
   const sequence = useRef(0);
   const current = useRef(null);
@@ -433,7 +438,8 @@ export default function PaymentScreen({
       // 일정에서 들어온 결제는 홈이 AI 카드로 보낸 일정이고 AI 가 그 일정을 보고 정했을 때만 AI 1순위로 바꾸고, 아니면 일정에 맞춘 카드를 유지한다
       // AI 가 답하지 못해 기본 순서가 온 경우(fallback)에는 지갑에서 고른 카드를 그대로 둔다
       const follow = !scheduleScenario || scheduleAiPaymentExample(result, schedule);
-      if (result?.topId && !result.fallback && follow && !userPicked.current) setSelectedId(result.topId);
+      // 자동 배치를 껐으면 AI 1순위를 고르지 않고 내 결제 카드를 그대로 둔다 (2026-11-24 수정사항, AI 추천 상자는 그대로)
+      if (autoOnRef.current && result?.topId && !result.fallback && follow && !userPicked.current) setSelectedId(result.topId);
     }).catch(() => {
       if (!stopped) setPlacement({ status: 'failed', result: null });
     });
@@ -738,7 +744,7 @@ export default function PaymentScreen({
         {/* 결제 화면은 AI·일정이 고른 카드를 지켜야 해서 맨 위 카드를 자동으로 고르지 않습니다(syncSelection=false). */}
         <PaymentCardOrder cards={options} selectedId={selected.id} syncSelection={false}
           onSelect={id => { const item = options.find(option => option.id === id); if (item) choose(item); }}
-          aiOrder={ai?.fallback ? null : ai?.order} />
+          aiOrder={!auto.on || ai?.fallback ? null : ai?.order} />
 
         <View style={s.box}>
           <Text style={s.heading}>카드 선정 이유</Text>
