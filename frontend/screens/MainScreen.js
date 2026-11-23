@@ -306,6 +306,9 @@ export default function MainScreen({
   const [yearEndOpen, setYearEndOpen] = useState(false);
   // '이 카드로 결제' QR 결제 바텀시트(열려 있으면 결제 맥락: cardId, 일정 정보 등)
   const [paySheet, setPaySheet] = useState(null);
+  // 홈 일정 카드가 AI 미리보기를 다시 물을 때 올리는 번호: 홈 추천 팝업(일정 행사를 계산함)이 닫히거나 챗봇 규칙을 확정했을 때 (2026-11-23)
+  const [aiRefresh, setAiRefresh] = useState(0);
+  const refreshAi = () => setAiRefresh(value => value + 1);
   const openPaySheet = context => {
     if (context?.cardId) onSelectCard(context.cardId);
     setPaySheet({ ...context, returnTab: tab });
@@ -661,7 +664,10 @@ export default function MainScreen({
   const decideDraft = (item, action) => {
     updateChat(item.id, { draft: { ...item.draft, state: 'working' } });
     (action === 'confirm' ? api.aiConfirmRuleDraft(item.draft.id) : api.aiCancelRuleDraft(item.draft.id))
-      .then(() => (action === 'confirm' ? 'saved' : 'cancelled'))
+      .then(() => {
+        if (action === 'confirm') refreshAi();
+        return action === 'confirm' ? 'saved' : 'cancelled';
+      })
       .catch(() => 'error')
       .then(state => updateChat(item.id, { draft: { ...item.draft, state } }));
   };
@@ -694,6 +700,7 @@ export default function MainScreen({
     cardList={home ? <PaymentCardOrder cards={realWalletCards(currentCard, walletCards)} selectedId={currentCard?.id} onSelect={onSelectCard} /> : null}
     onOpenSchedule={() => selectTab('schedule')}
     disabled={scheduleDisabled}
+    aiRefresh={aiRefresh}
     onEditRoutine={onEditRoutine}
     onViewBenefits={onViewBenefits}
     cards={realWalletCards(currentCard, walletCards)}
@@ -946,7 +953,7 @@ export default function MainScreen({
 
       </ScrollView>
     </>;
-  return <SafeAreaView style={styles.root}><RecommendationLaunchPopup selectedWalletCard={currentCard} allowAutomaticAds={tab === 'home' && allowAutomaticAds} onViewPromotions={() => selectTab('benefits')} promotions={activePromotions()} openRequest={adRequest} enabled={(tab === 'home' || tab === 'benefits') && !settingsOpen && !exitOpen && !pinChangeOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
+  return <SafeAreaView style={styles.root}><RecommendationLaunchPopup onClosed={refreshAi} selectedWalletCard={currentCard} allowAutomaticAds={tab === 'home' && allowAutomaticAds} onViewPromotions={() => selectTab('benefits')} promotions={activePromotions()} openRequest={adRequest} enabled={(tab === 'home' || tab === 'benefits') && !settingsOpen && !exitOpen && !pinChangeOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
       {!settingsOpen && tab !== 'payment' && <View style={[styles.topBar, tab === 'cards' && styles.walletTopBar]}>
           <View>
             <Text style={[styles.brand,{color:tab === 'cards' ? "#FFFFFF" : "#134CCA",fontSize:27}]}>SOL·Pay</Text>

@@ -16,10 +16,19 @@ async function walletLinks() {
   return links;
 }
 
-// 반환: { order, topId, message, reasonCode, recommendationId, fallback, unranked } (aiPlacementCore.applyRank)
+// 반환: { order, topId, message, reasonCode, recommendationId, fallback, version, unranked, example } (aiPlacementCore.applyRank)
 // 서버 모드가 아니면 null. 실패하면 예외를 던진다 (화면은 지갑 순서 그대로 보여 주면 된다).
-export async function loadPlacement(walletCards) {
+export function loadPlacement(walletCards) {
+  return place(walletCards, () => api.aiRank());
+}
+
+// 홈 일정 카드용 미리보기: 결과 모양은 loadPlacement 와 같고, AI 가 추천 기록을 남기지 않는다 (2026-11-23).
+export function loadPlacementPreview(walletCards) {
+  return place(walletCards, () => api.aiRankPreview());
+}
+
+async function place(walletCards, ask) {
   if (!SERVER_MODE || !walletCards?.length) return null;
-  const [links, rank] = await Promise.all([walletLinks(), api.aiRank()]);
+  const [links, rank] = await Promise.all([walletLinks(), ask()]);
   return applyRank(walletCards, rank, links);
 }

@@ -71,8 +71,17 @@ public class AiService {
      * @return AI 답(JSON 글자) 또는 기본 순서(Map)
      */
     public Object rank(Long userId, boolean explain) {
+        return rank(userId, explain, true);
+    }
+
+    /**
+     * record=false 는 앱 홈 일정 카드 미리보기: AI 가 같은 계산을 하고 추천 기록만 남기지 않는다
+     * (기록의 기본 카드가 다음 배치의 '직전 기본 카드'가 되므로, 2026-11-23).
+     */
+    public Object rank(Long userId, boolean explain, boolean record) {
         Map<String, Object> body = withAt(userBody(userId));
         body.put("explain", explain);
+        body.put("record", record);
         try {
             return client.postFast("/internal/rank", body);
         } catch (AiException e) {

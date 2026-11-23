@@ -42,11 +42,13 @@ export function exampleScenario(example) {
   };
 }
 
-// 예상 혜택 상자의 거래: 일정 결제 > (AI 예시의 계산이 왔을 때) AI 예시 > 고정 예시.
-//   예시 계산이 아직 없거나 실패하면 고정 예시를 그대로 둔다 ('조건 확인 필요'가 남지 않게).
+// 예상 혜택 상자의 거래: (계산이 온) AI 예시 > 일정 결제 > 고정 예시.
+//   예시 계산이 아직 없거나 실패하면 일정·고정 예시를 그대로 둔다 ('조건 확인 필요'가 남지 않게).
+//   일정 결제에는 AI 가 그 일정을 보고 정했을 때만 예시가 넘어온다
+//   (2026-11-23 홈 일정 카드 설계서, utils/scheduleAiCore.js scheduleAiExample).
 export function chooseEstimateScenario({ scheduleScenario, example, exampleRows, fixed }) {
-  if (scheduleScenario) return scheduleScenario;
   if (example && exampleRows && Object.keys(exampleRows).length) return example;
+  if (scheduleScenario) return scheduleScenario;
   return fixed;
 }
 

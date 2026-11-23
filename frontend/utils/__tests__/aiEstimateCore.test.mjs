@@ -55,13 +55,16 @@ test('예시 거래 → 계산 요청: 가맹점이 있으면 함께, 없으면 
   assert.equal(exampleScenario(ex).merchant, '현대백화점');
 });
 
-test('예시 계산이 오기 전·실패하면 고정 예시, 일정 결제는 늘 일정', () => {
+test('예시 계산이 오기 전·실패하면 일정이나 고정 예시, 계산이 온 예시가 먼저', () => {
+  // 일정 결제에는 AI 가 그 일정을 보고 정했을 때만 예시가 넘어온다 (2026-11-23 홈 일정 카드 설계서)
   const fixed = { id: 'coffee' }, sched = { id: 's' }, ex = exampleScenario({ category_code: 'CAFE', amount: 4900 });
   assert.equal(chooseEstimateScenario({ example: ex, exampleRows: null, fixed }), fixed);
   assert.equal(chooseEstimateScenario({ example: ex, exampleRows: {}, fixed }), fixed);
   assert.equal(chooseEstimateScenario({ example: ex, exampleRows: { a: {} }, fixed }), ex);
   assert.equal(chooseEstimateScenario({ example: null, exampleRows: { a: {} }, fixed }), fixed);
-  assert.equal(chooseEstimateScenario({ scheduleScenario: sched, example: ex, exampleRows: { a: {} }, fixed }), sched);
+  assert.equal(chooseEstimateScenario({ scheduleScenario: sched, example: ex, exampleRows: { a: {} }, fixed }), ex);
+  assert.equal(chooseEstimateScenario({ scheduleScenario: sched, example: ex, exampleRows: null, fixed }), sched);
+  assert.equal(chooseEstimateScenario({ scheduleScenario: sched, example: null, exampleRows: { a: {} }, fixed }), sched);
 });
 
 test('안내 줄은 행사 문구이고 가능성이 0~1 사이일 때만', () => {

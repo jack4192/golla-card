@@ -52,6 +52,18 @@ class AiServiceTest {
     }
 
     @Test
+    @DisplayName("미리보기는 엔진 본문에 record=false 를, 기본 배치는 record=true 를 싣는다")
+    void rankRecordFlag() {
+        ai.reply("/internal/rank", 200, "{\"cards\":[]}");
+
+        service.rank(7L, false, false);
+        assertThat(ai.last().body()).contains("\"record\":false");
+
+        service.rank(7L, false);
+        assertThat(ai.last().body()).contains("\"record\":true");
+    }
+
+    @Test
     @DisplayName("카드 배치: AI 가 답하지 못하면 내 카드 순서대로 기본 순서를 돌려준다")
     @SuppressWarnings("unchecked")
     void rankFallback() {

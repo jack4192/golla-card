@@ -19,6 +19,7 @@ import { SERVER_MODE } from '../utils/api';
 import { loadPlacement } from '../utils/aiPlacement';
 import { loadAiEstimates } from '../utils/aiEstimate';
 import { chooseEstimateScenario, exampleBasisLine, exampleNote, exampleScenario } from '../utils/aiEstimateCore';
+import { scheduleAiPaymentExample } from '../utils/scheduleAiCore';
 const SCENARIOS = [{
   id: 'coffee',
   merchant: '스타벅스',
@@ -346,8 +347,12 @@ export default function PaymentScreen({
   const scheduleScenario = useMemo(() => makeSchedulePaymentScenario(schedule), [schedule]);
   const fixedScenario = SCENARIOS.find(item => item.id === scenarioId) || SCENARIOS[0];
   // 서버 모드: 예상 혜택 거래를 AI 배치 문구 속 거래(rank.example)로 바꾼다 (2026-11-23).
-  // 그 거래의 AI 계산이 온 뒤에 바꾸고, 계산이 실패하면 고정 예시를 그대로 둔다. 일정 결제는 늘 일정 거래.
-  const aiExample = placement.status === 'ready' && !scheduleScenario ? placement.result?.example : null;
+  // 그 거래의 AI 계산이 온 뒤에 바꾸고, 계산이 실패하면 고정 예시를 그대로 둔다.
+  // 일정 결제도 홈이 AI 카드로 보낸 일정이고 AI 가 그 일정을 보고 정했으면 그 거래 (2026-11-23 홈 일정 카드 설계서), 아니면 일정 거래.
+  const aiExample = placement.status !== 'ready' ? null
+    : scheduleScenario ? scheduleAiPaymentExample(placement.result, schedule)
+    : placement.result?.example;
+  const scheduleAi = Boolean(scheduleScenario && aiExample);
   const exampleScen = useMemo(() => exampleScenario(aiExample), [aiExample]);
   const [exampleRows, setExampleRows] = useState({ key: null, rows: null });
   useEffect(() => {
@@ -425,9 +430,10 @@ export default function PaymentScreen({
     loadPlacement(options).then(result => {
       if (stopped) return;
       setPlacement({ status: result ? 'ready' : 'off', result });
-      // 일정에서 들어온 결제는 일정에 맞춘 카드를 유지한다 (앱 일정은 아직 AI 가 모른다)
+      // 일정에서 들어온 결제는 홈이 AI 카드로 보낸 일정이고 AI 가 그 일정을 보고 정했을 때만 AI 1순위로 바꾸고, 아니면 일정에 맞춘 카드를 유지한다
       // AI 가 답하지 못해 기본 순서가 온 경우(fallback)에는 지갑에서 고른 카드를 그대로 둔다
-      if (result?.topId && !result.fallback && !scheduleScenario && !userPicked.current) setSelectedId(result.topId);
+      const follow = !scheduleScenario || scheduleAiPaymentExample(result, schedule);
+      if (result?.topId && !result.fallback && follow && !userPicked.current) setSelectedId(result.topId);
     }).catch(() => {
       if (!stopped) setPlacement({ status: 'failed', result: null });
     });
@@ -681,8 +687,8 @@ export default function PaymentScreen({
             {!!exampleLine && <Text style={s.bxNote}>{exampleLine}</Text>}
             <Text style={s.bxFoot}>
               {aiRows
-                ? (scheduleScenario ? '일정 업종에 맞춘 결제 예시예요. '
-                  : scenario.aiExample ? exampleBasisLine(scenario.basis) : '')
+                ? (scenario.aiExample ? exampleBasisLine(scenario.basis)
+                  : scheduleScenario ? '일정 업종에 맞춘 결제 예시예요. ' : '')
                   + '이번 달 실적·한도와 진행 중인 행사를 반영해 AI가 계산했어요.'
                 : scheduleScenario
                 ? '일정 업종에 맞춘 결제 예시예요. 실제 혜택은 가맹점·실적·잔여 한도에 따라 달라요.'
@@ -735,7 +741,7 @@ export default function PaymentScreen({
           <Text style={s.heading}>카드 선정 이유</Text>
 
           <Text style={s.text}>
-            {scheduleScenario
+            {scheduleScenario && !scheduleAi
               ? selected.id === schedule.cardId
                 ? '오늘 일정의 업종과 관련된 혜택이 있는 보유 카드예요.'
                 : '결제 카드를 바꿨어요. 바꾸기 전과 같은 일정·금액으로 혜택을 확인할 수 있어요.'
