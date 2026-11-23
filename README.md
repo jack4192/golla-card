@@ -42,14 +42,14 @@ PostgreSQL (5432)
 | 앱 → 백엔드 | 회원가입, 로그인, 로그아웃, 이메일·휴대폰 중복 확인, 내 정보 6개가 연결되어 있다. 서버 주소(`EXPO_PUBLIC_API_URL`)를 넣었을 때만 서버를 부르고, 없으면 앱 안의 데이터로 동작한다 |
 | 앱 → 백엔드 (카드·일정) | 연결되어 있다. 서버 모드에서는 지갑과 일정을 서버에서 읽고, 카드 등록·순서 변경·일정 저장·삭제를 서버에 반영한다(`/api/cards`, `/api/schedules`) |
 | 백엔드 → AI 엔진 | 연결되어 있다. 백엔드의 `/api/ai/...` 가 AI 엔진을 부르고, 일정을 저장하면 AI 엔진에도 넘어간다. 결제 기록 전달만 빠져 있다(백엔드에 결제 API 가 없다). [backend/docs/AI_연동.md](backend/docs/AI_연동.md) |
-| 앱 → 백엔드 (AI 기능) | 전체 결제 화면('혜택 자세히 보기')이 카드 순서(`/api/ai/rank`)와 챗봇을, 홈 챗봇(SOL 카드 도우미)이 AI 챗봇(`/api/ai/chat`)을 부른다. 앱에서 넣은 장소 일정이 AI 배치에 반영된다. QR 결제 시트와 맞춤 추천·리포트 화면에는 아직 없다. [frontend/docs/AI_연동.md](frontend/docs/AI_연동.md) |
+| 앱 → 백엔드 (AI 기능) | 전체 결제 화면('혜택 자세히 보기')이 카드 순서(`/api/ai/rank`)와 챗봇을, 홈 챗봇(SOL 카드 도우미)이 AI 챗봇(`/api/ai/chat`)을 부른다. 앱에서 넣은 장소 일정이 AI 배치에 반영된다. QR 결제 시트와 맞춤 추천·리포트 화면, 일정 직접 입력 분류(가게 이름 → 업종·가맹점)는 아직 없다. 분류는 AI 엔진 API 와 결제 데모(`demo/`)에만 있다. [frontend/docs/AI_연동.md](frontend/docs/AI_연동.md) |
 | 웹 브라우저 → 백엔드 | CORS 설정이 있어 웹(8081)에서도 부를 수 있다. 허용 주소는 `CORS_ALLOWED_ORIGINS` 로 바꾼다 |
 
 AI 연결에서 알아둘 것:
 
 - 앱이 부를 주소와 AI 엔진 API 의 대응은 [backend/docs/AI_연동.md](backend/docs/AI_연동.md) 에 있다. 응답은 AI 엔진의 JSON 그대로다.
 - API 계약은 [solpay-ai/openapi.json](solpay-ai/openapi.json) 이고, 서버를 켜면 http://127.0.0.1:8001/docs 에서도 볼 수 있다.
-- 주요 API: 카드 배치 `POST /internal/rank`, 결제 기록 `POST /internal/payments`, 하루 일정 `PUT /internal/users/{id}/schedules/{day}`, 맞춤 추천 `POST /internal/users/{id}/recommendation-page`, 챗봇 `POST /internal/chat`, 월간 리포트 `GET /internal/users/{id}/monthly-report`, 연말정산 `GET /internal/users/{id}/missed-benefit`, 규칙 `GET·PUT /internal/users/{id}/rules`.
+- 주요 API: 카드 배치 `POST /internal/rank`, 결제 기록 `POST /internal/payments`, 하루 일정 `PUT /internal/users/{id}/schedules/{day}`(항목에 선택 칸 `brand`), 일정 직접 입력 분류 `POST /internal/places/classify`, 맞춤 추천 `POST /internal/users/{id}/recommendation-page`, 챗봇 `POST /internal/chat`, 월간 리포트 `GET /internal/users/{id}/monthly-report`, 연말정산 `GET /internal/users/{id}/missed-benefit`, 규칙 `GET·PUT /internal/users/{id}/rules`.
 - 등록한 카드가 없는 사용자는 카드 배치가 오류 없이 빈 목록으로 온다 (`cards=[]`, `reason_code="NO_CARD"`, `recommendation_id=null`).
 - AI 엔진이 0.8초 안에 답하지 못하면 백엔드가 내 카드 순서대로 돌려준다 (`reason_code="FALLBACK"`).
 - AI 엔진은 백엔드와 같은 DB 를 봐야 한다 (`SOLPAY_STORE=db`). CSV 로 켜면 새로 가입한 사용자를 몰라 404 가 난다.
