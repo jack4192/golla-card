@@ -141,6 +141,7 @@ class ScheduleItem:
     end: datetime
     category: str
     amount: int
+    brand: str | None = None            # 가맹점 브랜드 코드 (2026-11-23, 직접 입력 분류). 위치·지점은 받지 않는다
 
 
 @dataclass(frozen=True)

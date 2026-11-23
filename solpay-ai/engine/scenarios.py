@@ -145,6 +145,15 @@ def _time_scenarios(state, probs, priors, params) -> list[Scenario]:
             for c, p in sorted(kept.items(), key=lambda x: -x[1])]
 
 
+def _schedule_scenario(state, item, share, priors, params) -> Scenario:
+    """일정 한 줄의 시나리오. 직접 입력으로 브랜드를 받았으면(2026-11-23) 그 브랜드로 확정한다:
+    혜택 계산은 내 카드와 무관한 브랜드면 '브랜드 없음'과 같으므로 None, 프로모션 계산은 그 브랜드 그대로."""
+    if item.brand is None:
+        return _scenario(state, item.category, share, (item.amount,), priors, params)
+    key = item.brand if item.brand in state.relevant_brands else None
+    return Scenario(item.category, share, (item.amount,), brands={key: 1.0}, promo_brands={item.brand: 1.0})
+
+
 def active_schedule(state: UserState, at: datetime, schedules, params: Params) -> list:
     """지금 적용되는 일정: 시작 lead 분 전 ~ 끝 tail 분 후이고, 그 사이 같은 업종 현장 결제가 아직 없는 것."""
     from datetime import timedelta
@@ -173,8 +182,7 @@ def build(state: UserState, req: RankRequest, catalog: Catalog, priors: Priors, 
     items = active_schedule(state, at, schedules, params)
     if items:
         share = 1.0 / len(items)
-        return ScenarioSet([_scenario(state, i.category, share, (i.amount,), priors, params) for i in items],
-                           MODE_SCHEDULE, slot)
+        return ScenarioSet([_schedule_scenario(state, i, share, priors, params) for i in items], MODE_SCHEDULE, slot)
 
     probs = time_category_probs(state, at, priors, params, model)
     repeat = repeat_category(state, at, probs, params)

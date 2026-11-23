@@ -171,6 +171,17 @@ def test_close_releases_pooled_connections():
             pass
 
 
+def test_schedule_brand_survives_db_round_trip(db):
+    """일정 브랜드(2026-11-23)도 암호문 payload 에 들어갔다 그대로 돌아온다."""
+    db.reset()
+    day = AT.date()
+    item = ScheduleItem(1, 1, datetime.combine(day, time(12), KST), datetime.combine(day, time(13), KST), "CAFE", 6000,
+                        brand="스타벅스")
+    db.put_schedule(1, day, [item])
+    assert [(s.category, s.brand) for s in db.schedules(1, day)] == [("CAFE", "스타벅스")]
+    db.reset()
+
+
 def test_rank_context_does_not_delete_past_schedules(db):
     """지난 일정은 하루 한 번 작업(engine/jobs.py)이 지운다. 결제 화면 요청은 DB 에 쓰지 않는다 (읽기 전용 계정 대비)."""
     db.reset()

@@ -77,7 +77,7 @@ class PostgresStore:
     def put_schedule(self, user_id: int, day, items: list[ScheduleItem]) -> None:
         self.user(user_id)
         payload = [{"start": i.start.isoformat(), "end": i.end.isoformat(), "category": i.category,
-                    "amount": i.amount} for i in items]
+                    "amount": i.amount, "brand": i.brand} for i in items]
         with self._connect() as c, c.transaction():
             c.execute("delete from placement.schedules where user_id = %s and day = %s", (user_id, day))
             if payload:
@@ -92,7 +92,7 @@ class PostgresStore:
             return []
         items = self.cipher.decrypt(row["payload"])["items"]
         return [ScheduleItem(i + 1, user_id, datetime.fromisoformat(x["start"]), datetime.fromisoformat(x["end"]),
-                             x["category"], int(x["amount"])) for i, x in enumerate(items)]
+                             x["category"], int(x["amount"]), x.get("brand")) for i, x in enumerate(items)]
 
     def purge_schedules(self, today) -> int:
         with self._connect() as c:

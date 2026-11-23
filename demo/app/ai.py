@@ -82,6 +82,16 @@ def schedule_popup(user_id: int, at: str) -> dict:
     return _call("POST", f"/internal/users/{user_id}/schedule-popup", POPUP_TIMEOUT_SEC, json={"at": at})
 
 
+def classify_place(text: str, user_id: int, at: str) -> dict:
+    """일정 '직접 입력'의 짧은 말 → 업종·가맹점 브랜드 (2026-11-23). OpenAI 를 부를 수 있어 넉넉히 기다린다."""
+    return _call("POST", "/internal/places/classify", POPUP_TIMEOUT_SEC, json={"text": text, "user_id": user_id, "at": at})
+
+
+def recommendation_page(user_id: int, at: str) -> dict:
+    """일정 저장 뒤 맞춤 추천 페이지: 카드 탭(새 신한카드) + 가맹점 탭(일정 프로모션). 문구는 OpenAI."""
+    return _call("POST", f"/internal/users/{user_id}/recommendation-page", POPUP_TIMEOUT_SEC, json={"at": at})
+
+
 def strategy(user_id: int, at: str) -> dict:
     """이번 달 실적 채우기 방식."""
     return _call("GET", f"/internal/users/{user_id}/strategy", OTHER_TIMEOUT_SEC, params={"at": at})

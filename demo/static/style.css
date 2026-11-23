@@ -183,6 +183,8 @@ th.num, td.num { text-align: right; }
 .srow-time { display: flex; align-items: center; gap: 6px; flex: 1; }
 .srow-time input { padding: 8px; }
 .srow-money { display: flex; align-items: center; gap: 10px; }
+.place-chip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 1.2em; color: var(--brand, #0046ff); }
+.place-chip .btn { padding: 4px 10px; }
 .srow-money input { flex: 1; }
 .srow-money span { flex: none; min-width: 72px; text-align: right; }
 .btn.add { align-self: flex-start; }
