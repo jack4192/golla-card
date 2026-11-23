@@ -87,6 +87,25 @@ def test_v4는_이득이_교체_기준보다_크고_근거가_있으면_교체()
     assert (first, swapped) == (102, False)                     # 이득 200원 ≤ 교체 기준 250원
 
 
+def test_v4는_건당_500원_이상_더_주면_실적_가치를_넘지_않아도_교체():
+    """2026-11-23 사용자 결정: 실적 가치(교체 기준)가 커도 점수 차이가 500원 이상이면 바꾼다. 근거 확률 조건은 그대로."""
+    scores = {101: score(101, 650, {"CAFE": 900, "REST": 200}), 102: score(102, 100, {"CAFE": 0, "REST": 250})}
+    first, swapped, gain, _ = v4_swap(scores, SCEN, [101, 102], 102, 2_000.0, Params(), False)
+    assert (first, swapped, gain) == (101, True, 550)              # 교체 기준 2,000원이어도 550원 ≥ 500원
+    scores[101] = score(101, 590, {"CAFE": 800, "REST": 200})
+    first, swapped, gain, _ = v4_swap(scores, SCEN, [101, 102], 102, 2_000.0, Params(), False)
+    assert (first, swapped, gain) == (102, False, 490)             # 490원은 예외가 아니다
+    off = Params(big_gain_swap=0)
+    scores[101] = score(101, 650, {"CAFE": 900, "REST": 200})
+    assert v4_swap(scores, SCEN, [101, 102], 102, 2_000.0, off, False)[:2] == (102, False)   # 0 이면 끈다 (v4.2)
+
+
+def test_v4는_500원_예외도_근거_확률이_낮으면_교체하지_않는다():
+    scores = {101: score(101, 700, {"CAFE": 0, "REST": 3_500}), 102: score(102, 100, {"CAFE": 170, "REST": 0})}
+    scen = ScenarioSet([Scenario("CAFE", 0.8, (5_000,)), Scenario("REST", 0.2, (12_000,))], MODE_TIME, (False, 3))
+    assert v4_swap(scores, scen, [101, 102], 102, 2_000.0, Params(), False)[:2] == (102, False)
+
+
 def test_v4는_근거_확률이_낮으면_교체하지_않는다():
     scores = {101: score(101, 300, {"CAFE": 0, "REST": 750}), 102: score(102, 100, {"CAFE": 170, "REST": 0})}
     scen = ScenarioSet([Scenario("CAFE", 0.8, (5_000,)), Scenario("REST", 0.2, (12_000,))], MODE_TIME, (False, 3))

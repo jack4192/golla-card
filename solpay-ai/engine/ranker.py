@@ -358,13 +358,14 @@ def _expected_amount(scenarios: ScenarioSet) -> float:
 
 def v4_swap(scores: dict[int, CardScore], scenarios: ScenarioSet, order: list[int], base: int, threshold: float,
             params: Params, repeat_applied: bool) -> tuple[int, bool, float, float]:
-    """6단계 교체 판단 (v4). 이득 = 점수 1위 − 기본 카드, 교체 = 이득 > 교체 기준 이고
+    """6단계 교체 판단 (v4). 이득 = 점수 1위 − 기본 카드, 교체 = (이득 > 교체 기준 또는 이득 ≥ big_gain_swap) 이고
     (근거 확률 ≥ evidence_prob 또는 반복 구간). (1순위, 교체했는지, 이득, 근거 확률)"""
     top = order[0]
     gain = scores[top].total - scores[base].total
     evidence = sum(s.prob for s in scenarios.scenarios
                    if scores[top].by_category[s.category] > scores[base].by_category[s.category])
-    swapped = top != base and gain > threshold and (evidence >= params.evidence_prob or repeat_applied)
+    big = params.big_gain_swap > 0 and gain >= params.big_gain_swap      # 큰 혜택은 실적 가치보다 앞선다 (2026-11-23)
+    swapped = top != base and (gain > threshold or big) and (evidence >= params.evidence_prob or repeat_applied)
     return (top if swapped else base), swapped, gain, evidence
 
 
