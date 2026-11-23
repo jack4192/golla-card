@@ -527,13 +527,15 @@ class PlacementService:
 
     def _classify_new(self, q: str, llm) -> tuple[dict, bool]:
         """(사용자와 무관한 분류, 캐시해도 되는지). OpenAI 가 실패한 결과는 캐시하지 않는다 (다음에 다시 시도)."""
-        from engine.place import _candidate, match_place
+        from engine.place import _candidate, match_place, resembles
         catalog = self.engine.catalog
         empty = {"category": None, "brand": None, "brand_name": None}
         m = match_place(q, catalog)
         if m.exact or m.category:
             return {"category": m.category, "brand": m.brand, "brand_name": m.brand_name, "source": "search",
                     "candidates": m.candidates}, True
+        if len({c["brand"] for c in m.candidates if c["brand"]}) >= 2:     # 'GS' 처럼 여러 브랜드면 고르지 않는다
+            return {**empty, "source": "search", "candidates": m.candidates}, True
         if not q or llm is None:
             return {**empty, "source": "none", "candidates": m.candidates}, False
         categories = {c: n for c, n in catalog.category_names.items() if c != "ALL"}
@@ -544,6 +546,8 @@ class PlacementService:
         if answer["category"] == "UNKNOWN":
             return {**empty, "source": "none", "candidates": m.candidates}, True
         brand = answer["brand"]
+        if brand is not None and not resembles(q, brand, brands.get(brand)):
+            brand = None                       # 글에 없는 브랜드를 붙이지 않는다 ('커피 한 잔' → 스타벅스)
         if answer["confidence"] == "low":
             return {**empty, "source": "llm",
                     "candidates": [_candidate(catalog, answer["category"], brand, brands.get(brand))]}, True

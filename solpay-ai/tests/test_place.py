@@ -289,3 +289,35 @@ def test_추천_페이지는_일정_브랜드로_계산(svc):
                 assert i["brand"] == "메가MGC커피"
     finally:
         svc.put_schedule(1, DAY, [], MORNING)
+
+
+# ---------- 평가에서 찾은 검색 버그 (2026-11-23): 업종 이름 부분 일치로 업종을 확정하지 않는다 ----------
+
+@pytest.mark.parametrize("text, wrong", [("동물병원", "HOSPITAL"), ("집", "CHILDCARE"), ("신세게백화점", "DEPARTMENT_STORE")])
+def test_업종_이름이_일부만_겹치면_검색으로_확정하지_않음(catalog, text, wrong):
+    from engine.place import match_place
+    m = match_place(text, catalog)
+    assert m.category is None and m.brand is None
+
+
+# ---------- 평가에서 찾은 틀린 브랜드 2건 (2026-11-23 실제 OpenAI) ----------
+
+def test_검색이_여러_브랜드를_찾으면_OpenAI_로_하나를_고르지_않음(svc):
+    llm, client = _llm([_answer("CONVENIENCE", "GS25")])
+    r = svc.classify_place("GS", llm=llm)
+    assert r["category"] is None and r["brand"] is None and client.requests == []
+    assert {c["brand"] for c in r["candidates"]} >= {"GS25", "GS칼텍스"}
+
+
+def test_OpenAI_브랜드가_글과_닮지_않으면_브랜드는_버림(svc):
+    llm, _ = _llm([_answer("CAFE", "스타벅스")])
+    r = svc.classify_place("커피 한 잔", llm=llm)
+    assert (r["category"], r["brand"], r["source"]) == ("CAFE", None, "llm")
+
+
+@pytest.mark.parametrize("text, brand", [("스타벅쓰", "스타벅스"), ("올영", "올리브영"), ("맥날", "맥도날드"),
+                                         ("파바", "파리바게뜨"), ("투썸", "투썸플레이스")])
+def test_오타_줄임말은_닮았으면_브랜드_유지(svc, text, brand):
+    category = {"스타벅스": "CAFE", "올리브영": "HNB", "맥도날드": "FAST_FOOD", "파리바게뜨": "BAKERY", "투썸플레이스": "CAFE"}[brand]
+    llm, _ = _llm([_answer(category, brand)])
+    assert svc.classify_place(text, llm=llm)["brand"] == brand
