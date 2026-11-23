@@ -25,6 +25,7 @@ import { getActiveWalletCard } from '../data/cards';
 import { canRegisterWalletCard } from '../utils/wallet';
 import { SERVER_MODE, api } from '../utils/api';
 import { suggestionsFor, toChatHistory } from '../utils/homeChat';
+import { useCardCatalog } from '../utils/serverCatalog';
 const NAV = [{
   id: 'home',
   label: '홈',
@@ -280,11 +281,13 @@ export default function MainScreen({
   const [catalogQuery, setCatalogQuery] = useState('');
   const [catalogFilter, setCatalogFilter] = useState('all');
   // 지갑에 등록된 카드의 상품 코드 (카드 탭에서 '내 카드' 표시용)
+  // 카드 탭 상품 목록: 서버 모드에서는 서버 데이터, 아니면 앱 데이터 (utils/serverCatalog.js)
+  const { cards: catalogCards } = useCardCatalog();
   const ownedCatalogCodes = useMemo(() => {
     const codes = new Set(walletCards.map(card => findCatalog40Product(card)?.code || card.catalogCode).filter(Boolean));
     // 상품 목록(CARD_CATALOG_40)에 있는 카드만 세서 '내 카드 N' 숫자와 목록이 맞게 합니다.
-    return new Set(CARD_CATALOG_40.filter(card => codes.has(card.code)).map(card => card.code));
-  }, [walletCards]);
+    return new Set(catalogCards.filter(card => codes.has(card.code)).map(card => card.code));
+  }, [walletCards, catalogCards]);
   const [selectedCatalog, setSelectedCatalog] = useState(null);
   const [registeringCard, setRegisteringCard] = useState(false);
   const currentCard = getActiveWalletCard(walletCards, activeCardId);
@@ -841,10 +844,10 @@ export default function MainScreen({
     </View>;
   const renderCards = () => {
     const query = catalogQuery.trim().toLowerCase();
-    const byQuery = query ? CARD_CATALOG_40.filter(card =>
+    const byQuery = query ? catalogCards.filter(card =>
       [card.name, card.issuer, card.description, ...card.tags, ...card.benefits.map(benefit => benefit.name)]
         .join(' ').toLowerCase().includes(query)
-    ) : CARD_CATALOG_40;
+    ) : catalogCards;
     const results = catalogFilter === 'all' ? byQuery
       : byQuery.filter(card => ownedCatalogCodes.has(card.code) === (catalogFilter === 'owned'));
     return <FlatList style={styles.mainScroll} contentContainerStyle={[styles.pageContent, styles.chatClearance]}

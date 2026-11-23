@@ -3,6 +3,7 @@ import { isMyDataSampleCardId } from './myDataService';
 import * as Store from './demoStore';
 import { CARD_CATALOG } from '../data/cards';
 import { CSV_CARD_CATALOG } from '../data/cardCatalogCsv';
+import { CARD_CATALOG_40 } from '../data/cardCatalog40';
 import { CARD_PRODUCTS } from '../data/cardRecommendationProducts';
 import { readPreferences, savePreferences } from './cardRecommendation';
 import { SERVER_MODE } from './api';
@@ -17,9 +18,23 @@ let pendingWrite = Promise.resolve();
 export const walletIdForCode = code =>
   code === 'SH_SOLMATE_SOL_PLAN_CHECK' ? 'solmate' : code;
 
+// 지갑 카드 상품: 혜택 계산용 22장(cardCatalogCsv)에 있으면 그것을, 없으면 서버 DB 와 같은 40장(cardCatalog40)을 쓴다.
+// 40장에만 있는 카드는 앱의 혜택 계산 데이터가 없어 benefits 를 비워 두고, 상세 혜택은 40장 데이터로 보여 준다.
+export function walletProduct(code) {
+  const csv = CSV_CARD_CATALOG.find(item => item.code === code);
+  if (csv) return csv;
+  const product = CARD_CATALOG_40.find(item => item.code === code);
+  if (!product) return null;
+  return {
+    code: product.code, name: product.name, issuer: product.issuer, type: product.type,
+    annualFee: product.annualFeeDomestic, description: product.description, tags: product.tags || [],
+    benefits: [], catalog40Image: product.image, catalog40Only: true,
+  };
+}
+
 export function buildWallet(preferences) {
   return [...new Set(preferences.owned)].flatMap(code => {
-    const card = CSV_CARD_CATALOG.find(item => item.code === code);
+    const card = walletProduct(code);
     if (!card) return [];
 
     const id = walletIdForCode(code);
@@ -27,7 +42,7 @@ export function buildWallet(preferences) {
       ...card,
       id,
       catalogCode: code,
-      image: CARD_CATALOG[id]?.image ?? CARD_PRODUCTS[code]?.image,
+      image: CARD_CATALOG[id]?.image ?? CARD_PRODUCTS[code]?.image ?? card.catalog40Image,
       number: '직접 등록',
       color: card.issuer.includes('KB') ? '#FFCA4B' : '#1459F5',
       textColor: card.issuer.includes('KB') ? '#263041' : '#FFFFFF',
@@ -41,7 +56,7 @@ export function buildWallet(preferences) {
   });
 }
 
-export const canRegisterWalletCard = code => CSV_CARD_CATALOG.some(card => card.code === code);
+export const canRegisterWalletCard = code => Boolean(walletProduct(code));
 
 export function validWalletId(cards, id) {
   const candidate = walletIdForCode(id);
