@@ -29,6 +29,23 @@ from training.build_priors import placement_mask, priors_from_frame
 KST = ZoneInfo("Asia/Seoul")
 NO_BENEFIT = "9999-12"          # 혜택 계산은 학습에 필요 없다
 
+# 2026-11-23 튜닝 (v2.1 가상 데이터, 1~4월 학습·5~6월 검증, 약 30조합): 검증 로그 손실 1.6452 → 1.6404.
+# 이전 값: 학습률 0.05, 잎 15, L2 5, max_bin 255. 재생 혜택률은 그대로(1.316%)였고 사용자 결정으로 설정값만 바꿨다.
+# 근거: artifacts/data_v2_1/tune, docs/superpowers/specs/2026-11-23-data-v2.1-routines-design.md
+LGB_PARAMS = {"learning_rate": 0.03, "num_leaves": 31, "min_data_in_leaf": 40, "feature_fraction": 0.7,
+              "lambda_l2": 20.0, "seed": 20261127, "verbose": -1, "num_threads": 4}
+MAX_BIN = 63            # Dataset 을 만들 때 정해지는 값
+MAX_ROUNDS = 2000       # 학습률을 낮춰서 넉넉히 두고 조기 종료로 멈춘다
+EARLY_STOP = 30
+
+
+def train_params(n_class: int) -> dict:
+    return {"objective": "multiclass", "num_class": n_class, "metric": "multi_logloss", **LGB_PARAMS}
+
+
+def dataset(x, y, names: list[str], categorical: list[str]) -> lgb.Dataset:
+    return lgb.Dataset(x, label=y, feature_name=names, categorical_feature=categorical, params={"max_bin": MAX_BIN})
+
 
 def collect(df, users, cards, catalog, params, categories, train_from, train_until, test_until, priors):
     train_x, train_y, test_x, test_y, baseline = [], [], [], [], []
@@ -68,7 +85,7 @@ def main() -> None:
     parser.add_argument("--train-from", default="2026-01-01")     # 2025-11~12 은 이력으로만
     parser.add_argument("--train-until", default="2026-07-01")    # 1~6월로 학습
     parser.add_argument("--test-until", default="2026-11-01")     # 7~10월로 평가
-    parser.add_argument("--rounds", type=int, default=400)
+    parser.add_argument("--rounds", type=int, default=MAX_ROUNDS)
     args = parser.parse_args()
     params = Params()
     moment = lambda s: datetime.fromisoformat(s).replace(tzinfo=KST)
@@ -87,14 +104,10 @@ def main() -> None:
     order = np.random.default_rng(20261127).permutation(len(y))
     fit, valid = order[:split], order[split:]
     names = feature_names(categories)
-    train_set = lgb.Dataset(x[fit], label=y[fit], feature_name=names, categorical_feature=["prev_category"])
+    train_set = dataset(x[fit], y[fit], names, ["prev_category"])
     valid_set = lgb.Dataset(x[valid], label=y[valid], reference=train_set)
-    booster = lgb.train(
-        {"objective": "multiclass", "num_class": len(categories), "metric": "multi_logloss",
-         "learning_rate": 0.05, "num_leaves": 15, "min_data_in_leaf": 40, "feature_fraction": 0.7,
-         "lambda_l2": 5.0, "seed": 20261127, "verbose": -1, "num_threads": 4},
-        train_set, num_boost_round=args.rounds, valid_sets=[valid_set],
-        callbacks=[lgb.early_stopping(25, verbose=False)])
+    booster = lgb.train(train_params(len(categories)), train_set, num_boost_round=args.rounds, valid_sets=[valid_set],
+                        callbacks=[lgb.early_stopping(EARLY_STOP, verbose=False)])
     model = CategoryModel(booster, categories)
     model.save(ARTIFACTS)
 

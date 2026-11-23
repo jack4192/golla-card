@@ -138,6 +138,65 @@
     }
    }
   },
+  "/internal/places/classify": {
+   "post": {
+    "summary": "Classify Place",
+    "description": "일정 '직접 입력'의 짧은 말을 업종·가맹점 브랜드로 (2026-11-23). 가맹점·별칭·업종 검색이 먼저(source=search),\n못 찾으면 OpenAI 가 목록 안에서 고른다(llm). 확신이 낮으면 candidates 만, 실패하면 none. amount_hint 는 예상 금액.",
+    "operationId": "classify_place_internal_places_classify_post",
+    "parameters": [
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PlaceBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Classify Place Internal Places Classify Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/internal/users/{user_id}/schedules/{day}": {
    "put": {
     "summary": "Put Schedule",
@@ -1932,6 +1991,44 @@
     ],
     "title": "PaymentBody"
    },
+   "PlaceBody": {
+    "properties": {
+     "text": {
+      "type": "string",
+      "maxLength": 100,
+      "title": "Text"
+     },
+     "user_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User Id"
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "text"
+    ],
+    "title": "PlaceBody",
+    "description": "일정 '직접 입력'의 짧은 말 (2026-11-23). 원문은 저장하지 않는다."
+   },
    "RankBody": {
     "properties": {
      "user_id": {
@@ -2093,6 +2190,18 @@
       "maximum": 10000000.0,
       "exclusiveMinimum": 0.0,
       "title": "Amount"
+     },
+     "brand": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 40
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Brand"
      }
     },
     "type": "object",

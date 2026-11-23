@@ -61,6 +61,7 @@ class ScheduleItemBody(BaseModel):
     end: time
     category: str = Field(max_length=40)
     amount: int = Field(gt=0, le=10_000_000)
+    brand: str | None = Field(default=None, max_length=40)   # 가맹점 브랜드 코드 (직접 입력 분류, 2026-11-23)
 
 
 class ScheduleBody(BaseModel):
@@ -68,6 +69,13 @@ class ScheduleBody(BaseModel):
 
 
 class AtBody(BaseModel):
+    at: datetime | None = None
+
+
+class PlaceBody(BaseModel):
+    """일정 '직접 입력'의 짧은 말 (2026-11-23). 원문은 저장하지 않는다."""
+    text: str = Field(max_length=100)
+    user_id: int | None = None
     at: datetime | None = None
 
 
@@ -223,6 +231,8 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         app.state.chat = ChatAgent(app.state.service, client)
         app.state.page_writer = PageCopyWriter(client, CopySettings.from_env())
         app.state.report_writer = ReportCopyWriter(client, CopySettings.from_env(ReportCopyWriter.settings_env))
+        from engine.chat.place_llm import PlaceLLM
+        app.state.place_llm = PlaceLLM(client)
         store = app.state.service.store
         purge = None
         if getattr(store, "purge_daily", False):          # DB 저장소: 지난 일정은 요청 밖에서 지운다 (engine/jobs.py)
@@ -285,7 +295,18 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
 
     def _schedule_out(items) -> list[dict]:
         return [{"start": i.start.strftime("%H:%M"), "end": i.end.strftime("%H:%M"), "category": i.category,
-                 "amount": i.amount} for i in items]
+                 "amount": i.amount, "brand": i.brand} for i in items]
+
+    @app.post("/internal/places/classify", dependencies=[Depends(check_token)])
+    def classify_place(body: PlaceBody, request: Request, svc: PlacementService = Depends(current)) -> dict:
+        """일정 '직접 입력'의 짧은 말을 업종·가맹점 브랜드로 (2026-11-23). 가맹점·별칭·업종 검색이 먼저(source=search),
+        못 찾으면 OpenAI 가 목록 안에서 고른다(llm). 확신이 낮으면 candidates 만, 실패하면 none. amount_hint 는 예상 금액."""
+        if not body.text.strip():
+            raise HTTPException(status_code=422, detail="가게 이름을 입력해 주세요")
+        try:
+            return svc.classify_place(body.text, body.user_id, _kst(body.at), request.app.state.place_llm)
+        except UnknownUser:
+            raise HTTPException(status_code=404, detail="없는 사용자입니다")
 
     @app.put("/internal/users/{user_id}/schedules/{day}", dependencies=[Depends(check_token)])
     def put_schedule(user_id: int, day: date, body: ScheduleBody, at: datetime | None = None,

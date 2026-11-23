@@ -276,7 +276,7 @@ class TeamDbPgStore:
     def put_schedule(self, user_id: int, day, items: list[ScheduleItem]) -> None:
         self.user(user_id)
         payload = [{"start": i.start.isoformat(), "end": i.end.isoformat(), "category": i.category,
-                    "amount": i.amount} for i in items]
+                    "amount": i.amount, "brand": i.brand} for i in items]
         with self._connect() as c, c.transaction():
             c.execute(f"delete from {self.a}.schedules where user_id = %s and day = %s", (user_id, day))
             if payload:
@@ -291,7 +291,7 @@ class TeamDbPgStore:
             return []
         items = self.cipher.decrypt(bytes(row["payload"]))["items"]
         return [ScheduleItem(i + 1, user_id, datetime.fromisoformat(x["start"]), datetime.fromisoformat(x["end"]),
-                             x["category"], int(x["amount"])) for i, x in enumerate(items)]
+                             x["category"], int(x["amount"]), x.get("brand")) for i, x in enumerate(items)]
 
     def schedules_or_empty(self, user_id: int, day) -> list[ScheduleItem]:
         """배치용 일정. 읽지 못하면(암호 키가 바뀜, 값이 깨짐) 일정이 없는 것으로 보고 소비 패턴으로 배치하게 한다
