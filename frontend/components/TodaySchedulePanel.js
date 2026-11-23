@@ -6,7 +6,10 @@ import { CSV_CARD_CATALOG } from '../data/cardCatalogCsv';
 import { evaluatePdfCard, PAYMENT_SCENARIOS } from '../data/paymentBenefits';
 import { benefitText } from '../utils/cardRecommendation';
 import { DAYS, routineLabel } from '../utils/routineDetails';
-import { isScheduleBenefitAt, matchesScheduleBenefit } from '../utils/schedulePayment';
+import { isScheduleBenefitAt, makeSchedulePaymentScenario, matchesScheduleBenefit } from '../utils/schedulePayment';
+import { SERVER_MODE } from '../utils/api';
+import { loadAiEstimates } from '../utils/aiEstimate';
+import { bestCardOf } from '../utils/aiEstimateCore';
 import { SCHEDULE_SAMPLES } from '../data/samplePayment';
 import { resolveWalletProduct } from './WalletProductCard';
 import SpecialScheduleModal from './SpecialScheduleModal';
@@ -150,6 +153,8 @@ export default function TodaySchedulePanel({
   const [selection, setSelection] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  // 서버 모드: 일정 업종별로 AI 가 계산한 '가장 많이 주는 내 카드' { [앱 업종]: { walletId, value } | null }
+  const [aiByCategory, setAiByCategory] = useState({});
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     if (disabled) return;
@@ -219,6 +224,18 @@ export default function TodaySchedulePanel({
   const sampleMatch = sample && findScheduleCard([sample.category], sample.cards.map(toScheduleProduct),
     new Date(`${day}T${sample.start}:00`));
   const sampleCard = sample && (sampleMatch?.card || sample.cards[0]);
+  // 일정 업종의 카드: 서버 모드에서 AI 계산이 있으면 그것을, 아직 없거나 데모 모드면 앱 계산을 쓴다.
+  const matchFor = (categories, when) => {
+    if (SERVER_MODE && categories.length && categories.every(category => aiByCategory[category] !== undefined)) {
+      const best = categories.map(category => aiByCategory[category] && { ...aiByCategory[category], category })
+        .filter(Boolean).sort((a, b) => b.value - a.value)[0];
+      const card = best && cards.find(item => item.id === best.walletId);
+      if (!card) return null;
+      const label = `${best.value.toLocaleString('ko-KR')}원 예상 혜택 · AI 계산`;
+      return { card, label, benefitName: label, category: best.category };
+    }
+    return findScheduleCard(categories, products, when);
+  };
   const timeline = [
     ...dailyBasicSchedule(profile, day).map(({ label, category, start, end }) => {
       const time = hourLabel(start);
@@ -238,7 +255,8 @@ export default function TodaySchedulePanel({
         description: '평소 일과 · ' + (category ? CATEGORIES[category].label : '저장한 점심 시간'),
         inProgress,
         basic: true,
-        match: category ? findScheduleCard([category], products, matchTime) : null,
+        cats: category ? [category] : [],
+        match: category ? matchFor([category], matchTime) : null,
       };
     }),
     ...routines.map(row => {
@@ -250,7 +268,8 @@ export default function TodaySchedulePanel({
         label: routineLabel(row), time: row.start, timeCaption: eventTimeCaption(row),
         startDate, endDate,
         description: '평소 일과', inProgress,
-        match: findScheduleCard([row.category], products, inProgress ? clock : startDate),
+        cats: [row.category],
+        match: matchFor([row.category], inProgress ? clock : startDate),
       };
     }),
     ...todayEvents.map(event => {
@@ -268,10 +287,32 @@ export default function TodaySchedulePanel({
         timeCaption:eventTimeCaption(event),
         description:event.memo || (timed ? '특별 일정' : '특별 일정 · 시간 미지정'),
         inProgress,
-        match:findScheduleCard(categories, products, inProgress ? clock : startDate),
+        cats: categories,
+        match: matchFor(categories, inProgress ? clock : startDate),
       };
     }),
   ].sort((a, b) => (a.time || '24:00').localeCompare(b.time || '24:00'));
+  // 타임라인에 나온 업종마다 AI 에 한 번씩 묻는다 (일정 예시 금액으로)
+  const categoryKey = [...new Set(timeline.flatMap(row => row.cats || []))].sort().join(',');
+  const walletKey = cards.map(card => card.id).join(',');
+  useEffect(() => {
+    if (!SERVER_MODE || !categoryKey) return undefined;
+    let stopped = false;
+    for (const category of categoryKey.split(',')) {
+      const scenario = makeSchedulePaymentScenario({ category });
+      if (!scenario) continue;   // AI 업종이 없는 것(직접 입력 업종 등)은 앱 계산을 쓴다
+      loadAiEstimates(scenario).then(rows => {
+        if (stopped) return;
+        // AI 가 답하지 못하면(rows=null) 그 업종은 앱 계산을 쓰도록 비워 둔다
+        setAiByCategory(value => {
+          const next = { ...value };
+          if (rows) next[category] = bestCardOf(rows); else delete next[category];
+          return next;
+        });
+      });
+    }
+    return () => { stopped = true; };
+  }, [categoryKey, walletKey]);
   const firstMatch = timeline.find(row => row.match);
   const currentMatch = timeline.find(row => row.date && row.inProgress && row.match)
     || timeline.find(row => row.inProgress && row.match);

@@ -17,6 +17,7 @@ import { makeSchedulePaymentScenario } from '../utils/schedulePayment';
 import { estimateCatalogBenefit, matchesCatalogPaymentBenefit } from '../utils/catalogPayment';
 import { SERVER_MODE } from '../utils/api';
 import { loadPlacement } from '../utils/aiPlacement';
+import { loadAiEstimates } from '../utils/aiEstimate';
 const SCENARIOS = [{
   id: 'coffee',
   merchant: '스타벅스',
@@ -39,11 +40,13 @@ const SCENARIOS = [{
   category: /편의점/,
   brand: /GS25/i
 }, {
-  id: 'general',
-  merchant: '일반 가맹점',
+  // 2026-11-23 결정: '일반 가맹점'은 AI 가 계산할 업종이 없어 음식점으로 바꿈
+  id: 'restaurant',
+  merchant: '음식점',
+  categoryCode: 'RESTAURANT',
   amount: 30000,
-  category: /기본.*국내|국내.*기본|심플 할인.*국내|국내 가맹점|일상 생활비/,
-  brand: /국내|기본/
+  category: /음식점|외식|식당|요식/,
+  brand: /음식점/
 }];
 const won = value => Number(value || 0).toLocaleString('ko-KR') + '원';
 const reward = row => Number.isFinite(row?.value) ? Number(row.value).toLocaleString('ko-KR') + (row.unit === 'KRW' ? '원' : row.unit === 'POINT' ? 'P' : ' ' + row.unit) : '혜택 조건 확인 필요';
@@ -319,10 +322,21 @@ export default function PaymentScreen({
   const scheduleScenario = useMemo(() => makeSchedulePaymentScenario(schedule), [schedule]);
   const scenario = scheduleScenario || SCENARIOS.find(item => item.id === scenarioId) || SCENARIOS[0];
   const contextKey = scenario.id + ':' + assume;
+  // 서버 모드: AI 엔진 계산(실적·한도·행사 반영). 데모 모드이거나 AI 가 답하지 못하면 앱 계산을 쓴다.
+  const [aiEstimates, setAiEstimates] = useState({ key: null, rows: null });
+  const scenarioKey = scenario.id + ':' + (scenario.schedule?.id || '') + ':' + scenario.amount;
+  useEffect(() => {
+    if (!SERVER_MODE) return undefined;
+    let stopped = false;
+    loadAiEstimates(scenario).then(rows => { if (!stopped) setAiEstimates({ key: scenarioKey, rows }); });
+    return () => { stopped = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scenarioKey]);
   const estimates = useMemo(() => {
     const transactionDate = new Date();
-    return options.map(card => ({ card, benefit: estimatePayment(card, scenario, assume, transactionDate) }));
-  }, [options, scenario, assume]);
+    const ai = aiEstimates.key === scenarioKey ? aiEstimates.rows : null;
+    return options.map(card => ({ card, benefit: ai?.[card.id] || estimatePayment(card, scenario, assume, transactionDate) }));
+  }, [options, scenario, assume, aiEstimates, scenarioKey]);
   const selectedBenefit = estimates.find(row => row.card.id === selected?.id)?.benefit;
   const baseBenefit = estimates.find(row => row.card.id === baseline?.id)?.benefit;
   const difference = selected?.id === baseline?.id ? null : comparePayment(selectedBenefit, baseBenefit);
@@ -681,7 +695,9 @@ export default function PaymentScreen({
               </>}
 
             <Text style={s.bxFoot}>
-              {scheduleScenario
+              {aiEstimates.key === scenarioKey && aiEstimates.rows
+                ? (scheduleScenario ? '일정 업종에 맞춘 결제 예시예요. ' : '') + '이번 달 실적·한도와 진행 중인 행사를 반영해 AI가 계산했어요.'
+                : scheduleScenario
                 ? '일정 업종에 맞춘 결제 예시예요. 실제 혜택은 가맹점·실적·잔여 한도에 따라 달라요.'
                 : '전월 실적 기록이 없으면 40만 원으로 계산한 예시예요.'}
             </Text>

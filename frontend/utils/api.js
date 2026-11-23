@@ -129,6 +129,12 @@ export const api = {
   aiRank: () => request('/api/ai/rank', { method: 'POST', auth: true, timeout: AI_RANK_TIMEOUT_MS }),
   // 챗봇. body: { message, history: [{ role, text }], screen: { name, recommendation_id } }
   aiChat: body => request('/api/ai/chat', { method: 'POST', auth: true, body, timeout: AI_CHAT_TIMEOUT_MS }),
+  // 가정 계산: body { category_code, amount, merchant_id? } → { cards: [{ user_card_id, benefit, promotion, promotion_label }] }
+  aiEvaluate: body => request('/api/ai/payments/evaluate', { method: 'POST', auth: true, body }),
+  // AI 가맹점 목록: [{ merchant_id, name, category_code, category_name }]
+  aiMerchants: () => request('/api/ai/merchants', { auth: true }),
+  // 맞춤 추천 페이지: { tabs, card, merchant: { offers } } (AI 가 카드날·행사 여부로 탭을 정한다)
+  aiRecommendationPage: () => request('/api/ai/recommendation-page', { method: 'POST', auth: true, timeout: AI_CHAT_TIMEOUT_MS }),
   aiConfirmRuleDraft: draftId => request('/api/ai/rules/drafts/' + encodeURIComponent(draftId) + '/confirm', { method: 'POST', auth: true }),
   aiCancelRuleDraft: draftId => request('/api/ai/rules/drafts/' + encodeURIComponent(draftId) + '/cancel', { method: 'POST', auth: true }),
 };

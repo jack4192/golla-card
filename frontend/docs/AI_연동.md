@@ -93,6 +93,23 @@ node --test utils/__tests__/aiPlacementCore.test.mjs utils/__tests__/scheduleCat
 ## 아직 안 한 것
 
 - QR 결제 시트에는 AI 배치가 없다.
-- 앱 카드 데이터(22장)에 없는 서버 카드는 지갑에서 빠지지만, AI 는 서버의 모든 카드를 보고 답한다. 그래서 AI 가 지갑에 안 보이는 카드를 말할 수 있다.
+- 지갑은 혜택 계산용 22장(`data/cardCatalogCsv.js`)에 없는 카드를 서버 DB 와 같은 40장(`data/cardCatalog40.json`)으로 보여 준다 (2026-11-23). 이 18장은 앱 자체의 '예상 혜택' 계산 데이터가 없어 '조건 확인 필요'로 보이고, AI 배치·챗봇은 그대로 계산한다.
 - 맞춤 추천·월간 리포트 화면은 붙이지 않았다. '올해 카드 결산'(`components/YearEndReport.js`)은 앱 자체 계산이고 AI 의 연말정산 API(`/api/ai/missed-benefit`)를 쓰지 않는다.
 - 평소 일과(루틴)는 서버에 올리지 않는다.
+
+## 카드 데이터를 서버로 옮기기 (2026-11-23 진행 중)
+
+앱 안의 카드 데이터를 없애고 서버 데이터만 쓰기로 했다. 단계: 1) 표시를 서버 데이터로 2) 이미지를 서버로 3) 앱 자체 혜택 계산을 AI 엔진으로 4) 앱 카드 데이터 삭제.
+
+- 1단계(완료): 카드 탭 상품 목록·검색·상세 혜택을 `/api/card-products`(목록)와 `/api/card-products/{번호}`(상세)에서 읽는다 (`utils/serverCatalog.js`, 변환은 `utils/serverCatalogCore.js`).
+  데모 모드이거나 서버에서 못 읽으면 앱 데이터(`data/cardCatalog40.json`)를 쓴다. 이미지는 아직 앱 안의 것을 카드 이름으로 찾아 쓴다.
+- 2단계(완료): 카드 이미지 40장을 백엔드가 직접 제공한다 (`backend/src/main/resources/static/card-images/{카드번호}.webp`, 주소 `/card-images/{카드번호}.webp`, 로그인 없이 받음).
+  카드사 사이트에서 내려받아 둔 앱 안의 이미지를 옮긴 것이라 카드사 주소에 기대지 않는다. DB 의 `image_url` 이 있으면 그것이 먼저다 (지금은 비어 있어 DB 는 고치지 않았다).
+  카드 상품 목록·상세·내 카드 응답의 `imageUrl` 에 이 주소가 들어가고, 앱은 서버 주소를 붙여 쓴다.
+- 3단계(진행): 앱 자체 혜택 계산을 AI 엔진으로.
+  - 결제 화면 '이 거래의 예상 혜택': `/api/ai/payments/evaluate` (실적·한도·행사 반영, `utils/aiEstimate.js`·`aiEstimateCore.js`). 예시 거래 '일반 가맹점'은 음식점 30,000원으로 바꿈.
+  - '일정 맞춤 추천'(카드 추천·프로모션 추천): `/api/ai/recommendation-page`. 탭은 AI 규칙(카드날에만 카드 탭, 행사 없으면 카드 탭만)을 따른다 (`utils/aiRecommendCore.js`). AI 추천은 연말 결산 기록에 남기지 않는다.
+  - 가입 직후 '일과 맞춤 카드 추천': AI 맞춤 추천에 카드가 있으면 맨 앞에, 없으면(결제 내역 없는 새 가입자) 설문 기반 앱 계산.
+  - 홈 '오늘의 일정'의 일정별 카드(`components/TodaySchedulePanel.js`): 일정 업종마다 AI 계산(예시 금액)으로 가장 많이 주는 내 카드. 직접 입력 업종처럼 AI 업종이 없거나 AI 가 답하지 못하면 앱 계산.
+  - 데모 모드와 AI 가 답하지 못할 때의 대체 계산은 아직 앱 데이터를 쓴다 (4단계에서 정리).
+
