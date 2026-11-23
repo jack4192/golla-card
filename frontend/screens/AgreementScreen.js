@@ -1,0 +1,239 @@
+import FlowHeading from '../components/FlowHeading';
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+function CheckRow({
+  title,
+  description,
+  checked,
+  disabled,
+  onPress
+}) {
+  return <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={title} accessibilityState={{
+    checked,
+    disabled
+  }} disabled={disabled} onPress={onPress} style={[styles.checkRow, checked && styles.selected, disabled && styles.disabled]}>
+      <Text style={[styles.square, checked && styles.squareChecked]}>
+        {checked ? '✓' : ''}
+      </Text>
+
+      <View style={styles.flex}>
+        <Text style={styles.checkTitle}>
+          {title}
+        </Text>
+
+        <Text style={styles.hint}>
+          {description}
+        </Text>
+      </View>
+    </TouchableOpacity>;
+}
+export default function AgreementScreen({
+  onNext,
+  onBack,
+  initialConsent = null,
+  initialDraft = null,
+  onDraftChange = () => {}
+}) {
+  const [choices, setChoices] = useState(() => {
+    const saved = initialDraft ?? initialConsent;
+    return {
+      termsAgreed: saved?.termsAgreed === true,
+      morningNotificationAgreed: saved?.morningNotificationAgreed === true
+    };
+  });
+  const { termsAgreed, morningNotificationAgreed } = choices;
+  const [pending, setPending] = useState('');
+  const [message, setMessage] = useState('');
+  const mounted = useRef(true);
+  const lock = useRef(false);
+  const busy = !!pending;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const toggleChoice = key => {
+    if (lock.current) return;
+    const next = { ...choices, [key]: !choices[key] };
+    setChoices(next);
+    setMessage('');
+    onDraftChange(next);
+  };
+  const next = async () => {
+    if (lock.current || !termsAgreed) return;
+    lock.current = true;
+    setPending('save');
+    setMessage('');
+    try {
+      if (typeof onNext !== 'function') {
+        throw Error('다음 화면 연결을 확인해주세요.');
+      }
+      await onNext(choices);
+    } catch (error) {
+      if (mounted.current) {
+        setMessage(error.message || '선택 사항을 저장하지 못했습니다. 다시 시도해주세요.');
+      }
+    } finally {
+      lock.current = false;
+      if (mounted.current) {
+        setPending('');
+      }
+    }
+  };
+  return <View style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => onBack?.()} style={styles.back}>
+          <Text style={styles.link}>
+            ← 뒤로
+          </Text>
+        </TouchableOpacity>
+
+        <FlowHeading brand icon="document-text-outline">
+          서비스 이용 동의
+        </FlowHeading>
+
+        <Text style={styles.hint}>
+          필수 항목을 확인한 뒤, 사용할 선택 기능을 골라주세요.
+        </Text>
+
+        <View style={styles.group}>
+          <Text accessibilityRole="header" style={styles.section}>필수 항목</Text>
+          <CheckRow
+            title="[필수] 서비스 이용 동의"
+            description="일과와 일정을 저장하고, 이를 바탕으로 카드 혜택을 추천해요. 계좌 연결, 실제 결제, 카드 발급은 현재 제공되지 않아요."
+            checked={termsAgreed}
+            disabled={busy}
+            onPress={() => toggleChoice('termsAgreed')}
+          />
+        </View>
+
+        <View style={styles.group}>
+          <Text accessibilityRole="header" style={styles.section}>선택 항목</Text>
+          <Text style={styles.hint}>선택 항목을 건너뛰어도 홈, 일정 관리와 일과 기반 카드 추천을 이용할 수 있어요.</Text>
+          <CheckRow
+            title="[선택] 알림 수신 동의"
+            description="아침 일정과 혜택 알림을 받아볼 수 있어요."
+            checked={morningNotificationAgreed}
+            disabled={busy}
+            onPress={() => toggleChoice('morningNotificationAgreed')}
+          />
+        </View>
+
+        {!!message && <Text style={styles.message} accessibilityLiveRegion="polite">
+            {message}
+          </Text>}
+
+      </ScrollView>
+
+      <TouchableOpacity accessibilityRole="button" disabled={busy || !termsAgreed} style={[styles.primary, (busy || !termsAgreed) && styles.disabled]} onPress={next}>
+        {pending === 'save' ? <ActivityIndicator color="#FFF" /> : <Text style={styles.white}>
+            동의하고 계속하기
+          </Text>}
+      </TouchableOpacity>
+    </View>;
+}
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: "#F4F7FF"
+  },
+  content: {
+    padding: 22,
+    paddingBottom: 40,
+    gap: 18,
+    width: "100%",
+    maxWidth: 640,
+    alignSelf: "center",
+    paddingTop: 12
+  },
+  flex: {
+    flex: 1
+  },
+  back: {
+    paddingVertical: 10,
+    alignSelf: 'flex-start',
+    minHeight: 44
+  },
+  hint: {
+    fontSize: 13,
+    lineHeight: 22,
+    color: "#5A6E89"
+  },
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#E4EAF3',
+    borderRadius: 18,
+    padding: 18,
+    backgroundColor: "#FFFFFF",
+    minHeight: 64
+  },
+  selected: {
+    borderColor: "#104FE7",
+    backgroundColor: "#EDF3FF"
+  },
+  square: {
+    width: 24,
+    height: 24,
+    borderWidth: 1,
+    borderColor: '#B3BED0',
+    borderRadius: 7,
+    textAlign: 'center',
+    lineHeight: 22,
+    color: "#FFFFFF",
+    fontWeight: "800"
+  },
+  squareChecked: {
+    backgroundColor: "#104FE7",
+    borderColor: "#104FE7"
+  },
+  checkTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: "#142D4E",
+    lineHeight: 22,
+    marginBottom: 5
+  },
+  section: {
+    fontSize: 18,
+    color: "#142D4E",
+    fontWeight: '800',
+    marginTop: 12
+  },
+  group: { gap: 10 },
+  link: {
+    color: "#104FE7",
+    fontSize: 13,
+    fontWeight: "700"
+  },
+  primary: {
+    margin: 0,
+    padding: 16,
+    minHeight: 54,
+    backgroundColor: "#104FE7",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 16,
+    width: "90%",
+    maxWidth: 552,
+    alignSelf: "center",
+    marginTop: 12,
+    marginBottom: 20
+  },
+  white: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700"
+  },
+  message: {
+    color: '#88512E',
+    fontSize: 13,
+    lineHeight: 22
+  },
+  disabled: {
+    opacity: 0.5
+  }
+});

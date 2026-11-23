@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+
+# Expo / build
+.expo/
+dist/
+dist-*/
+web-build/
+expo-env.d.ts
+solpay-web-ready.zip
+
+# Local backups
+*.bak
+*.before-*
+*.preview-backup
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.pem
+*.mobileprovision
+/ios
+/android
+
+# Metro
+.metro-health-check*
+
+# Logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment / credentials
+.env
+.env.*
+.env*.local
+!.env.example
+!.env.sample
+secrets/
+.credentials/
+.aws/
+
+# TypeScript
+*.tsbuildinfo
