@@ -93,9 +93,24 @@ class Promotion:
     title: str = ""
     kind: str = "event"                 # event / myshop
     needs_check: bool = False           # 엔진이 확인할 수 없는 조건이 있어 계산에서 뺀다
+    # 화면용 (2026-11-23, DB promotions 표의 화면용 칸). 점수 기간은 starts_at~ends_at 그대로
+    display_name: str = ""              # 화면 이름 (없으면 brand)
+    shown_from: datetime | None = None  # 실제 행사 기간: '지금 진행 중' 판단과 화면 기간
+    shown_to: datetime | None = None
+    logo_url: str | None = None
 
     def active(self, at: datetime) -> bool:
         return self.starts_at <= at <= self.ends_at
+
+    @property
+    def name(self) -> str:
+        return self.display_name or self.brand
+
+    def shown(self, at: datetime) -> bool:
+        """지금 진행 중인지 (실제 행사 기간). 실제 기간이 없으면 점수 기간과 같다."""
+        if self.shown_from is None or self.shown_to is None:
+            return self.active(at)
+        return self.shown_from <= at <= self.shown_to
 
     def applies(self, merchant_id: int, card_issuer: str, card_id: int, at: datetime) -> bool:
         if self.needs_check or not self.active(at) or merchant_id not in self.merchant_ids:
