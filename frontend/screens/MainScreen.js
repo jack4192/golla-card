@@ -251,9 +251,10 @@ export default function MainScreen({
   walletCards = [],
   activeCardId,
   onRegisterCard,
+  initialTab = 'home',
   onSelectCard = () => {}
 }) {
-  const [tab, setTab] = useState('home');
+  const [tab, setTab] = useState(initialTab || 'home');   // '일정 다시 확인'으로 돌아오면 오늘의 일정 탭 (2026-11-24)
   const [schedulePayment, setSchedulePayment] = useState(null);
   const [sampleActive, setSampleActive] = useState(null);
   const [adRequest, setAdRequest] = useState(null);
