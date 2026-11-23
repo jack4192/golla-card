@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import FlowHeading from '../components/FlowHeading';
+import ScheduleTimeFields from '../components/ScheduleTimeFields';
 import { dateKey, deleteEvent, eventTimeCaption, eventTitle, readEvents, saveEvent } from '../utils/routineData';
 import { INDUSTRIES, INDUSTRY_ICONS, ROUTINE_TITLE_LIMIT } from '../utils/routineDetails';
 
@@ -391,29 +392,18 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
                 <Ionicons name="close" size={26} color="#385988" accessible={false} />
               </TouchableOpacity>
             </View>
-            {/* 시간: 직접 타이핑하거나 −1시간·−30분·+30분·+1시간 버튼으로 조절 */}
-            {[['start', '시작', start, setStartAt], ['end', '종료', end, setEndAt]].map(([key, label, value, setAt]) => {
-              // −10분 −30분 −1시간 [시간] +10분 +30분 +1시간
-              const adjust = list => list.map(([delta, text]) => (
-                <TouchableOpacity key={delta} accessibilityRole="button" accessibilityLabel={label + ' ' + text} disabled={disabled}
-                  onPress={() => setAt(toMinutes(value) + delta)} style={s.adjustButton}>
-                  <Text style={s.adjustText}>{text}</Text>
-                </TouchableOpacity>
-              ));
-              return <View key={key} style={s.timeBlock}>
-                <Text style={s.timeLabel}>{label}</Text>
-                <View style={s.timeRow}>
-                {adjust([[-10, '−10분'], [-30, '−30분'], [-60, '−1시간']])}
-                <TextInput accessibilityLabel={label + ' 시간 입력'} style={s.timeInput} editable={!disabled}
-                  value={timeDraft[key] ?? value} onChangeText={text => typeTime(key, text)}
-                  onFocus={() => setTimeDraft(current => ({ ...current, [key]: '' }))}
-                  onBlur={() => { if (timeDraft[key] === '') setTimeDraft(current => ({ ...current, [key]: undefined })); else commitTyped(key); }}
-                  onSubmitEditing={() => commitTyped(key)}
-                  keyboardType="number-pad" placeholder="0930" placeholderTextColor="#9AAAC0" maxLength={5} returnKeyType="done" />
-                {adjust([[10, '+10분'], [30, '+30분'], [60, '+1시간']])}
-                </View>
-              </View>;
-            })}
+            <ScheduleTimeFields disabled={disabled}
+              onAdjust={(key, delta) => (key === 'start' ? setStartAt : setEndAt)(toMinutes(form[key]) + delta)}
+              inputProps={key => ({
+                value: timeDraft[key] ?? form[key],
+                onChangeText: text => typeTime(key, text),
+                onFocus: () => setTimeDraft(current => ({ ...current, [key]: '' })),
+                onBlur: () => {
+                  if (timeDraft[key] === '') setTimeDraft(current => ({ ...current, [key]: undefined }));
+                  else commitTyped(key);
+                },
+                onSubmitEditing: () => commitTyped(key),
+              })} />
             <Text style={s.durationHint}>{duration > 0 ? `${Math.floor(duration / 60) ? Math.floor(duration / 60) + '시간 ' : ''}${duration % 60 ? duration % 60 + '분' : ''}`.trim() + ' 동안' : ''}</Text>
             <ScrollView style={s.editorScroll} keyboardShouldPersistTaps="handled">
               <View style={s.directEntry}>
@@ -466,11 +456,6 @@ const s = StyleSheet.create({
   durationChipActive: { backgroundColor: '#E2EDFF', borderColor: '#8CA8EF' },
   durationText: { color: '#385988', fontSize: 13, fontWeight: '700' },
   durationTextActive: { color: '#1854D8' },
-  timeBlock: { gap: 4 },
-  timeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 },
-  timeInput: { width: 70, minHeight: 40, marginHorizontal: 3, borderRadius: 12, borderWidth: 1, borderColor: '#C9D8F2', backgroundColor: '#FFFFFF', textAlign: 'center', color: '#152D50', fontSize: 17, fontWeight: '800' },
-  adjustButton: { paddingHorizontal: 5, minHeight: 28, justifyContent: 'center', borderRadius: 8, backgroundColor: '#F1F5FD' },
-  adjustText: { color: '#1854D8', fontSize: 11, fontWeight: '700' },
   durationHint: { color: '#5A6E89', fontSize: 12, textAlign: 'center' },
   countRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   clearButton: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, minHeight: 30, borderRadius: 15, backgroundColor: '#FDEDEF' },
