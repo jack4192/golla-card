@@ -35,6 +35,7 @@ class RankBody(BaseModel):
     user_id: int
     at: datetime | None = None
     explain: bool = False                  # 추천 근거를 함께 받는다 (시연·로그 확인용)
+    record: bool = True                    # 추천 기록을 남긴다. 앱 홈 일정 카드 미리보기는 false (같은 계산, 기록 없음)
 
 
 class CardBody(BaseModel):
@@ -276,7 +277,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         at = _kst(body.at)
         req = RankRequest(body.user_id, at)
         try:
-            recommendation_id, result = svc.rank(req)
+            recommendation_id, result = svc.rank(req, record=body.record)
         except UnknownUser:
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
         return RankResponse(
