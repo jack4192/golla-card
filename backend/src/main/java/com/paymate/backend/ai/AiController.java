@@ -131,11 +131,12 @@ public class AiController {
         return json(ai.monthlyReport(authUser.getId()));
     }
 
-    /** 연말정산: 놓친 혜택 상위 3장. */
+    /** 연말 결산: 놓친 혜택 상위 3장 (thisYear=true 면 올해 1월 1일부터, 1만 원 미만은 AI 가 뺀다). */
     @GetMapping("/missed-benefit")
     public ResponseEntity<String> missedBenefit(@AuthenticationPrincipal AuthUser authUser,
-                                                @RequestParam(value = "days", required = false) Integer days) {
-        return json(ai.missedBenefit(authUser.getId(), days));
+                                                @RequestParam(value = "days", required = false) Integer days,
+                                                @RequestParam(value = "thisYear", defaultValue = "false") boolean thisYear) {
+        return json(ai.missedBenefit(authUser.getId(), days, thisYear));
     }
 
     /** 이번 달 실적 채우기 방식과 고른 근거. */

@@ -1,6 +1,7 @@
 package com.paymate.backend.payment.controller;
 
 import com.paymate.backend.payment.dto.PaymentResponse;
+import com.paymate.backend.payment.dto.YearSummaryResponse;
 import com.paymate.backend.payment.service.PaymentService;
 import com.paymate.backend.common.security.AuthUser;
 import java.time.LocalDate;
@@ -26,6 +27,12 @@ public class PaymentController {
     public List<PaymentResponse> ofDay(@AuthenticationPrincipal AuthUser authUser,
                                        @RequestParam("date") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         return paymentService.ofDay(authUser.getId(), date);
+    }
+
+    /** 연말 결산의 받은 혜택: 올해 1월 1일부터 기준 시각까지 달별·카드별 합 (2026-11-24). */
+    @GetMapping("/year-summary")
+    public YearSummaryResponse yearSummary(@AuthenticationPrincipal AuthUser authUser) {
+        return paymentService.yearSummary(authUser.getId());
     }
 
     /** 최근순 (limit 기본 5, 최대 50). beforeId 를 주면 그 번호보다 오래된 결제 (더 보기). */

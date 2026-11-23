@@ -115,10 +115,17 @@ public class AiService {
         return client.get(userPath(userId, "/monthly-report"), atQuery());
     }
 
-    /** 연말정산: 지난 days 일 동안 놓친 혜택 (days 가 없으면 AI 기본값 365). */
-    public String missedBenefit(Long userId, Integer days) {
+    /**
+     * 연말정산: 놓친 혜택 상위 3장. thisYear 면 올해(기준 시각의 해) 1월 1일부터 (연말 결산, 2026-11-24),
+     * 아니면 지난 days 일 (days 가 없으면 AI 기본값 365).
+     */
+    public String missedBenefit(Long userId, Integer days, boolean thisYear) {
         Map<String, Object> query = atQuery();
-        query.put("days", days);
+        if (thisYear) {
+            query.put("start", today().withDayOfYear(1).toString());
+        } else {
+            query.put("days", days);
+        }
         return client.get(userPath(userId, "/missed-benefit"), query);
     }
 
