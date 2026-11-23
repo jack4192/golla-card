@@ -138,6 +138,14 @@ export const api = {
   // 행사(카드사 이벤트·마이샵) 목록: [{ promotionId, kind, name, benefitType, benefitText, minAmount, maxAmount, start, end,
   //   payout, method, note, needsCheck, logoUrl }] (DB promotions, 챗봇·추천과 같은 목록)
   promotions: () => request('/api/promotions', { auth: true }),
+  // 홈 시간 표시줄의 하루 배치 (기록 없음, 날짜는 서버가 정함): { day, segments: [{ start, end, user_card_id, message, reason_code,
+  //   cards: [{ user_card_id, rank }] }] } (2026-11-23)
+  aiDayPlacement: () => request('/api/ai/day-placement', { auth: true, timeout: AI_CHAT_TIMEOUT_MS }),
+  // 내 결제 (기준 시각까지): [{ paymentId, paidAt, merchantName, category, categoryName, amount, benefitAmount,
+  //   promotionAmount, userCardId, cardName }]. 그날 것은 시간순, 최근 것은 최근순(beforeId 로 다음 쪽)
+  paymentsOfDay: date => request('/api/payments?date=' + encodeURIComponent(date), { auth: true }),
+  paymentsRecent: ({ beforeId, limit } = {}) => request('/api/payments/recent?limit=' + encodeURIComponent(limit ?? 5)
+    + (beforeId != null ? '&beforeId=' + encodeURIComponent(beforeId) : ''), { auth: true }),
   // 맞춤 추천 페이지: { tabs, card, merchant: { offers } } (AI 가 카드날·행사 여부로 탭을 정한다)
   aiRecommendationPage: () => request('/api/ai/recommendation-page', { method: 'POST', auth: true, timeout: AI_CHAT_TIMEOUT_MS }),
   aiConfirmRuleDraft: draftId => request('/api/ai/rules/drafts/' + encodeURIComponent(draftId) + '/confirm', { method: 'POST', auth: true }),

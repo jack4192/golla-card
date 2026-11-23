@@ -7,7 +7,7 @@ import { applyRank } from './aiPlacementCore';
 import { fetchServerWallet, serverCardLinks } from './serverCards';
 
 // 지갑 카드 id → 서버 userCardId. 아직 서버 목록을 읽은 적이 없으면 한 번 읽는다.
-async function walletLinks() {
+export async function walletLinks() {
   let links = serverCardLinks();
   if (!Object.keys(links).length) {
     await fetchServerWallet();
