@@ -10,7 +10,7 @@ import { recordRecommendation } from '../utils/savingsRecords';
 import { addNotification } from '../utils/notifications';
 import { API_BASE_URL, SERVER_MODE, api } from '../utils/api';
 import { CARD_CATALOG_40 } from '../data/cardCatalog40';
-import { toCardRecommendation, toPromotionOffer, visibleTabs } from '../utils/aiRecommendCore';
+import { cardSource, toCardRecommendation, toPromotionOffer, visibleTabs } from '../utils/aiRecommendCore';
 export { officialProduct, recentPattern } from './RoutinePatternRecommendationScreen';
 export const RECOMMENDATION_LABELS = ['카드 추천', '프로모션 추천'];
 function CardFallback({ selectedWalletCard }) {
@@ -69,6 +69,9 @@ export default function RoutineRecommendationScreen({
   const [now, setNow] = useState(() => new Date());
   // 서버 모드: AI 맞춤 추천 페이지 (카드 추천·프로모션 추천과 탭 규칙). 못 받으면 앱 계산을 쓴다.
   const [aiPage, setAiPage] = useState(null);
+  // AI 맞춤 추천 요청 상태: loading | ready | failed. AI 를 묻는 동안 카드 추천 탭은 불러오는 중 (2026-11-23)
+  const [aiState, setAiState] = useState('loading');
+  const asksAi = SERVER_MODE && (!scheduleDate || scheduleDate === dateKey(new Date()));
   const alive = useRef(true);
   const lock = useRef(false);
   useEffect(() => {
@@ -115,9 +118,12 @@ export default function RoutineRecommendationScreen({
   }, [reload]);
   useEffect(() => {
     // 오늘 일정의 추천만 AI 에 묻는다 (AI 맞춤 추천은 오늘 기준)
-    if (!SERVER_MODE || (scheduleDate && scheduleDate !== dateKey(new Date()))) return undefined;
+    if (!asksAi) return undefined;
     let active = true;
-    api.aiRecommendationPage().then(page => { if (active) setAiPage(page); }).catch(() => {});
+    setAiState('loading');
+    api.aiRecommendationPage()
+      .then(page => { if (active) { setAiPage(page); setAiState('ready'); } })
+      .catch(() => { if (active) setAiState('failed'); });
     return () => { active = false; };
   }, [reload, scheduleDate]);
   const recommendations = useMemo(() => {
@@ -125,16 +131,15 @@ export default function RoutineRecommendationScreen({
     const useCurrentTime = !scheduleDate || scheduleDate === dateKey(now);
     const when = useCurrentTime ? now : new Date(scheduleDate + 'T12:00:00');
     const local = buildRecommendations(input.profile, input.events, input.saved, when, useCurrentTime, cardAd);
-    if (!aiPage) return local;
-    // AI 가 카드를 주면 그것을, 못 주면(결제 내역이 없는 새 가입자 등) 설문 기반 앱 계산을 쓴다 (2026-11-23 결정)
-    const aiCard = toCardRecommendation(aiPage, CARD_CATALOG_40);
-    const aiOffer = toPromotionOffer(aiPage, API_BASE_URL);
-    return {
-      ...local,
-      ...(aiCard ? { card: aiCard, example: false, ownedBest: null } : {}),
-      ...(aiOffer && !cardAd ? aiOffer : {}),
-    };
-  }, [input, now, scheduleDate, cardAd, aiPage]);
+    // AI 가 카드를 주면 그것을, 못 주면(결제 내역이 없는 새 가입자 등) 설문 기반 앱 계산을 쓴다 (2026-11-23 결정).
+    // AI 를 묻는 동안은 앱 계산 카드를 먼저 보이지 않는다 (카드가 바뀌어 보이지 않게, cardSource).
+    const aiCard = aiPage ? toCardRecommendation(aiPage, CARD_CATALOG_40) : null;
+    const aiOffer = aiPage ? toPromotionOffer(aiPage, API_BASE_URL) : null;
+    const source = cardSource({ asksAi, aiState, aiCard });
+    const cardPart = source === 'ai' ? { card: aiCard, example: false, ownedBest: null }
+      : source === 'loading' ? { card: null, example: false, ownedBest: null, cardLoading: true } : {};
+    return { ...local, ...cardPart, ...(aiOffer && !cardAd ? aiOffer : {}) };
+  }, [input, now, scheduleDate, cardAd, aiPage, aiState, asksAi]);
   // 탭은 AI 규칙을 따른다: 카드날에만 카드 추천, 행사가 없으면 카드 추천만 (2026-11-23 결정)
   const tabs = useMemo(() => cardAd ? [0] : visibleTabs(aiPage), [aiPage, cardAd]);
   useEffect(() => {
@@ -143,6 +148,11 @@ export default function RoutineRecommendationScreen({
   const promotionTab = !cardAd && index === 1;
   const selected = recommendations?.card;
   const card = promotionTab ? null : selected?.card;
+  const cardLoading = !promotionTab && Boolean(recommendations?.cardLoading);
+  const loadingView = <View style={s.aiLoading}>
+    <ActivityIndicator color="#104FE7" size="large" />
+    {cardLoading && <Text style={s.caption}>AI가 추천 카드를 고르고 있어요</Text>}
+  </View>;
   const matches = selected?.matches.filter(item => item.status !== 'blocked') || [];
   const match = matches.sort((a, b) => b.weight - a.weight)[0];
   // 일정과 딱 맞는 카드가 없을 때(기본 추천)는 짧게 추천 이유만
@@ -229,7 +239,7 @@ export default function RoutineRecommendationScreen({
   if (presentation === 'popup' || cardAd) {
     return <ScrollView style={s.screen} contentContainerStyle={{padding:18,gap:16}}>
       {recommendationTabs}
-      {loading ? <ActivityIndicator/> : promotionTab ? promotionContent() : card ? <View style={[s.hero,{gap:12}]}>
+      {loading || cardLoading ? loadingView : promotionTab ? promotionContent() : card ? <View style={[s.hero,{gap:12}]}>
         <CardReveal key={card.code} card={card} reduced={reduced} replay={0}/>
         <Text style={s.cardName}>{card.name}</Text>
         {!!reason && <Text style={s.reason}>{reason}</Text>}
@@ -253,7 +263,7 @@ export default function RoutineRecommendationScreen({
         </View>
         {recommendationTabs}
 
-        {loading ? <ActivityIndicator color="#104FE7" size="large" /> : promotionTab ? promotionContent() : card ? <>
+        {loading || cardLoading ? loadingView : promotionTab ? promotionContent() : card ? <>
             {!!reason && <Text style={s.reason}>{reason}</Text>}
 
             <View style={s.hero}>
@@ -320,6 +330,11 @@ export default function RoutineRecommendationScreen({
     </ScrollView>;
 }
 const s = StyleSheet.create({
+  aiLoading: {
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 28
+  },
   flex: { flex: 1 },
   fallbackRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   fallbackImage: { width: 86, height: 60 },

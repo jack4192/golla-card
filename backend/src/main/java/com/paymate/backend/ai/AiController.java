@@ -104,9 +104,13 @@ public class AiController {
 
     // ---------- 추천·리포트 ----------
 
-    /** 맞춤 추천 페이지 (카드사 추천·가맹점 추천 탭). */
+    /**
+     * 맞춤 추천 페이지 (카드사 추천·가맹점 추천 탭).
+     * 부르기 전에 AI 의 오늘 일정을 서버 일정과 맞춘다 (AI 에 없던 일정 때문에 평소 소비로 추천되지 않게, 2026-11-23).
+     */
     @PostMapping("/recommendation-page")
     public ResponseEntity<String> recommendationPage(@AuthenticationPrincipal AuthUser authUser) {
+        scheduleSync.ensureSynced(authUser.getId(), ai.today());
         return json(ai.recommendationPage(authUser.getId()));
     }
 
