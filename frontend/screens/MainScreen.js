@@ -12,10 +12,11 @@ import { ActivityIndicator, View, Text, Image, Linking, TouchableOpacity, Scroll
 import { Ionicons } from '@expo/vector-icons';
 import YearEndReport from '../components/YearEndReport';
 import PaymentCardOrder from '../components/PaymentCardOrder';
+import RecentPayments from '../components/RecentPayments';
 import QuickPaySheet from '../components/QuickPaySheet';
 import NotificationCenter, { NotificationBell, useInbox } from '../components/NotificationCenter';
 import { PHONE_NOTIFICATIONS_SUPPORTED, addPhoneNotificationOpenListener, refreshDailyNotifications, requestPhonePermission, syncPhoneNotifications } from '../utils/notifications';
-import { eventTitle, readEvents } from '../utils/routineData';
+import { dateKey, eventTitle, readEvents } from '../utils/routineData';
 import { Alert } from '../utils/demoAlert';
 import * as SecureStore from '../utils/demoStore';
 import PaymentScreen, { realProductCard, realWalletCards } from './PaymentScreen';
@@ -544,6 +545,7 @@ export default function MainScreen({
     onOpenCards={() => selectTab('cards')}
     cardList={home ? <PaymentCardOrder cards={homeWalletCards} selectedId={currentCard?.id}
       onSelect={onSelectCard} syncSelection={!paySheet} /> : null}
+    paymentsList={home && SERVER_MODE ? <RecentPayments today={dateKey()} refreshKey={aiRefresh} /> : null}
     onOpenSchedule={() => selectTab('schedule')}
     disabled={scheduleDisabled}
     aiRefresh={aiRefresh}
