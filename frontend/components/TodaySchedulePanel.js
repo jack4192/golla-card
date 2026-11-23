@@ -13,7 +13,7 @@ import { bestCardOf, exampleScenario } from '../utils/aiEstimateCore';
 import { loadPlacementPreview } from '../utils/aiPlacement';
 import { loadDayPlacement } from '../utils/dayTimeline';
 import { loadTodayPayments } from '../utils/payments';
-import { MAX_MINUTE, STEP_MINUTES, minuteOfDay, minuteToRatio, paymentAt, paymentDots, paymentLine, ratioToMinute, scrubbedCard, timeLabel } from '../utils/dayTimelineCore';
+import { MAX_MINUTE, STEP_MINUTES, cardChangeDots, minuteOfDay, minuteToRatio, paymentAt, paymentDots, paymentLine, ratioToMinute, scrubbedCard, timeLabel } from '../utils/dayTimelineCore';
 import { aiWindowKey, inAiWindow, scheduleAiExample, scheduleAiMatch } from '../utils/scheduleAiCore';
 import { SCHEDULE_SAMPLES } from '../data/samplePayment';
 import { resolveWalletProduct } from './WalletProductCard';
@@ -48,7 +48,7 @@ const homeScheduleLimit = 3;
 const bubbleWidth = 92;
 const dotTapPx = 12;      // 결제 점을 누른 것으로 보는 거리
 
-function HomeScheduleRibbon({ start, clockTime, nowMinute, viewMinute, onScrub, onNow, dots = [], rows, selected, onSelect, onOpenSchedule, emptyMessage }) {
+function HomeScheduleRibbon({ start, clockTime, nowMinute, viewMinute, onScrub, onNow, dots = [], changeDots = [], rows, selected, onSelect, onOpenSchedule, emptyMessage }) {
   const [axisWidth, setAxisWidth] = useState(0);
   const position = time => Math.min(1, Math.max(0, (time - start) / dayMs));
   const scrubbing = viewMinute != null;
@@ -69,7 +69,7 @@ function HomeScheduleRibbon({ start, clockTime, nowMinute, viewMinute, onScrub, 
     if (Number.isFinite(pageX)) axisLeft.current = pageX;
   });
   const latest = useRef({});
-  latest.current = { axisWidth, dots, onScrub };
+  latest.current = { axisWidth, dots: [...dots, ...changeDots], onScrub };     // 누르면 가까운 결제 점·노란 점으로
   const grantX = useRef(0);
   const moved = useRef(false);
   const scrubTo = x => {
@@ -117,6 +117,7 @@ function HomeScheduleRibbon({ start, clockTime, nowMinute, viewMinute, onScrub, 
         <Text style={styles.homeTickLabel}>{hourLabel(tick)}</Text>
         <View style={styles.homeTickMark} />
       </View>)}
+      {changeDots.map(dot => <View key={dot.key} pointerEvents="none" style={[styles.homeChangeDot, { left: chartPercent(dot.ratio) }]} />)}
       {dots.map(dot => <View key={dot.key} pointerEvents="none" style={[styles.homePayDot, { left: chartPercent(dot.ratio) }]} />)}
       <View style={[styles.homeNow, scrubbing && styles.homeNowPreview,
         bubbleLeft == null ? { left: chartPercent(cursor), marginLeft: -bubbleWidth / 2 } : { left: bubbleLeft, marginLeft: 0 }]}>
@@ -125,6 +126,7 @@ function HomeScheduleRibbon({ start, clockTime, nowMinute, viewMinute, onScrub, 
       <View style={[styles.homeNowDot, { left: chartPercent(cursor) }]} />
       <View {...pan.panHandlers} style={styles.homeAxisTouch} accessible accessibilityRole="adjustable"
         accessibilityLabel={`시각 옮기기, ${bubbleText}`}
+        accessibilityHint={changeDots.length ? `노란 점은 카드가 바뀌는 시각: ${changeDots.map(dot => timeLabel(dot.minute)).join(', ')}` : undefined}
         accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
         onAccessibilityAction={event => step(event.nativeEvent.actionName === 'increment' ? 1 : -1)} />
     </View>
@@ -494,17 +496,26 @@ export default function TodaySchedulePanel({
     const nowMinute = minuteOfDay(clock);
     const scrubbing = viewMinute != null;
     const dots = paymentDots(todayPayments, nowMinute);
+    // 그 시각의 큰 카드: 서버 모드는 AI 하루 배치 구간 카드, 데모 모드는 그 시각을 덮는 일정의 앱 계산 카드, 없으면 결제 카드.
+    // 미리보기와 노란 점(카드가 바뀌는 시각)이 같은 계산을 쓴다
+    const cardAtMinute = minute => {
+      if (SERVER_MODE) return scrubbedCard({ segments: daySegments || [], minute, walletCards: cards, fallbackCard: selectedCard });
+      const at = new Date(dayStart.getTime() + minute * 60 * 1000);
+      const row = timeline.find(item => item.match && item.startDate && item.startDate <= at && at < item.endDate);
+      return { card: row?.match.card || selectedCard, note: row ? row.match.label : '' };
+    };
     let scrubbed = null;
-    if (scrubbing && SERVER_MODE) {
-      scrubbed = daySegments == null
+    if (scrubbing) {
+      scrubbed = SERVER_MODE && daySegments == null
         ? { card: selectedCard, note: '이 시각 AI 카드를 불러오는 중이에요' }
-        : scrubbedCard({ segments: daySegments, minute: viewMinute, walletCards: cards, fallbackCard: selectedCard });
-    } else if (scrubbing) {
-      // 데모 모드: 그 시각을 덮는 일정의 앱 계산 카드, 없으면 결제 카드
-      const viewAt = new Date(dayStart.getTime() + viewMinute * 60 * 1000);
-      const row = timeline.find(item => item.match && item.startDate && item.startDate <= viewAt && viewAt < item.endDate);
-      scrubbed = { card: row?.match.card || selectedCard, note: row ? row.match.label : '' };
+        : cardAtMinute(viewMinute);
     }
+    const minuteOf = date => Math.round((date - dayStart) / 60000);
+    const changeBoundaries = SERVER_MODE
+      ? (daySegments || []).flatMap(segment => [segment.startMin, segment.endMin])
+      : timeline.filter(row => row.match && row.startDate && row.endDate).flatMap(row => [minuteOf(row.startDate), minuteOf(row.endDate)]);
+    const changeDots = disabled || (SERVER_MODE && daySegments == null) ? []
+      : cardChangeDots(changeBoundaries, minute => cardAtMinute(minute).card?.id ?? null);
     const scrubPayment = scrubbing ? paymentAt(dots.map(dot => dot.payment), viewMinute) : null;
     const card = scrubbing ? scrubbed.card : recommended?.match.card || selectedCard;
     // 미리보기 카드 그림: 결제 카드와 같은 방식(resolveWalletProduct), 글자 주소면 { uri } 로
@@ -521,7 +532,7 @@ export default function TodaySchedulePanel({
       </View>
       <View style={[styles.homeCard, styles.homeCardScheduled]}>
         <HomeScheduleRibbon start={dayStart} clockTime={clockTime} nowMinute={nowMinute} viewMinute={viewMinute}
-          onScrub={setViewMinute} onNow={() => setViewMinute(null)} dots={dots}
+          onScrub={setViewMinute} onNow={() => setViewMinute(null)} dots={dots} changeDots={changeDots}
           rows={rows} selected={selectedSchedule}
           onSelect={row => { setViewMinute(null); setSelection({ scope: day, key: row.key }); }} onOpenSchedule={onOpenSchedule}
           emptyMessage={error || (loading && !disabled ? '일정을 불러오는 중이에요' : '오늘 등록된 일정이 없어요')} />
@@ -758,6 +769,11 @@ const styles = StyleSheet.create({
   },
   homeNowButtonText:{fontSize:12,fontWeight:'800',color:'#1D55D9'},
   homeAxisTouch:{position:'absolute',left:-12,right:-12,top:0,bottom:-6,zIndex:3,cursor:'pointer'},
+  // 카드가 바뀌는 시각 (2026-11-24 사용자 요청 '노란색 점'). 결제 점(주황)보다 조금 크고 테두리가 진하다
+  homeChangeDot:{
+    position:'absolute',top:48,width:10,height:10,marginLeft:-5,borderRadius:5,borderWidth:1.5,
+    borderColor:'#E0A100',backgroundColor:'#FFD43B'
+  },
   homePayDot:{
     position:'absolute',top:49,width:8,height:8,marginLeft:-4,borderRadius:4,borderWidth:1.5,
     borderColor:'#FFFFFF',backgroundColor:'#FF8A3D'
