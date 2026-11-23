@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.paymate.backend.common.DemoClock;
 import com.paymate.backend.payment.dto.PaymentResponse;
+import com.paymate.backend.payment.dto.YearSummaryResponse;
 import com.paymate.backend.payment.repository.PaymentRepository;
 import com.paymate.backend.payment.repository.PaymentRow;
 import com.paymate.backend.payment.service.PaymentService;
@@ -36,7 +37,7 @@ class PaymentServiceTest {
     static class FakeRepository implements PaymentRepository {
         final List<Object[]> between = new ArrayList<>();
         final List<Object[]> recent = new ArrayList<>();
-        final List<PaymentRow> rows = List.of(new Row(9L, "2026-11-04T08:12:00", "스타벅스", "CAFE", "카페",
+        List<PaymentRow> rows = List.of(new Row(9L, "2026-11-04T08:12:00", "스타벅스", "CAFE", "카페",
                 5400, 540, 0, 3L, "신한 모두의카드"));
 
         @Override
@@ -70,6 +71,37 @@ class PaymentServiceTest {
             assertThat(row.cardName()).isEqualTo("신한 모두의카드");
             assertThat(row.benefitAmount()).isEqualTo(540);
         });
+    }
+
+    @Test
+    @DisplayName("올해 결산: 1월 1일부터 기준 시각까지 읽는다")
+    void yearSummaryRange() {
+        YearSummaryResponse s = service("2026-03-05T10:15:30").yearSummary(1L);
+        assertThat(repository.between.get(0)).containsExactly(1L, LocalDateTime.of(2026, 1, 1, 0, 0),
+                LocalDateTime.of(2026, 3, 5, 10, 15, 30));
+        assertThat(s.year()).isEqualTo(2026);
+        assertThat(s.from()).isEqualTo("2026-01-01");
+        assertThat(s.until()).isEqualTo("2026-03-05T10:15:30");
+    }
+
+    @Test
+    @DisplayName("올해 결산: 합계, 빈 달은 0, 카드는 받은 혜택 큰 순, 빈 혜택은 0")
+    void yearSummarySums() {
+        repository.rows = List.of(
+                new Row(1L, "2026-01-03T09:00:00", "스타벅스", "CAFE", "카페", 5400, 540, 0, 3L, "신한 모두의카드"),
+                new Row(2L, "2026-01-20T12:00:00", "이마트", "MART", "마트", 50000, 1000, 500, 2L, "KB ALL 카드"),
+                new Row(3L, "2026-03-01T08:00:00", "GS25", "CVS", "편의점", 3000, null, null, 3L, "신한 모두의카드"));
+        YearSummaryResponse s = service("2026-03-05T10:15:30").yearSummary(1L);
+        assertThat(s.count()).isEqualTo(3);
+        assertThat(s.benefit()).isEqualTo(1540L);
+        assertThat(s.promotion()).isEqualTo(500L);
+        assertThat(s.total()).isEqualTo(2040L);
+        assertThat(s.months()).extracting(YearSummaryResponse.MonthSum::month).containsExactly("2026-01", "2026-02", "2026-03");
+        assertThat(s.months()).extracting(YearSummaryResponse.MonthSum::total).containsExactly(2040L, 0L, 0L);
+        assertThat(s.months()).extracting(YearSummaryResponse.MonthSum::count).containsExactly(2, 0, 1);
+        assertThat(s.cards()).extracting(YearSummaryResponse.CardSum::userCardId).containsExactly(2L, 3L);
+        assertThat(s.cards()).extracting(YearSummaryResponse.CardSum::total).containsExactly(1500L, 540L);
+        assertThat(s.cards().get(1).count()).isEqualTo(2);
     }
 
     @Test

@@ -146,6 +146,11 @@ export const api = {
   paymentsOfDay: date => request('/api/payments?date=' + encodeURIComponent(date), { auth: true }),
   paymentsRecent: ({ beforeId, limit } = {}) => request('/api/payments/recent?limit=' + encodeURIComponent(limit ?? 5)
     + (beforeId != null ? '&beforeId=' + encodeURIComponent(beforeId) : ''), { auth: true }),
+  // 연말 결산 (2026-11-24). 받은 혜택: { year, from, until, count, benefit, promotion, total,
+  //   months: [{ month, count, benefit, promotion, total }], cards: [{ userCardId, cardName, count, benefit, promotion, total }] }
+  paymentsYearSummary: () => request('/api/payments/year-summary', { auth: true, timeout: AI_CHAT_TIMEOUT_MS }),
+  // 놓친 혜택 (올해 1월 1일부터, 1만 원 이상, 상위 3장): [{ card_id, card_name, gain, months, annual_fee, basis, replaces, message }]
+  aiMissedBenefit: () => request('/api/ai/missed-benefit?thisYear=true', { auth: true, timeout: AI_CHAT_TIMEOUT_MS }),
   // 맞춤 추천 페이지: { tabs, card, merchant: { offers } } (AI 가 카드날·행사 여부로 탭을 정한다)
   aiRecommendationPage: () => request('/api/ai/recommendation-page', { method: 'POST', auth: true, timeout: AI_CHAT_TIMEOUT_MS }),
   aiConfirmRuleDraft: draftId => request('/api/ai/rules/drafts/' + encodeURIComponent(draftId) + '/confirm', { method: 'POST', auth: true }),

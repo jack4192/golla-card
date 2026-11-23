@@ -1,95 +1,166 @@
-// 연말 결산: 올해 '내 카드로 아낀 금액'과 월별 절약 내역,
-// '그때 카드를 만들었다면?'(추천 카드를 발급하지 않아 놓친 금액)을 아래에서 올라오는 창으로 보여준다.
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+// 연말 결산 (2026-11-24 다시 만듦, 설계서 2026-11-23-year-end-report-design.md).
+// 올해 받은 혜택(결제에 기록된 카드 혜택·가맹점 행사의 합, 백엔드)과 놓친 혜택(AI 연말정산, 올해 1월부터, 1만 원 이상 상위 3장)을
+// 위에서 아래로 읽는 리포트로 보여준다. 두 API 는 따로 불러서 AI 가 느리거나 실패해도 받은 혜택은 먼저 보인다.
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Image, Linking, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { readSavingsRecords, summarizeSavings, waitForSavingsWrites } from '../utils/savingsRecords';
-import { INDUSTRY_ICONS } from '../utils/routineDetails';
-import { isCustomCategory } from '../utils/routineData';
+import { SERVER_MODE, api } from '../utils/api';
+import { CARD_CATALOG_40 } from '../data/cardCatalog40';
+import { officialProduct } from '../screens/RoutinePatternRecommendationScreen';
+import { barRatios, findCatalogCard, missedTags, missedView, monthLabel, peakLine, periodLine, splitLine, topCards, won } from '../utils/yearEndCore';
 
-const won = value => Math.round(value || 0).toLocaleString('ko-KR') + '원';
-const monthTitle = month => Number(month.slice(5, 7)) + '월';
-const dayText = date => Number(date.slice(5, 7)) + '/' + Number(date.slice(8, 10));
-const iconOf = category => (isCustomCategory(category) ? 'pricetag-outline' : INDUSTRY_ICONS[category] || 'card-outline');
+const BAR_HEIGHT = 56;
+const BASIS = [
+  '받은 혜택은 결제할 때 기록된 카드 혜택과 가맹점 행사 금액을 더한 값이에요.',
+  '놓친 혜택은 AI가 올해 결제는 그대로 두고, 그 카드가 있었다면 매장 결제에 어떤 카드를 냈을지 다시 골라 계산한 값이에요. 전월 실적은 달마다 다시 세고, 연회비는 기간만큼 뺐어요.',
+  '"대신"은 가진 카드 하나를 그 카드로 바꿨다고 본 금액이고, "더해서"는 지금 카드에 그 카드를 더해 함께 썼다고 본 금액이에요.',
+];
 
-// 기록에 남은 추천 이유('특별 일정 · 메가커피 09:00~10:00')에서 장소 이름을 꺼낸다. 없으면 업종 이름.
-function placeName(item) {
-  const fromReason = String(item.reason || '').match(/^특별 일정 · (.+?)(?:\s+\d{2}:\d{2}~.*)?$/);
-  return (fromReason?.[1] || String(item.categoryLabel || '').replace(/'/g, '')).trim();
+function CardThumb({ name, large }) {
+  const product = findCatalogCard(CARD_CATALOG_40, name);
+  const style = large ? s.thumbLarge : s.thumb;
+  return product?.image
+    ? <Image source={product.image} style={style} resizeMode="contain" accessible={false} />
+    : <View style={[style, s.thumbEmpty]}><Ionicons name="card-outline" size={large ? 26 : 18} color="#5A6E89" /></View>;
 }
 
-function Row({ item, kind }) {
-  const saved = kind === 'saved';
-  return <View style={s.row}>
-    <View style={s.rowIcon}><Ionicons name={iconOf(item.category)} size={20} color="#3A5A8C" /></View>
-    <View style={s.rowText}>
-      <Text style={s.rowTitle} numberOfLines={1}>{dayText(item.date)} {placeName(item)}</Text>
-      <Text style={s.rowSub} numberOfLines={1}>
-        {saved ? `카드 혜택으로 ${won(item.saved)} 절약` : `${String(item.categoryLabel || '').replace(/'/g, '')} ${won(item.amount)} 결제 기준`}
-      </Text>
-    </View>
-    <Text style={[s.rowAmount, saved ? s.plus : s.minusBlue]}>{saved ? '+' : '−'}{won(saved ? item.saved : item.missed)}</Text>
+function Retry({ text, onPress }) {
+  return <View style={s.center}>
+    <Text style={s.mutedText}>{text}</Text>
+    <TouchableOpacity accessibilityRole="button" onPress={onPress} style={s.retry}>
+      <Text style={s.retryText}>다시 시도</Text>
+    </TouchableOpacity>
   </View>;
 }
 
-// '그때 카드를 만들었다면?' 아래에서 올라오는 창
-function MissedSheet({ visible, onClose, missed, items }) {
-  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-    <View style={s.backdrop}>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel="닫기" activeOpacity={1} style={StyleSheet.absoluteFill} onPress={onClose} />
-      <View style={s.sheet} accessibilityViewIsModal>
-        <View style={s.handle} />
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="닫기" onPress={onClose} style={s.sheetClose}>
-          <Ionicons name="close" size={24} color="#1B2C47" />
-        </TouchableOpacity>
-        <Text accessibilityRole="header" style={s.sheetTitle}>그때 카드를 만들었다면?</Text>
-        <Text style={s.sheetSub}>아쉽게 놓친 혜택을 확인해보세요.</Text>
+// 놓친 혜택 한 장의 자세한 내용: 문장(엔진 그대로)·꼬리표·카드 보러 가기
+function MissedDetail({ item }) {
+  const product = officialProduct(findCatalogCard(CARD_CATALOG_40, item.card_name)?.code);
+  return <View style={s.detail}>
+    <Text style={s.message}>{item.message}</Text>
+    <View style={s.tags}>
+      {missedTags(item).map(tag => <View key={tag} style={s.tag}><Text style={s.tagText}>{tag}</Text></View>)}
+    </View>
+    {product && <TouchableOpacity accessibilityRole="link" onPress={() => Linking.openURL(product.url).catch(() => {})} style={s.linkButton}>
+      <Text style={s.linkText}>카드 보러 가기</Text>
+      <Ionicons name="open-outline" size={16} color="#1459F5" />
+    </TouchableOpacity>}
+  </View>;
+}
 
-        <View style={s.missedBox}>
-          <Ionicons name="card-outline" size={36} color="#8C9CB8" />
-          <View style={s.flex}>
-            <Text style={s.missedLabel}>예상 추가 절약 금액</Text>
-            <Text style={s.missedValue}>−{won(missed)}</Text>
-          </View>
-        </View>
-
-        <Text style={s.sheetSection}>상세 내역</Text>
-        <ScrollView style={s.sheetList} contentContainerStyle={s.listCard}>
-          {items.length
-            ? items.map((item, index) => <View key={item.id}>
-                {index > 0 && <View style={s.divider} />}
-                <Row item={item} kind="missed" />
-              </View>)
-            : <Text style={s.empty}>놓친 혜택이 없어요. 추천 카드를 잘 쓰고 계세요!</Text>}
-        </ScrollView>
-
-        <View style={s.info}>
-          <Ionicons name="information-circle-outline" size={20} color="#5A6E89" />
-          <Text style={s.infoText}>해당 시점에 추천된 카드를 발급했다면{'\n'}이만큼 더 절약할 수 있었어요.</Text>
+function MissedSection({ missed, onRetry }) {
+  const [open, setOpen] = useState(null);
+  useEffect(() => setOpen(null), [missed.items]);
+  const [first, ...rest] = missed.items;
+  return <View style={s.card}>
+    <View style={s.cardHead}>
+      <Text style={s.cardTitle}>이 카드였다면 더 받았어요</Text>
+      <View style={s.aiBadge}><Text style={s.aiBadgeText}>AI 분석</Text></View>
+    </View>
+    {missed.state === 'loading' && <View style={s.center}>
+      <ActivityIndicator color="#1459F5" />
+      <Text style={s.mutedText}>AI가 올해 결제를 다시 계산하고 있어요</Text>
+    </View>}
+    {missed.state === 'error' && <Retry text="놓친 혜택을 불러오지 못했어요" onPress={onRetry} />}
+    {missed.state === 'empty' && <View style={s.goodFit}>
+      <Ionicons name="checkmark-circle" size={28} color="#178A4A" />
+      <Text style={s.goodFitTitle}>지금 카드 조합이 잘 맞아요</Text>
+      <Text style={s.mutedText}>올해 결제로 계산해 보니 1만 원 넘게 더 주는 신한카드가 없었어요.</Text>
+    </View>}
+    {missed.state === 'ready' && first && <>
+      <View style={s.featured}>
+        <CardThumb name={first.card_name} large />
+        <View style={s.flex}>
+          <Text style={s.featuredName} numberOfLines={2}>{first.card_name}</Text>
+          <Text style={s.gainBig}>+{won(first.gain)}</Text>
         </View>
       </View>
+      <MissedDetail item={first} />
+      {rest.map((item, index) => {
+        const expanded = open === index;
+        return <View key={item.card_id} style={s.restItem}>
+          <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded }}
+            onPress={() => setOpen(expanded ? null : index)} style={s.restRow}>
+            <Text style={s.rank}>{index + 2}위</Text>
+            <CardThumb name={item.card_name} />
+            <Text style={s.restName} numberOfLines={1}>{item.card_name}</Text>
+            <Text style={s.gainSmall}>+{won(item.gain)}</Text>
+            <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color="#6A7A91" />
+          </TouchableOpacity>
+          {expanded && <MissedDetail item={item} />}
+        </View>;
+      })}
+    </>}
+  </View>;
+}
+
+function ReceivedCard({ summary, onRetry }) {
+  if (summary.state === 'loading') {
+    return <View style={[s.hero, s.center]}><ActivityIndicator color="#FFFFFF" /></View>;
+  }
+  if (summary.state === 'error') {
+    return <View style={s.card}><Retry text="결산을 불러오지 못했어요" onPress={onRetry} /></View>;
+  }
+  const data = summary.data;
+  if (!data.count) {
+    return <View style={s.card}><Text style={[s.mutedText, s.centerText]}>올해 결제가 아직 없어요</Text></View>;
+  }
+  const ratios = barRatios(data.months);
+  const peakIndex = ratios.indexOf(1);
+  const peak = peakLine(data.months);
+  return <View style={s.hero}>
+    <Text style={s.heroLabel}>올해 카드로 받은 혜택</Text>
+    <Text style={s.heroValue} adjustsFontSizeToFit numberOfLines={1}>{won(data.total)}</Text>
+    <Text style={s.heroSub}>{splitLine(data)}</Text>
+    <View style={s.bars} accessible accessibilityLabel={peak || '월별 받은 혜택'}>
+      {ratios.map((ratio, index) => <View key={data.months[index].month}
+        style={[s.bar, { height: Math.max(3, Math.round(ratio * BAR_HEIGHT)) }, index === peakIndex && s.barPeak]} />)}
     </View>
-  </Modal>;
+    <View style={s.barLabels}>
+      <Text style={s.barLabel}>{monthLabel(data.months[0].month)}</Text>
+      {data.months.length > 1 && <Text style={s.barLabel}>{monthLabel(data.months[data.months.length - 1].month)}</Text>}
+    </View>
+    {peak && <Text style={s.heroPeak}>{peak}</Text>}
+  </View>;
 }
 
 export default function YearEndReport({ visible, onClose }) {
-  const [summary, setSummary] = useState(null);
-  const [missedOpen, setMissedOpen] = useState(false);
-  useEffect(() => {
-    if (!visible) return undefined;
-    let active = true;
-    setSummary(null);
-    setMissedOpen(false);
-    waitForSavingsWrites().then(readSavingsRecords).then(records => {
-      if (active) setSummary(summarizeSavings(records));
-    });
-    return () => { active = false; };
-  }, [visible]);
+  const [summary, setSummary] = useState({ state: 'loading', data: null });
+  const [missed, setMissed] = useState({ state: 'loading', items: [] });
+  const [basisOpen, setBasisOpen] = useState(false);
+  const generation = useRef(0);   // 닫힌 뒤 도착한 응답은 버린다
 
-  const savedMonths = summary ? summary.months
-    .map(([month, items]) => [month, items.filter(item => item.saved > 0)])
-    .filter(([, items]) => items.length) : [];
-  const missedItems = summary ? summary.months.flatMap(([, items]) => items.filter(item => item.missed > 0)) : [];
+  const loadSummary = useCallback(() => {
+    const gen = generation.current;
+    setSummary({ state: 'loading', data: null });
+    api.paymentsYearSummary()
+      .then(data => {
+        if (generation.current !== gen) return;
+        setSummary(Array.isArray(data?.months) && data.months.length ? { state: 'ready', data } : { state: 'error', data: null });
+      })
+      .catch(() => { if (generation.current === gen) setSummary({ state: 'error', data: null }); });
+  }, []);
+
+  const loadMissed = useCallback(() => {
+    const gen = generation.current;
+    setMissed({ state: 'loading', items: [] });
+    api.aiMissedBenefit()
+      .then(result => { if (generation.current === gen) setMissed(missedView(result)); })
+      .catch(() => { if (generation.current === gen) setMissed({ state: 'error', items: [] }); });
+  }, []);
+
+  useEffect(() => {
+    if (!visible || !SERVER_MODE) return undefined;
+    generation.current += 1;
+    setBasisOpen(false);
+    loadSummary();
+    loadMissed();
+    return () => { generation.current += 1; };
+  }, [visible, loadSummary, loadMissed]);
+
+  const data = summary.state === 'ready' ? summary.data : null;
+  const noPayments = data && !data.count;
+  const cards = data ? topCards(data.cards) : [];
 
   return <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
     <SafeAreaView style={s.screen}>
@@ -100,53 +171,35 @@ export default function YearEndReport({ visible, onClose }) {
         <Text accessibilityRole="header" style={s.headerTitle}>연말 결산</Text>
         <View style={s.headerButton} />
       </View>
-      {!summary ? <ActivityIndicator style={s.loading} color="#1459F5" /> : <ScrollView contentContainerStyle={s.content}>
-        <Text style={s.year}>{summary.year}년 카드 결산</Text>
-
-        {/* 아낀 금액 */}
-        <View style={s.savedCard}>
-          <View style={s.savedHead}>
-            <View style={s.leaf}><Ionicons name="leaf" size={20} color="#22A060" /></View>
-            <View>
-              <Text style={s.savedTitle}>아낀 금액</Text>
-              <Text style={s.savedSub}>{summary.year}년 누적 절약 금액</Text>
-            </View>
+      {!SERVER_MODE ? <View style={[s.flex, s.center]}><Text style={s.mutedText}>서버에 연결하면 결산을 볼 수 있어요</Text></View>
+        : <ScrollView contentContainerStyle={s.content}>
+          <View>
+            <Text style={s.year}>{data ? `${data.year}년 카드 결산` : '올해 카드 결산'}</Text>
+            {data && <Text style={s.period}>{periodLine(data)}</Text>}
           </View>
-          <View style={s.savedBody}>
-            <Text style={s.savedValue} adjustsFontSizeToFit numberOfLines={1}>+{won(summary.saved)}</Text>
-            <View style={s.coins} accessible={false}>
-              <View style={[s.coin, s.coinBack]} />
-              <View style={[s.coin, s.coinMid]} />
-              <View style={[s.coin, s.coinFront]}><Text style={s.coinMark}>₩</Text></View>
-            </View>
-          </View>
-        </View>
 
-        {/* 월별 절약 내역 */}
-        {savedMonths.length === 0
-          ? <View style={s.listCard}><Text style={s.empty}>아직 절약 내역이 없어요. 일정을 추가하고 맞춤 카드를 확인하면 여기에 쌓여요.</Text></View>
-          : savedMonths.map(([month, items]) => <View key={month} style={s.listCard}>
-              <Text style={s.listTitle}>{monthTitle(month)} 절약 내역</Text>
-              {items.map((item, index) => <View key={item.id}>
-                {index > 0 && <View style={s.divider} />}
-                <Row item={item} kind="saved" />
-              </View>)}
+          <ReceivedCard summary={summary} onRetry={loadSummary} />
+
+          {cards.length > 0 && <View style={s.card}>
+            <Text style={s.cardTitle}>혜택을 많이 준 카드</Text>
+            {cards.map(card => <View key={card.userCardId} style={s.cardRow}>
+              <CardThumb name={card.cardName} />
+              <Text style={s.restName} numberOfLines={1}>{card.cardName}</Text>
+              <Text style={s.cardAmount}>{won(card.total)}</Text>
             </View>)}
+          </View>}
 
-        {/* 그때 카드를 만들었다면? */}
-        <TouchableOpacity accessibilityRole="button" onPress={() => setMissedOpen(true)} style={s.whatIf}>
-          <View style={s.whatIfIcon}><Ionicons name="card" size={26} color="#3B7BF5" /></View>
-          <View style={s.flex}>
-            <Text style={s.whatIfTitle}>그때 카드를 만들었다면?</Text>
-            <Text style={s.whatIfSub}>놓쳤을 수 있는 추가 혜택을 확인해보세요.</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#3A5A8C" />
-        </TouchableOpacity>
+          {!noPayments && <MissedSection missed={missed} onRetry={loadMissed} />}
 
-        <Text style={s.note}>추천 시점의 예상 금액이에요(업종별 예시 결제 금액, 전월 실적 충족 가정). 실제 결제 내역과 다를 수 있어요.</Text>
-      </ScrollView>}
-
-      <MissedSheet visible={missedOpen} onClose={() => setMissedOpen(false)} missed={summary?.missed || 0} items={missedItems} />
+          <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: basisOpen }}
+            onPress={() => setBasisOpen(open => !open)} style={s.basisHead}>
+            <Text style={s.basisTitle}>계산 기준</Text>
+            <Ionicons name={basisOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6A7A91" />
+          </TouchableOpacity>
+          {basisOpen && <View style={s.basisBody}>
+            {BASIS.map(line => <Text key={line} style={s.basisText}>{line}</Text>)}
+          </View>}
+        </ScrollView>}
     </SafeAreaView>
   </Modal>;
 }
@@ -157,54 +210,57 @@ const s = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8, width: '100%', maxWidth: 640, alignSelf: 'center' },
   headerButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '800', color: '#1B2C47' },
-  loading: { marginTop: 40 },
-  content: { padding: 20, gap: 16, width: '100%', maxWidth: 640, alignSelf: 'center', paddingBottom: 40 },
+  content: { padding: 20, gap: 14, width: '100%', maxWidth: 640, alignSelf: 'center', paddingBottom: 40 },
   year: { fontSize: 26, fontWeight: '800', color: '#16305A' },
+  period: { fontSize: 13, color: '#5A6E89', marginTop: 4 },
+  center: { alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 18 },
+  centerText: { textAlign: 'center', paddingVertical: 10 },
+  mutedText: { fontSize: 13, lineHeight: 20, color: '#6A7A91', textAlign: 'center' },
+  retry: { borderWidth: 1, borderColor: '#C9D5E8', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 8 },
+  retryText: { fontSize: 14, fontWeight: '700', color: '#1459F5' },
 
-  savedCard: { backgroundColor: '#E8F6EC', borderRadius: 22, padding: 18, gap: 10 },
-  savedHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  leaf: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  savedTitle: { fontSize: 18, fontWeight: '800', color: '#1B2C47' },
-  savedSub: { fontSize: 13, color: '#4A5D7A', marginTop: 2 },
-  savedBody: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  savedValue: { flex: 1, fontSize: 34, fontWeight: '900', color: '#178A4A' },
-  coins: { width: 70, height: 64 },
-  coin: { position: 'absolute', width: 52, height: 18, borderRadius: 26, backgroundColor: '#F2C14E', borderWidth: 1, borderColor: '#D9A22E', left: 9 },
-  coinBack: { top: 40 },
-  coinMid: { top: 30 },
-  coinFront: { top: 8, height: 30, width: 46, left: 12, borderRadius: 23, backgroundColor: '#F6CF62', alignItems: 'center', justifyContent: 'center' },
-  coinMark: { color: '#B07A12', fontSize: 14, fontWeight: '900' },
+  hero: { backgroundColor: '#16305A', borderRadius: 22, padding: 20, minHeight: 120 },
+  heroLabel: { fontSize: 14, fontWeight: '700', color: '#C9D8FB' },
+  heroValue: { fontSize: 34, fontWeight: '900', color: '#FFFFFF', marginTop: 4 },
+  heroSub: { fontSize: 13, color: '#C9D8FB', marginTop: 4 },
+  bars: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: BAR_HEIGHT, marginTop: 18 },
+  bar: { flex: 1, borderTopLeftRadius: 3, borderTopRightRadius: 3, backgroundColor: 'rgba(201, 216, 251, 0.35)' },
+  barPeak: { backgroundColor: '#8DB8FF' },
+  barLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  barLabel: { fontSize: 11, color: '#C9D8FB' },
+  heroPeak: { fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginTop: 10 },
 
-  listCard: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 16, gap: 4 },
-  listTitle: { fontSize: 17, fontWeight: '800', color: '#1B2C47', marginBottom: 6 },
-  divider: { height: 1, backgroundColor: '#EEF2F8', marginVertical: 6 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 4 },
-  rowIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: '#F1F5FB', alignItems: 'center', justifyContent: 'center' },
-  rowText: { flex: 1, gap: 2 },
-  rowTitle: { fontSize: 15, fontWeight: '800', color: '#1B2C47' },
-  rowSub: { fontSize: 12, color: '#6A7A91' },
-  rowAmount: { fontSize: 15, fontWeight: '800' },
-  plus: { color: '#178A4A' },
-  minusBlue: { color: '#2F5FD8' },
-  empty: { fontSize: 13, lineHeight: 20, color: '#6A7A91', textAlign: 'center', paddingVertical: 10 },
+  card: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 16, gap: 10 },
+  cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  cardTitle: { fontSize: 17, fontWeight: '800', color: '#1B2C47' },
+  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 4 },
+  cardAmount: { fontSize: 15, fontWeight: '800', color: '#1B2C47' },
+  thumb: { width: 44, height: 28, borderRadius: 4 },
+  thumbLarge: { width: 88, height: 56, borderRadius: 6 },
+  thumbEmpty: { backgroundColor: '#F1F5FB', alignItems: 'center', justifyContent: 'center' },
 
-  whatIf: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#EAF0FC', borderRadius: 18, padding: 16 },
-  whatIfIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  whatIfTitle: { fontSize: 16, fontWeight: '800', color: '#1B2C47' },
-  whatIfSub: { fontSize: 12, color: '#4A5D7A', marginTop: 3 },
-  note: { fontSize: 11, lineHeight: 17, color: '#8A99AE' },
+  aiBadge: { backgroundColor: '#EEEAFE', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  aiBadgeText: { fontSize: 12, fontWeight: '700', color: '#5B3FC4' },
+  featured: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 4 },
+  featuredName: { fontSize: 16, fontWeight: '800', color: '#1B2C47' },
+  gainBig: { fontSize: 26, fontWeight: '900', color: '#178A4A', marginTop: 2 },
+  detail: { gap: 10 },
+  message: { fontSize: 14, lineHeight: 21, color: '#3D5170' },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tag: { backgroundColor: '#EEF3FC', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  tagText: { fontSize: 12, fontWeight: '600', color: '#2F4E80' },
+  linkButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: '#C9D5E8', borderRadius: 12, paddingVertical: 10 },
+  linkText: { fontSize: 14, fontWeight: '700', color: '#1459F5' },
+  restItem: { borderTopWidth: 1, borderTopColor: '#EEF2F8', paddingTop: 10, gap: 10 },
+  restRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  rank: { fontSize: 13, fontWeight: '800', color: '#6A7A91', width: 26 },
+  restName: { flex: 1, fontSize: 14, fontWeight: '700', color: '#1B2C47' },
+  gainSmall: { fontSize: 14, fontWeight: '800', color: '#178A4A' },
+  goodFit: { alignItems: 'center', gap: 6, paddingVertical: 12 },
+  goodFitTitle: { fontSize: 16, fontWeight: '800', color: '#1B2C47' },
 
-  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(12, 22, 44, 0.45)' },
-  sheet: { width: '100%', maxWidth: 560, alignSelf: 'center', maxHeight: '85%', backgroundColor: '#FFFFFF', borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, paddingTop: 10, gap: 12 },
-  handle: { alignSelf: 'center', width: 44, height: 5, borderRadius: 3, backgroundColor: '#D3DBE7', marginBottom: 6 },
-  sheetClose: { position: 'absolute', right: 14, top: 18, width: 40, height: 40, alignItems: 'center', justifyContent: 'center', zIndex: 1 },
-  sheetTitle: { fontSize: 22, fontWeight: '800', color: '#1B2C47', paddingRight: 44 },
-  sheetSub: { fontSize: 14, color: '#4A5D7A', marginTop: -6 },
-  missedBox: { flexDirection: 'row', alignItems: 'center', gap: 16, backgroundColor: '#EEF2FC', borderRadius: 18, padding: 18 },
-  missedLabel: { fontSize: 14, fontWeight: '700', color: '#1B2C47' },
-  missedValue: { fontSize: 30, fontWeight: '900', color: '#2F5FD8', marginTop: 2 },
-  sheetSection: { fontSize: 16, fontWeight: '800', color: '#1B2C47', marginTop: 4 },
-  sheetList: { flexGrow: 0 },
-  info: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F1F5FB', borderRadius: 14, padding: 14 },
-  infoText: { flex: 1, fontSize: 13, lineHeight: 20, color: '#3D5170' },
+  basisHead: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingVertical: 6 },
+  basisTitle: { fontSize: 13, fontWeight: '700', color: '#6A7A91' },
+  basisBody: { gap: 6 },
+  basisText: { fontSize: 12, lineHeight: 18, color: '#8A99AE' },
 });

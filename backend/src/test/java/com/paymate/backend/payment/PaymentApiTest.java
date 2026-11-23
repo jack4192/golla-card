@@ -81,6 +81,38 @@ class PaymentApiTest {
     }
 
     @Test
+    @DisplayName("올해 결산은 로그인이 필요하다")
+    void yearSummaryNeedsLogin() throws Exception {
+        mvc.perform(get("/api/payments/year-summary")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("올해 결산: 1월~기준 시각의 달, 내 카드만, 합계가 월별 합·카드별 합과 같다")
+    void yearSummary() throws Exception {
+        String body = mvc.perform(get("/api/payments/year-summary").header("Authorization", token(1)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.year").value(2026))
+                .andExpect(jsonPath("$.from").value("2026-01-01"))
+                .andExpect(jsonPath("$.until").value("2026-11-04T12:00:00"))
+                .andExpect(jsonPath("$.months", hasSize(11)))
+                .andExpect(jsonPath("$.count", greaterThan(0)))
+                .andExpect(jsonPath("$.cards[*].userCardId", everyItem(in(List.of(1, 2, 3, 4)))))
+                .andReturn().getResponse().getContentAsString();
+        JsonNode s = json.readTree(body);
+        long total = s.get("total").asLong();
+        assert total == s.get("benefit").asLong() + s.get("promotion").asLong();
+        long months = 0;
+        for (JsonNode m : s.get("months")) {
+            months += m.get("total").asLong();
+        }
+        long cards = 0;
+        for (JsonNode c : s.get("cards")) {
+            cards += c.get("total").asLong();
+        }
+        assert months == total && cards == total : "합계가 다르다: " + total + " / " + months + " / " + cards;
+    }
+
+    @Test
     @DisplayName("다른 사람의 결제는 보이지 않는다")
     void notOthers() throws Exception {
         mvc.perform(get("/api/payments").param("date", "2026-11-04").header("Authorization", token(2)))

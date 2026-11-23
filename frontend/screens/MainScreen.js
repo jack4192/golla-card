@@ -564,7 +564,7 @@ export default function MainScreen({
       <View style={styles.yearEndIcon}><Ionicons name="stats-chart-outline" size={20} color="#1459F5" /></View>
       <View style={styles.flexOne}>
         <Text style={styles.yearEndTitle}>올해 카드 결산</Text>
-        <Text style={styles.yearEndText}>추천 카드로 얼마나 아꼈는지, 놓친 혜택은 얼마인지 확인해요</Text>
+        <Text style={styles.yearEndText}>올해 받은 혜택과 놓친 혜택을 확인해요</Text>
       </View>
       <Ionicons name="chevron-forward" size={16} color="#647890" />
     </TouchableOpacity>;
@@ -756,7 +756,7 @@ export default function MainScreen({
 
       <ScrollView style={styles.settingsScroll} contentContainerStyle={styles.settingsContent} showsVerticalScrollIndicator={false}>
         <SettingsGroup title="결산">
-          <SettingsItem icon="stats-chart-outline" title="연말 결산" subtitle="올해 아낀 금액·놓친 금액과 월별 추천 기록" onPress={() => setYearEndOpen(true)} />
+          <SettingsItem icon="stats-chart-outline" title="연말 결산" subtitle="올해 받은 혜택과 놓친 혜택을 확인해요" onPress={() => setYearEndOpen(true)} />
         </SettingsGroup>
 
         <SettingsGroup title="알림">

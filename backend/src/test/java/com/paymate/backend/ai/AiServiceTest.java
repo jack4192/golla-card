@@ -258,7 +258,7 @@ class AiServiceTest {
         service.cardRecommendation(7L);
         assertThat(ai.last().path()).isEqualTo("/internal/users/7/card-recommendation");
 
-        service.missedBenefit(7L, 180);
+        service.missedBenefit(7L, 180, false);
         assertThat(ai.last().path()).isEqualTo("/internal/users/7/missed-benefit");
         assertThat(ai.last().query()).isEqualTo("days=180");
 
@@ -268,6 +268,20 @@ class AiServiceTest {
 
         service.health();
         assertThat(ai.last().path()).isEqualTo("/health");
+    }
+
+    @Test
+    @DisplayName("연말 결산: thisYear 면 올해 1월 1일을 start 로 넘기고 days 는 넘기지 않는다")
+    void missedBenefitThisYear() {
+        service = service("2026-11-05T09:30:00");
+        ai.reply("/internal/users/7/missed-benefit", 200, "[]");
+
+        assertThat(service.missedBenefit(7L, null, true)).isEqualTo("[]");
+        assertThat(ai.last().path()).isEqualTo("/internal/users/7/missed-benefit");
+        assertThat(ai.last().query()).contains("at=2026-11-05T09:30:00").contains("start=2026-01-01").doesNotContain("days");
+
+        service.missedBenefit(7L, 30, false);
+        assertThat(ai.last().query()).contains("days=30").doesNotContain("start");
     }
 
     @Test
