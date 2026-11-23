@@ -148,3 +148,12 @@ node --test utils/__tests__/*.test.mjs
   - 홈 '오늘의 일정'의 일정별 카드(`components/TodaySchedulePanel.js`): 일정 업종마다 AI 계산(예시 금액)으로 가장 많이 주는 내 카드. 직접 입력 업종처럼 AI 업종이 없거나 AI 가 답하지 못하면 앱 계산.
   - 데모 모드와 AI 가 답하지 못할 때의 대체 계산은 아직 앱 데이터를 쓴다 (4단계에서 정리).
 
+
+## 행사(카드사 이벤트·마이샵) 목록 — 서버 전용 (2026-11-23)
+
+- 혜택 탭 목록·검색·필터, 홈 '프로모션·혜택', 오늘의 프로모션 팝업, 아침 행사 알림은 백엔드 `GET /api/promotions` 를 쓴다
+  (`utils/promotions.js` 가 한 번 읽어 기억, 변환은 `utils/promotionsCore.js`). AI 챗봇·추천·카드 배치도 같은 DB `promotions` 표를 읽는다.
+- 로고는 백엔드가 준다 (`/brand-logos/*.png`, 서버 주소를 붙여 그림). 맞춤 추천 가맹점 탭은 AI 가 준 `display_name`·`logo_url` 을 쓴다.
+- 데모 모드(서버 주소 없음)에는 행사가 없다: 혜택 탭에 '서버에 연결하면 진행 중인 행사를 볼 수 있어요'. 서버에서 못 읽으면 '행사를 불러오지 못했어요' + '다시 시도'.
+- 앱에서 지운 것: `data/promotions.js`, `data/promotionBrands.js`, `data/myshopLogos.js`, `MainScreen.js` 의 `MYSHOP_ROWS`, `assets/promotion-logos/`, `assets/myshop-logos/`.
+- 행사 문구·기간을 바꿀 때는 AI 저장소 `data/config/promotions.yml` 을 고치고 `generate.promotions --sql` 로 만든 SQL 을 DB 에 실행한다.

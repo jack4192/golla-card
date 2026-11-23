@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { selectDailyPromotion } from '../data/promotionBrands';
+import { selectDailyPromotion } from '../utils/promotionsCore';
 import PromotionOffer from './PromotionOffer';
 import RoutineRecommendationScreen from '../screens/RoutineRecommendationScreen';
 import { hideAdForSevenDays, takeAutomaticAd } from '../utils/recommendationPopup';
