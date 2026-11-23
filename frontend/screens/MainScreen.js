@@ -697,7 +697,8 @@ export default function MainScreen({
   const renderSchedule = (home = false) => <TodaySchedulePanel
     home={home}
     onOpenCards={() => selectTab('cards')}
-    cardList={home ? <PaymentCardOrder cards={realWalletCards(currentCard, walletCards)} selectedId={currentCard?.id} onSelect={onSelectCard} /> : null}
+    // PaymentCardOrder 는 카드 객체를 넘기고 onSelectCard(App.handleSelectCard)는 카드 id 를 받는다 (전에는 눌러도 결제 카드가 안 바뀜)
+    cardList={home ? <PaymentCardOrder cards={realWalletCards(currentCard, walletCards)} selectedId={currentCard?.id} onSelect={card => onSelectCard(card.id)} /> : null}
     onOpenSchedule={() => selectTab('schedule')}
     disabled={scheduleDisabled}
     aiRefresh={aiRefresh}
