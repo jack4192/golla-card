@@ -29,11 +29,8 @@ const toMinutes = time => {
   return hour * 60 + minute;
 };
 const clockTime = minutes => String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0');
-const suggestedTime = () => {
-  const now = new Date();
-  const hour = Math.min(23, now.getHours() + (now.getMinutes() ? 1 : 0));
-  return { start: clockTime(hour * 60), end: clockTime((hour + 1) * 60) };
-};
+// 새 일정의 기본 시간은 항상 12:00~13:00
+const suggestedTime = () => ({ start: clockTime(12 * 60), end: clockTime(13 * 60) });
 
 function dateHeading(day) {
   const today = dateKey();
