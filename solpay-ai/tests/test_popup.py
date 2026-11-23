@@ -94,8 +94,8 @@ def test_yaml_프로모션을_읽는다():
     except FileNotFoundError:
         pytest.skip("가상 데이터가 없습니다")
     promos = loader.load_popup_promotions(catalog)
-    assert len(promos) == 31
-    assert sum(p.needs_check for p in promos) == 4
+    assert len(promos) == 29                 # 2026-11-23 사용자 결정: 식별불가 마이샵 30·31 을 yml 에서도 뺐다 (31 → 29)
+    assert sum(p.needs_check for p in promos) == 2      # 응모·선착순 5·6 (식별불가 2건이 빠져 4 → 2)
     assert all(p.issuer == "SHINHAN" for p in promos)
     mega = next(p for p in promos if p.brand == "메가MGC커피")
     assert mega.amount == 500 and mega.merchant_ids
@@ -224,3 +224,21 @@ def test_프로모션_카드를_보여줘도_기본_카드_변경으로_치지_�
     popup_svc.schedule_popup(1, NOW)
     _, promo = popup_svc.rank(RankRequest(1, at(10, 7, 14, 10)))
     assert promo.reason_code == PROMOTION_CARD and promo.base_card == before.base_card
+
+
+# ---------- 행사 목록 DB 이전 (2026-11-23): 화면 이름·로고·실제 기간 ----------
+
+def test_행사에_화면_이름과_로고를_싣는다():
+    named = [Promotion(1, "메가MGC커피", *NOV, frozenset({MEGA}), issuer="SHINHAN", amount=500,
+                       display_name="메가MGC커피 매장", logo_url="/brand-logos/mega.png")]
+    offer = promotion_offers(state_of(), [coffee()], named, at(10, 7, 9), Params())[0]
+    d = offer.to_dict(Params())
+    assert offer.brand == "메가MGC커피" and d["display_name"] == "메가MGC커피 매장" and d["logo_url"] == "/brand-logos/mega.png"
+    plain = promotion_offers(state_of(), [coffee()], PROMOS[:1], at(10, 7, 9), Params())[0].to_dict(Params())
+    assert plain["display_name"] == "메가MGC커피" and plain["logo_url"] is None       # 화면 이름이 없으면 brand
+
+
+def test_실제_기간_전인_행사는_추천하지_않는다():
+    later = [Promotion(1, "메가MGC커피", *NOV, frozenset({MEGA}), issuer="SHINHAN", amount=500,
+                       shown_from=datetime(2026, 10, 16, tzinfo=KST), shown_to=NOV[1])]
+    assert promotion_offers(state_of(), [coffee()], later, at(10, 7, 9), Params()) == []   # 점수 기간(NOV)이어도

@@ -71,6 +71,8 @@ def promotion_from_row(row: dict, catalog: Catalog) -> Promotion:
         rate=None if row.get("rate") is None else float(row["rate"]), min_amount=int(row.get("min_amount") or 0),
         max_amount=None if row.get("max_amount") is None else int(row["max_amount"]),
         title=row.get("title") or "", kind=row.get("kind") or "event", needs_check=bool(row.get("needs_check", False)),
+        display_name=row.get("display_name") or "", shown_from=row.get("shown_from"), shown_to=row.get("shown_to"),
+        logo_url=row.get("logo_url") or None,
     )
 
 
