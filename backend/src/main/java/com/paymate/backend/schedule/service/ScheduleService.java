@@ -123,7 +123,8 @@ public class ScheduleService {
             if (memo == null && types.stream().anyMatch(OTHER_TYPES::contains)) {
                 throw new BusinessException(ScheduleErrorCode.MEMO_REQUIRED);
             }
-            return new Parsed(SITUATION, joined, null, null, start, end, memo);
+            // 상황 일정도 '직접 입력'한 이름(예: 밥먹기)을 저장한다. 없으면 null (앱은 종류 이름을 보여준다)
+            return new Parsed(SITUATION, joined, null, blankToNull(req.getTitle()), start, end, memo);
         }
 
         String category = req.getCategory().trim().toUpperCase();

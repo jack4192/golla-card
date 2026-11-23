@@ -12,7 +12,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform, Vibration } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import YearEndReport from '../components/YearEndReport';
-import CardPickerSheet from '../components/CardPickerSheet';
+import PaymentCardOrder from '../components/PaymentCardOrder';
 import QuickPaySheet from '../components/QuickPaySheet';
 import NotificationCenter, { NotificationBell, useInbox } from '../components/NotificationCenter';
 import { PHONE_NOTIFICATIONS_SUPPORTED, addPhoneNotificationOpenListener, refreshDailyNotifications, requestPhonePermission, syncPhoneNotifications } from '../utils/notifications';
@@ -304,8 +304,6 @@ export default function MainScreen({
   const [exitOpen, setExitOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [yearEndOpen, setYearEndOpen] = useState(false);
-  // 홈 '다른 카드로 변경' 바텀시트
-  const [cardSheetOpen, setCardSheetOpen] = useState(false);
   // '이 카드로 결제' QR 결제 바텀시트(열려 있으면 결제 맥락: cardId, 일정 정보 등)
   const [paySheet, setPaySheet] = useState(null);
   const openPaySheet = context => {
@@ -692,7 +690,8 @@ export default function MainScreen({
   };
   const renderSchedule = (home = false) => <TodaySchedulePanel
     home={home}
-    onOpenCards={() => walletCards.length ? setCardSheetOpen(true) : selectTab('cards')}
+    onOpenCards={() => selectTab('cards')}
+    cardList={home ? <PaymentCardOrder cards={realWalletCards(currentCard, walletCards)} selectedId={currentCard?.id} onSelect={onSelectCard} /> : null}
     onOpenSchedule={() => selectTab('schedule')}
     disabled={scheduleDisabled}
     onEditRoutine={onEditRoutine}
@@ -848,7 +847,9 @@ export default function MainScreen({
       [card.name, card.issuer, card.description, ...card.tags, ...card.benefits.map(benefit => benefit.name)]
         .join(' ').toLowerCase().includes(query)
     ) : catalogCards;
-    const results = catalogFilter === 'all' ? byQuery
+    // '전체'에서는 내 카드를 맨 위에, 그 아래에 미보유 카드를 보여준다(같은 묶음 안의 순서는 그대로)
+    const results = catalogFilter === 'all'
+      ? [...byQuery.filter(card => ownedCatalogCodes.has(card.code)), ...byQuery.filter(card => !ownedCatalogCodes.has(card.code))]
       : byQuery.filter(card => ownedCatalogCodes.has(card.code) === (catalogFilter === 'owned'));
     return <FlatList style={styles.mainScroll} contentContainerStyle={[styles.pageContent, styles.chatClearance]}
       showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"
@@ -1003,8 +1004,6 @@ export default function MainScreen({
       <YearEndReport visible={yearEndOpen} onClose={() => setYearEndOpen(false)} />
       <QuickPaySheet visible={!!paySheet} cards={walletCards} cardId={currentCard?.id} context={paySheet}
         onSelectCard={onSelectCard} onClose={() => setPaySheet(null)} onOpenDetails={openFullPayment} />
-      <CardPickerSheet visible={cardSheetOpen} cards={walletCards} selectedId={currentCard?.id}
-        onSelect={onSelectCard} onClose={() => setCardSheetOpen(false)} onAddCard={() => selectTab('cards')} />
       <NotificationCenter visible={notificationsOpen} items={inbox} onClose={() => setNotificationsOpen(false)} onOpenTarget={openNotificationTarget} />
 
       <Modal visible={exitOpen} transparent animationType="fade" onRequestClose={() => setExitOpen(false)}>

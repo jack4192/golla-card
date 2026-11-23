@@ -200,6 +200,29 @@ export async function makeDemoCode() {
   }
   return value;
 }
+// 혜택 한 줄: 핵심(업종 + 혜택)만 보여주고, 대상 가맹점·실적 조건·유의사항은 '상세 내역 보기'로 펼친다.
+const shortName = name => String(name || '').split('(')[0].trim() || String(name || '');
+const targetsOf = name => (String(name || '').match(/\(([^)]*)\)/) || [])[1] || '';
+const manwon = value => value >= 10000 && value % 10000 === 0 ? (value / 10000).toLocaleString('ko-KR') + '만 원' : won(value);
+function BenefitLine({ name, value, details = [] }) {
+  const [open, setOpen] = useState(false);
+  const rows = [targetsOf(name) && '대상: ' + targetsOf(name), ...details].filter(Boolean);
+  return <View style={s.detail}>
+    <View style={s.benefitHead}>
+      <Text style={s.benefitName} numberOfLines={1}>{shortName(name)}</Text>
+      {!!value && <Text style={s.benefitValue}>{value}</Text>}
+    </View>
+    {rows.length > 0 && <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: open }}
+        accessibilityLabel={shortName(name) + (open ? ' 상세 내역 접기' : ' 상세 내역 보기')}
+        onPress={() => setOpen(value => !value)} style={s.detailToggle}>
+        <Text style={s.detailToggleText}>{open ? '상세 내역 접기 ▴' : '상세 내역 보기 ▾'}</Text>
+      </TouchableOpacity>}
+    {open && <View style={s.detailBody}>
+        {rows.map((row, index) => <Text key={index} style={s.detailRow}>· {row}</Text>)}
+      </View>}
+  </View>;
+}
+
 // QR 결제 바텀시트(components/QuickPaySheet.js)에서도 같은 QR·바코드를 씁니다.
 export function Codes({
   value,
@@ -431,18 +454,8 @@ export default function PaymentScreen({
       }
     };
   }, []);
-  useEffect(() => {
-    if (!active) return undefined;
-    let stopped = false;
-    let cleanup;
-    protectScreen().then(callback => {
-      if (stopped) callback();else cleanup = callback;
-    }).catch(() => {});
-    return () => {
-      stopped = true;
-      if (cleanup) cleanup();
-    };
-  }, [active]);
+  // '혜택 자세히 보기' 화면이라 QR·바코드를 보여주지 않는다. 화면 캡처 차단·밝기 조절과 코드 발급은
+  // QR 결제 바텀시트(components/QuickPaySheet.js)에서만 한다.
   const issue = async () => {
     if (!selected) return;
     const ticket = ++sequence.current;
@@ -485,7 +498,6 @@ export default function PaymentScreen({
   };
   useEffect(() => {
     setReceipt(null);
-    issue();
   }, [selected?.id, contextKey]);
   const choose = item => {
     userPicked.current = true;
@@ -567,7 +579,7 @@ export default function PaymentScreen({
         </View>
 
         <Text style={s.title}>
-          {receipt ? '예시 승인 결과' : '결제'}
+          {receipt ? '예시 승인 결과' : '혜택 자세히 보기'}
         </Text>
 
         {scheduleScenario && <View style={s.scheduleContext}>
@@ -575,51 +587,7 @@ export default function PaymentScreen({
           <Text style={s.scheduleTitle}>{[schedule.time, schedule.title].filter(Boolean).join(' ')}</Text>
         </View>}
 
-        {/* 맨 위: QR 및 바코드 */}
-        {!receipt && <View style={s.box}>
-            <View style={s.header}>
-              <Text style={s.heading}>
-                QR · 바코드 결제
-              </Text>
-
-              <Text style={[s.timer, expired && s.red]}>
-                {generating ? '발급 중' : expired ? '만료됨' : seconds + '초'}
-              </Text>
-            </View>
-
-            {/* 이 QR로 결제할 카드 + 카드 변경 */}
-            <TouchableOpacity accessibilityRole="button" disabled={options.length < 2}
-              accessibilityLabel={'결제 카드 ' + selected.name + (options.length > 1 ? ', 눌러서 카드 변경' : '')}
-              onPress={() => setPickerOpen(true)} style={s.payCard}>
-              <Image source={typeof selected.image === 'string' ? { uri: selected.image } : selected.image} resizeMode="contain" style={s.payCardImage} />
-              <View style={s.payCardInfo}>
-                <Text style={s.payCardEyebrow}>결제 카드</Text>
-                <Text style={s.payCardName} numberOfLines={1}>{selected.name}</Text>
-              </View>
-              {options.length > 1 && <View style={s.changeCard}>
-                  <Text style={s.changeCardText}>카드 변경</Text>
-                </View>}
-            </TouchableOpacity>
-
-            {generating ? <ActivityIndicator size="large" color="#245DE5" style={{
-          padding: 35
-        }} /> : payment && active ? <Codes value={payment.value} inactive={expired} /> : <Text style={s.hint}>
-                {active ? '코드를 발급해주세요.' : '앱이 비활성 상태라 코드를 숨겼습니다.'}
-              </Text>}
-
-            <Text style={s.hint}>
-              QR·바코드는 예시이며 실제 결제에 사용할 수 없어요.
-            </Text>
-
-            <TouchableOpacity accessibilityRole="button" disabled={generating || !active} onPress={issue} style={[s.secondary, generating && s.dim]}>
-              <Text style={s.link}>
-                새 결제 코드 발급
-              </Text>
-            </TouchableOpacity>
-
-          </View>}
-
-        {/* QR 아래: 실제 상품 카드 이미지 */}
+        {/* 카드 이미지 */}
         <View style={s.hero}>
           <Text style={s.eyebrow}>
             실제 상품 카드 · 카드사 원본 이미지
@@ -776,40 +744,23 @@ export default function PaymentScreen({
                 : '지갑에서 선택한 카드(' + selected.name + ')로 결제해요.'}
           </Text>
 
-          {!!selectedBenefit?.name && <Text style={s.text}>{selectedBenefit.name}</Text>}
-
-          {!!selectedBenefit?.reason && <Text style={s.hint}>
-            {selectedBenefit.reason}
-          </Text>}
-
-          {!!selectedBenefit?.condition && <Text style={s.hint}>
-              {selectedBenefit.condition}
-            </Text>}
+          {!!selectedBenefit?.name && <BenefitLine name={selectedBenefit.name}
+            value={Number.isFinite(selectedBenefit.value) ? reward(selectedBenefit) : ''}
+            details={[selectedBenefit.reason, selectedBenefit.condition]} />}
         </View>
 
         <View style={s.box}>
           <Text style={s.heading}>카드 상세 혜택</Text>
 
-          {catalogOf(selected)?.benefits?.slice(0, 6).map((benefit, index) => <View key={index} style={s.detail}>
-                <Text style={s.label}>
-                  {benefit.name}
-                  {' · '}{benefitText(benefit)}
-                </Text>
+          {catalogOf(selected)?.benefits?.slice(0, 6).map((benefit, index) => <BenefitLine key={index}
+              name={benefit.name} value={benefitText(benefit)}
+              details={[
+                '전월 실적 ' + (benefit.minPrevSpend == null ? '확인 필요' : Number(benefit.minPrevSpend) === 0 ? '조건 없음' : manwon(Number(benefit.minPrevSpend)) + ' 이상'),
+                benefit.note,
+              ]} />)}
 
-                <Text style={s.hint}>
-                  전월 실적{' '}
-                  {benefit.minPrevSpend == null ? '확인 필요' : won(benefit.minPrevSpend) + ' 이상'}
-                </Text>
-
-                {!!benefit.note && <Text style={s.hint}>
-                    {benefit.note}
-                  </Text>}
-              </View>)}
-
-          {!catalogOf(selected) && findCatalog40Product(selected)?.benefits.slice(0, 6).map(benefit => <View key={benefit.benefitId} style={s.detail}>
-            <Text style={s.label}>{benefit.name}</Text>
-            {!!benefit.note && <Text style={s.hint}>{benefit.note}</Text>}
-          </View>)}
+          {!catalogOf(selected) && findCatalog40Product(selected)?.benefits.slice(0, 6).map(benefit => <BenefitLine key={benefit.benefitId}
+              name={benefit.name} details={[benefit.note]} />)}
           {!catalogOf(selected) && !findCatalog40Product(selected) && <Text style={s.hint}>
               {selectedBenefit?.condition || selected.reason || '정확한 혜택 조건은 카드사 상품 안내에서 확인해주세요.'}
             </Text>}
@@ -1316,8 +1267,15 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     borderColor: "#E3EAF4",
     paddingTop: 12,
-    gap: 5
+    gap: 6
   },
+  benefitHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  benefitName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#1D304D' },
+  benefitValue: { fontSize: 15, fontWeight: '800', color: '#245DE5' },
+  detailToggle: { alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, backgroundColor: '#F1F5FD' },
+  detailToggleText: { fontSize: 12, fontWeight: '700', color: '#245DE5' },
+  detailBody: { gap: 4, backgroundColor: '#F7F9FD', borderRadius: 10, padding: 10 },
+  detailRow: { fontSize: 12, lineHeight: 18, color: '#4A5D7A' },
   error: {
     color: "#C53D56",
     fontSize: 13,

@@ -3,20 +3,24 @@ import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, S
 import { Ionicons } from '@expo/vector-icons';
 import FlowHeading from '../components/FlowHeading';
 import { dateKey, deleteEvent, eventTimeCaption, eventTitle, readEvents, saveEvent } from '../utils/routineData';
-import { INDUSTRIES, ROUTINE_TITLE_LIMIT } from '../utils/routineDetails';
+import { INDUSTRIES, INDUSTRY_ICONS, ROUTINE_TITLE_LIMIT } from '../utils/routineDetails';
 
-const icons = {
-  cafe: 'cafe-outline', restaurant: 'restaurant-outline',
-  pcroom: 'game-controller-outline', travel: 'airplane-outline', intercity: 'bus-outline',
-  train: 'train-outline', transport: 'subway-outline', taxi: 'car-outline',
-  convenience: 'storefront-outline', delivery: 'bicycle-outline', fuel: 'battery-charging-outline',
-  shopping: 'bag-handle-outline', medical: 'medkit-outline', other: 'create-outline',
-};
-const activities = INDUSTRIES.filter(([id]) => id !== 'other' && icons[id]).map(([id, label]) => [id, label.slice(label.indexOf(' ') + 1)]);
+const icons = INDUSTRY_ICONS;
+const activities = INDUSTRIES.filter(([id]) => id !== 'other' && icons[id]);
 const activityNames = Object.fromEntries(activities);
 const empty = { category: '', start: '', end: '', title: '' };
 const hours = Array.from({ length: 25 }, (_, hour) => String(hour).padStart(2, '0') + ':00');
-const steps = ['① 시작 시간 선택', '② 종료 시간 선택', '③ 선택 완료'];
+const DAY_END = 24 * 60;
+const STEP = 10; // 시작·종료 최소 간격(분)
+const DURATIONS = [[30, '30분'], [60, '1시간'], [120, '2시간'], [180, '3시간']];
+const toMinutes = time => {
+  const [hour, minute] = String(time || '0:0').split(':').map(Number);
+  return hour * 60 + minute;
+};
+const toTime = minutes => {
+  const value = Math.max(0, Math.min(DAY_END, minutes));
+  return String(Math.floor(value / 60)).padStart(2, '0') + ':' + String(value % 60).padStart(2, '0');
+};
 const hourRowHeight = 54;
 const minimumBlockHeight = 44;
 const eventIconStackMinHeight = 80;
@@ -73,7 +77,13 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
   const scroll = useRef(null);
   const timelineTop = useRef(0);
 
+  // 입력창을 열었을 때의 값(초기화 버튼이 이 값으로 되돌린다)
+  const initialForm = useRef(empty);
+  // 시간 칸에 타이핑 중인 글자(칸을 벗어나면 09:30 형식으로 맞춰 반영)
+  const [timeDraft, setTimeDraft] = useState({});
   const edit = event => {
+    initialForm.current = { category: event.category, start: event.start, end: event.end, title: event.title || '' };
+    setTimeDraft({});
     setForm({ category: event.category, start: event.start, end: event.end, title: event.title || '' });
     setEditing(event.id);
     setEditorOpen(true);
@@ -104,39 +114,96 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
 
   const disabled = busy || loading || loadFailed;
   const { start, end } = form;
-  const choosingEnd = Boolean(start && !end);
-  const range = start || !savedRange ? form : savedRange;
+  // 입력 중인 시간(또는 방금 저장한 일정)을 시간표에 옅게 표시한다
+  const range = editorOpen && start ? form : savedRange || {};
   const rangeComplete = Boolean(range.start && range.end);
   const highlightedIntervals = !rangeComplete ? [] : range.end < range.start
     ? [[range.start, '24:00'], ['00:00', range.end]]
     : [[range.start, range.end]];
-  const step = rangeComplete ? 2 : range.start ? 1 : 0;
-  const timeSummary = value => `시작 시간 ${value.start || '—'} → 종료 시간 ${value.end && value.end < value.start ? '다음 날 ' : ''}${value.end || '—'}`;
-  const selectTime = time => {
-    if (disabled || lock.current || (!choosingEnd && time === '24:00')) return;
-    if (choosingEnd && time <= start) {
-      setError('종료 시간은 시작 시간보다 늦어야 해요.');
-      return;
-    }
-
+  const duration = start && end ? toMinutes(end) - toMinutes(start) : 0;
+  // 시간을 한 번 누르면 바로 입력창을 연다: 그 시각부터 1시간이 기본
+  const openNew = time => {
+    if (disabled || lock.current) return;
+    const from = Math.min(toMinutes(time), DAY_END - STEP);
     setSavedRange(null);
-    setForm(current => choosingEnd
-      ? { ...current, end: time }
-      : { ...current, start: time, end: '', category: current.category || 'other' });
+    setEditing(null);
+    const next = { ...empty, start: toTime(from), end: toTime(Math.min(DAY_END, from + 60)) };
+    initialForm.current = next;
+    setTimeDraft({});
+    setForm(next);
     setError('');
-    if (choosingEnd) setEditorOpen(true);
+    setEditorOpen(true);
+  };
+  const selectTime = time => openNew(time);
+  // '+ 일정 추가': 오늘이면 지금 이후 가장 가까운 정각, 다른 날이면 09:00부터
+  const addNow = () => {
+    const now = new Date();
+    const next = scheduleDate === dateKey() ? Math.min(23, now.getHours() + (now.getMinutes() ? 1 : 0)) : 9;
+    openNew(String(next).padStart(2, '0') + ':00');
   };
   const returnToTimeline = () => {
-    if (disabled || lock.current) return;
+    if (lock.current) return;
     setEditorOpen(false);
     setError('');
-    if (start) scroll.current?.scrollTo({ y: Math.max(0, timelineTop.current + timeOffset(start) - hourRowHeight) });
   };
-  const reselectTime = () => {
-    if (disabled || lock.current) return;
-    returnToTimeline();
-    setSavedRange(null);
-    setForm(current => ({ ...current, start: '', end: '' }));
+  // 시작을 옮긴다. 시작이 종료와 같거나 늦어지면 종료를 시작 + 1시간으로 민다.
+  const setStartAt = minutes => {
+    const from = Math.max(0, Math.min(DAY_END - STEP, minutes));
+    setForm(current => {
+      const to = toMinutes(current.end) > from ? toMinutes(current.end) : Math.min(DAY_END, from + 60);
+      return { ...current, start: toTime(from), end: toTime(to) };
+    });
+    setError('');
+  };
+  // 종료를 옮긴다(시작보다 최소 10분 뒤, 24:00까지)
+  const setEndAt = minutes => {
+    setForm(current => ({ ...current, end: toTime(Math.max(toMinutes(current.start) + STEP, Math.min(DAY_END, minutes))) }));
+    setError('');
+  };
+  // 시간 칸: 숫자 4자리만, 자리마다 쓸 수 있는 숫자를 제한한다(HH:MM)
+  // 1번째 0~2, 2번째 0~9(1번째가 2면 0~4), 3번째 0~5, 4번째 0~9. 24시는 24:00만.
+  const maskTime = text => {
+    let digits = '';
+    for (const char of String(text || '').replace(/\D/g, '')) {
+      const n = Number(char);
+      const at = digits.length;
+      const ok = at === 0 ? n <= 2
+        : at === 1 ? (digits[0] === '2' ? n <= 4 : true)
+        : at === 2 ? (digits.slice(0, 2) === '24' ? n === 0 : n <= 5)
+        : at === 3 ? (digits.slice(0, 2) === '24' ? n === 0 : true)
+        : false;
+      if (ok) digits += char;
+    }
+    return digits.length > 2 ? digits.slice(0, 2) + ':' + digits.slice(2) : digits;
+  };
+  const parseTyped = text => {
+    const digits = String(text || '').replace(/\D/g, '');
+    if (digits.length !== 4) return null;
+    const minutes = Number(digits.slice(0, 2)) * 60 + Number(digits.slice(2));
+    return minutes <= DAY_END ? minutes : null;
+  };
+  const commitTyped = (key, typed) => {
+    const text = typed ?? timeDraft[key];
+    if (text === undefined) return;
+    setTimeDraft(current => ({ ...current, [key]: undefined }));
+    const minutes = parseTyped(text);
+    if (minutes === null) {
+      setError('시간을 숫자 4자리로 입력해주세요. 예: 0930');
+      return;
+    }
+    if (key === 'start') setStartAt(minutes); else setEndAt(minutes);
+  };
+  const typeTime = (key, text) => {
+    const masked = maskTime(text);
+    // 4자리를 다 치면 바로 반영
+    if (masked.length === 5) commitTyped(key, masked);
+    else setTimeDraft(current => ({ ...current, [key]: masked }));
+  };
+  const resetEditor = () => {
+    if (lock.current || disabled) return;
+    setTimeDraft({});
+    setForm(initialForm.current);
+    setError('');
   };
   const update = (key, value) => {
     if (lock.current || disabled) return;
@@ -170,14 +237,27 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
     }
   };
   const save = continueAfter => run(async () => {
-    if (start) {
-      if (!end) throw Error('왼쪽 시간표에서 종료 시간을 선택해주세요.');
+    if (!continueAfter) {
+      if (!form.category || (form.category === 'other' && !form.title.trim())) {
+        throw Error('업종을 고르거나 직접 입력해주세요.');
+      }
       const saved = await saveEvent({ ...form, id: editing, date: scheduleDate });
       setEvents(current => [saved, ...current.filter(event => event.id !== saved.id)]);
       resetForm();
       setSavedRange(saved);
+      return;
     }
-    if (continueAfter) await onContinue?.();
+    await onContinue?.();
+  });
+  // 전체 초기화: 이 날짜의 장소 일정을 모두 지운다(확인창에서 한 번 더 물은 뒤)
+  const [confirmClear, setConfirmClear] = useState(false);
+  const clearAll = () => run(async () => {
+    for (const event of events) {
+      await deleteEvent(event.id);
+    }
+    setEvents([]);
+    resetForm();
+    setConfirmClear(false);
   });
   const remove = id => run(async () => {
     await deleteEvent(id);
@@ -188,15 +268,8 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
   return (
     <KeyboardAvoidingView style={s.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={s.steps}>
-        <View style={s.stepRow}>
-          {steps.map((label, index) => <Text key={label} style={[s.step, index === step && s.currentStep]}>
-            {label}
-          </Text>)}
-        </View>
         <Text style={s.stepHint} accessibilityLiveRegion="polite">
-          {step === 0 ? '왼쪽에서 시작 시간을 먼저 선택해 주세요' : step === 1
-            ? `시작 시간 ${range.start} 선택됨! 이제 종료 시간을 선택해 주세요`
-            : '시간 선택 완료'}
+          {savedRange ? `✓ ${eventTitle(savedRange)} ${eventTimeCaption(savedRange)} 일정을 추가했어요` : '시간을 누르면 바로 일정을 넣을 수 있어요'}
         </Text>
       </View>
       <ScrollView ref={scroll} style={s.scroll} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
@@ -205,6 +278,10 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
 
         {loading && <ActivityIndicator color="#1854D8" />}
         {loadFailed && <Action onPress={() => setRetry(value => value + 1)} label="다시 불러오기" />}
+        <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={addNow} style={[s.addButton, disabled && s.dim]}>
+          <Ionicons name="add" size={20} color="#FFFFFF" />
+          <Text style={s.white}>일정 추가</Text>
+        </TouchableOpacity>
         <View style={s.timelineHeading}>
           <Text style={[s.section, s.railHeading]}>시간</Text>
           <Text style={s.section}>일과</Text>
@@ -214,16 +291,14 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
             style={[s.rangeBand, { top: timeOffset(from) + hourRowHeight / 2, height: timeOffset(to) - timeOffset(from) }]} />)}
           <View style={s.railLine} />
           {hours.map((time, hour) => {
-            const selected = time === range.start || time === range.end;
-            const inRange = rangeComplete && (range.end < range.start
-              ? time > range.start || time < range.end
-              : time > range.start && time < range.end);
-            const invalidEnd = choosingEnd && time <= start;
-            const unavailable = disabled || (time === '24:00' && !choosingEnd);
+            const selected = false;
+            const inRange = rangeComplete && time >= range.start && time < range.end;
+            const invalidEnd = false;
+            const unavailable = disabled || time === '24:00';
             return (
               <View key={time} style={s.hourRow}>
                 {hour % 3 === 0 && <View pointerEvents="none" style={s.hourLine} />}
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel={hour + '시 선택'}
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={hour + '시에 일정 추가'}
                   aria-pressed={selected}
                   accessibilityState={{ selected, disabled: unavailable }} disabled={unavailable}
                   onPress={() => selectTime(time)} style={[s.hour, inRange && s.inRange, selected && s.selectedHour, (unavailable || invalidEnd) && !selected && s.dim]}>
@@ -269,29 +344,68 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
       </ScrollView>
       <View style={s.footer}>
         {!editorOpen && !!error && <Text accessibilityRole="alert" style={s.danger}>{error}</Text>}
-        <Text style={s.draftText} accessibilityLiveRegion="polite">{timeSummary(range)}</Text>
-        {!!range.start && <View style={s.draftRow}>
-          <Action label="시간 다시 선택" disabled={disabled} onPress={reselectTime} />
-          <Action label="초기화" disabled={disabled} onPress={resetForm} />
-          {!!end && <Action label={editing ? '일정 수정' : '일과 선택'} disabled={disabled} onPress={() => setEditorOpen(true)} />}
+        {events.length > 0 && <View style={s.countRow}>
+          <Text style={s.draftText}>오늘 일정 {events.length}개</Text>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="일정 전체 초기화" disabled={disabled}
+            onPress={() => setConfirmClear(true)} style={[s.clearButton, disabled && s.dim]}>
+            <Ionicons name="refresh" size={14} color="#B4384D" />
+            <Text style={s.clearText}>전체 초기화</Text>
+          </TouchableOpacity>
         </View>}
         <View style={s.footerRow}>
           <Action label="이전" disabled={busy} onPress={onBack} />
-          <Action primary disabled={disabled || !rangeComplete} onPress={() => save(true)} label="맞춤 카드 보기" />
+          <Action primary disabled={disabled || !events.length} onPress={() => save(true)} label="맞춤 카드 보기" />
         </View>
-        {!range.start && <TouchableOpacity accessibilityRole="button" disabled={disabled}
+        {!events.length && <TouchableOpacity accessibilityRole="button" disabled={disabled}
           onPress={() => save(true)} style={s.skip}>
-          <Text style={s.blue}>{events.length ? '저장한 일정으로 계속' : '일정 없이 계속'}</Text>
+          <Text style={s.blue}>일정 없이 계속</Text>
         </TouchableOpacity>}
       </View>
+      {/* 전체 초기화 확인 */}
+      <Modal visible={confirmClear} transparent animationType="fade" onRequestClose={() => setConfirmClear(false)}>
+        <View style={s.overlay}>
+          <View style={s.confirmBox} accessibilityViewIsModal>
+            <Text accessibilityRole="header" style={s.confirmTitle}>일정을 모두 지울까요?</Text>
+            <Text style={s.confirmText}>{scheduleDate} 일정 {events.length}개가 모두 삭제돼요.{'\n'}지운 일정은 되돌릴 수 없어요.</Text>
+            <View style={s.confirmActions}>
+              <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => setConfirmClear(false)} style={[s.confirmButton, s.confirmCancel]}>
+                <Text style={s.blue}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={clearAll} style={[s.confirmButton, s.confirmDanger, busy && s.dim]}>
+                <Text style={s.white}>{busy ? '지우는 중…' : '모두 지우기'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <Modal visible={editorOpen} transparent animationType="fade" onRequestClose={returnToTimeline}>
         <KeyboardAvoidingView style={s.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={s.editor} accessibilityViewIsModal>
             <Text accessibilityRole="header" style={s.editorTitle}>{editing ? '일정 수정' : '일과 입력'}</Text>
-            <View style={s.editorTime}>
-              <Text style={s.blue}>{timeSummary(form)}</Text>
-              <Action label="시간 변경" onPress={reselectTime} disabled={disabled} />
-            </View>
+            {/* 시간: 직접 타이핑하거나 −1시간·−30분·+30분·+1시간 버튼으로 조절 */}
+            {[['start', '시작', start, setStartAt], ['end', '종료', end, setEndAt]].map(([key, label, value, setAt]) => {
+              // −10분 −30분 −1시간 [시간] +10분 +30분 +1시간
+              const adjust = list => list.map(([delta, text]) => (
+                <TouchableOpacity key={delta} accessibilityRole="button" accessibilityLabel={label + ' ' + text} disabled={disabled}
+                  onPress={() => setAt(toMinutes(value) + delta)} style={s.adjustButton}>
+                  <Text style={s.adjustText}>{text}</Text>
+                </TouchableOpacity>
+              ));
+              return <View key={key} style={s.timeBlock}>
+                <Text style={s.timeLabel}>{label}</Text>
+                <View style={s.timeRow}>
+                {adjust([[-10, '−10분'], [-30, '−30분'], [-60, '−1시간']])}
+                <TextInput accessibilityLabel={label + ' 시간 입력'} style={s.timeInput} editable={!disabled}
+                  value={timeDraft[key] ?? value} onChangeText={text => typeTime(key, text)}
+                  onFocus={() => setTimeDraft(current => ({ ...current, [key]: '' }))}
+                  onBlur={() => { if (timeDraft[key] === '') setTimeDraft(current => ({ ...current, [key]: undefined })); else commitTyped(key); }}
+                  onSubmitEditing={() => commitTyped(key)}
+                  keyboardType="number-pad" placeholder="0930" placeholderTextColor="#9AAAC0" maxLength={5} returnKeyType="done" />
+                {adjust([[10, '+10분'], [30, '+30분'], [60, '+1시간']])}
+                </View>
+              </View>;
+            })}
+            <Text style={s.durationHint}>{duration > 0 ? `${Math.floor(duration / 60) ? Math.floor(duration / 60) + '시간 ' : ''}${duration % 60 ? duration % 60 + '분' : ''}`.trim() + ' 동안' : ''}</Text>
             <ScrollView style={s.editorScroll} keyboardShouldPersistTaps="handled">
               <View style={s.directEntry}>
                 <Text style={s.directTitle}>업종 직접 입력</Text>
@@ -314,6 +428,7 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
             {!!error && <Text accessibilityRole="alert" style={s.danger}>{error}</Text>}
             <View style={s.actions}>
               <Action disabled={disabled} onPress={resetForm} label="입력 취소" />
+              <Action disabled={disabled} onPress={resetEditor} label="초기화" />
               {editing && <Action disabled={disabled} onPress={() => remove(editing)} label="삭제" />}
               <Action primary disabled={disabled} onPress={() => save(false)} label={editing ? '수정 저장' : '일정 추가'} />
             </View>
@@ -333,6 +448,35 @@ const s = StyleSheet.create({
   step: { flexGrow: 1, color: '#536A88', backgroundColor: '#E8EEF9', borderRadius: 14, paddingVertical: 7, paddingHorizontal: 6, fontSize: 11, fontWeight: '700', textAlign: 'center' },
   currentStep: { color: '#FFFFFF', backgroundColor: '#1854D8' },
   stepHint: { color: '#18365F', fontSize: 13, lineHeight: 19, textAlign: 'center' },
+  addButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48, borderRadius: 24, backgroundColor: '#104FE7' },
+  timeBox: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: 8 },
+  timeField: { alignItems: 'center', gap: 4 },
+  timeLabel: { color: '#5A6E89', fontSize: 12, fontWeight: '700' },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F1F5FD', borderRadius: 14, padding: 4 },
+  stepButton: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  timeValue: { minWidth: 56, textAlign: 'center', color: '#152D50', fontSize: 18, fontWeight: '800' },
+  timeArrow: { color: '#5A6E89', fontSize: 18, fontWeight: '700', paddingBottom: 10 },
+  durationRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6 },
+  durationChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: '#F1F5FD', borderWidth: 1, borderColor: 'transparent' },
+  durationChipActive: { backgroundColor: '#E2EDFF', borderColor: '#8CA8EF' },
+  durationText: { color: '#385988', fontSize: 13, fontWeight: '700' },
+  durationTextActive: { color: '#1854D8' },
+  timeBlock: { gap: 4 },
+  timeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 },
+  timeInput: { width: 70, minHeight: 40, marginHorizontal: 3, borderRadius: 12, borderWidth: 1, borderColor: '#C9D8F2', backgroundColor: '#FFFFFF', textAlign: 'center', color: '#152D50', fontSize: 17, fontWeight: '800' },
+  adjustButton: { paddingHorizontal: 5, minHeight: 28, justifyContent: 'center', borderRadius: 8, backgroundColor: '#F1F5FD' },
+  adjustText: { color: '#1854D8', fontSize: 11, fontWeight: '700' },
+  durationHint: { color: '#5A6E89', fontSize: 12, textAlign: 'center' },
+  countRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  clearButton: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, minHeight: 30, borderRadius: 15, backgroundColor: '#FDEDEF' },
+  clearText: { color: '#B4384D', fontSize: 12, fontWeight: '800' },
+  confirmBox: { width: '100%', maxWidth: 360, borderRadius: 22, padding: 20, gap: 12, backgroundColor: '#FFFFFF' },
+  confirmTitle: { color: '#152D50', fontSize: 18, fontWeight: '800', textAlign: 'center' },
+  confirmText: { color: '#4A5D7A', fontSize: 14, lineHeight: 21, textAlign: 'center' },
+  confirmActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  confirmButton: { flex: 1, minHeight: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+  confirmCancel: { backgroundColor: '#EAF1FF' },
+  confirmDanger: { backgroundColor: '#D6455D' },
   date: { color: '#385988', fontSize: 13, fontWeight: '700', textAlign: 'center' },
   timelineHeading: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   railHeading: { width: 76 },
