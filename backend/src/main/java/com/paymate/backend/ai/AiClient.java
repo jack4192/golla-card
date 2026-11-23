@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -25,6 +26,7 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>카드 배치는 결제 화면을 막으면 안 되므로 짧은 제한 시간(기본 0.8초)을 쓰는 {@link #postFast} 로 부르고,
  * 챗봇·리포트처럼 OpenAI 를 거치는 호출은 긴 제한 시간(기본 20초)을 쓴다.
+ * 일정 '직접 입력' 분류는 일정 저장 중에 부르므로 그 사이의 제한 시간(기본 3초)을 쓴다 ({@link #postClassify}).
  * 실패는 모두 {@link AiException} 으로 바꾼다.
  */
 @Slf4j
@@ -36,13 +38,21 @@ public class AiClient {
 
     private final RestClient fast;
     private final RestClient normal;
+    private final RestClient classify;
 
+    @Autowired
     public AiClient(@Value("${ai.base-url}") String baseUrl,
                     @Value("${ai.internal-token:}") String internalToken,
                     @Value("${ai.rank-timeout-ms:800}") long rankTimeoutMs,
-                    @Value("${ai.timeout-ms:20000}") long timeoutMs) {
+                    @Value("${ai.timeout-ms:20000}") long timeoutMs,
+                    @Value("${ai.classify-timeout-ms:3000}") long classifyTimeoutMs) {
         this.fast = build(baseUrl, internalToken, Math.min(rankTimeoutMs, 500), rankTimeoutMs);
         this.normal = build(baseUrl, internalToken, 2000, timeoutMs);
+        this.classify = build(baseUrl, internalToken, Math.min(classifyTimeoutMs, 2000), classifyTimeoutMs);
+    }
+
+    public AiClient(String baseUrl, String internalToken, long rankTimeoutMs, long timeoutMs) {
+        this(baseUrl, internalToken, rankTimeoutMs, timeoutMs, 3000);
     }
 
     private static RestClient build(String baseUrl, String token, long connectMs, long readMs) {
@@ -74,6 +84,11 @@ public class AiClient {
     /** 짧은 제한 시간으로 부른다 (카드 배치). */
     public String postFast(String path, Object body) {
         return call(fast, HttpMethod.POST, path, null, body);
+    }
+
+    /** 일정 '직접 입력' 분류용 제한 시간(기본 3초)으로 부른다. 일정 저장 응답을 오래 붙잡지 않기 위해서다. */
+    public String postClassify(String path, Object body) {
+        return call(classify, HttpMethod.POST, path, null, body);
     }
 
     private String call(RestClient client, HttpMethod method, String path, Map<String, Object> query, Object body) {

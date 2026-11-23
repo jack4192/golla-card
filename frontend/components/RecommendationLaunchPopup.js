@@ -81,10 +81,8 @@ export default function RecommendationLaunchPopup({
 
             <View style={s.content}>
               {promotion ? <ScrollView contentContainerStyle={s.promoBody}>
-                {offer ? <PromotionOffer offer={offer} /> : <Text style={s.promoText}>현재 진행 중인 이벤트가 없어요.</Text>}
-                <TouchableOpacity accessibilityRole="button" onPress={() => {close();onViewPromotions();}} style={s.hide}>
-                  <Text style={s.link}>혜택 둘러보기</Text>
-                </TouchableOpacity>
+                {offer ? <PromotionOffer key={offer.id} offer={offer} onBrowse={() => { close(); onViewPromotions(); }} />
+                  : <Text style={s.promoText}>현재 진행 중인 이벤트가 없어요.</Text>}
               </ScrollView> : <RoutineRecommendationScreen
                 presentation={ad.automatic ? 'card-ad' : 'popup'}
                 onNext={close}

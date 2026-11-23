@@ -108,29 +108,6 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
             </Text>
           </View>
 
-          {/* 결제 카드 + 카드 변경 */}
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={'결제 카드 ' + selected.name + (options.length > 1 ? ', 눌러서 카드 변경' : '')}
-            disabled={options.length < 2} onPress={() => setPicking(value => !value)} style={s.cardRow}>
-            {!!selected.image && <Image source={typeof selected.image === 'string' ? { uri: selected.image } : selected.image} resizeMode="contain" style={s.cardImage} />}
-            <View style={s.cardInfo}>
-              <Text style={s.cardLabel}>결제 카드</Text>
-              <Text style={s.cardName} numberOfLines={1}>{selected.name}</Text>
-            </View>
-            {options.length > 1 && <View style={s.change}>
-              <Text style={s.changeText}>카드 변경</Text>
-              <Ionicons name={picking ? 'chevron-up' : 'chevron-down'} size={14} color="#245DE5" />
-            </View>}
-          </TouchableOpacity>
-
-          {/* 카드를 고르는 동안에는 QR 대신 카드 목록을 보여줍니다. */}
-          {picking && <ScrollView style={s.pickList} contentContainerStyle={s.pickContent}>
-            {options.filter(card => card.id !== selected.id).map(card => <TouchableOpacity key={card.id} accessibilityRole="button"
-                onPress={() => { setPicking(false); onSelectCard?.(card.id); }} style={s.pickRow}>
-              {!!card.image && <Image source={typeof card.image === 'string' ? { uri: card.image } : card.image} resizeMode="contain" style={s.pickImage} />}
-              <Text style={s.pickName} numberOfLines={1}>{card.name}</Text>
-            </TouchableOpacity>)}
-          </ScrollView>}
-
           {!picking && <>
           {!!context?.title && <Text style={s.context} numberOfLines={2}>
             📅 {context.title}{context.benefitName ? ' · ' + context.benefitName : ''}
@@ -154,6 +131,29 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
             </TouchableOpacity>}
           </View>
           </>}
+          {/* 결제 카드 + 카드 변경 */}
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={'결제 카드 ' + selected.name + (options.length > 1 ? ', 눌러서 카드 변경' : '')}
+            disabled={options.length < 2} onPress={() => setPicking(value => !value)} style={s.cardRow}>
+            {!!selected.image && <Image source={typeof selected.image === 'string' ? { uri: selected.image } : selected.image} resizeMode="contain" style={s.cardImage} />}
+            <View style={s.cardInfo}>
+              <Text style={s.cardLabel}>결제 카드</Text>
+              <Text style={s.cardName} numberOfLines={1}>{selected.name}</Text>
+            </View>
+            {options.length > 1 && <View style={s.change}>
+              <Text style={s.changeText}>카드 변경</Text>
+              <Ionicons name={picking ? 'chevron-up' : 'chevron-down'} size={14} color="#245DE5" />
+            </View>}
+          </TouchableOpacity>
+
+          {/* 카드를 고르는 동안에는 QR 대신 카드 목록을 보여줍니다. */}
+          {picking && <ScrollView style={s.pickList} contentContainerStyle={s.pickContent}>
+            {options.filter(card => card.id !== selected.id).map(card => <TouchableOpacity key={card.id} accessibilityRole="button"
+                onPress={() => { setPicking(false); onSelectCard?.(card.id); }} style={s.pickRow}>
+              {!!card.image && <Image source={typeof card.image === 'string' ? { uri: card.image } : card.image} resizeMode="contain" style={s.pickImage} />}
+              <Text style={s.pickName} numberOfLines={1}>{card.name}</Text>
+            </TouchableOpacity>)}
+          </ScrollView>}
+
           <TouchableOpacity accessibilityRole="button" onPress={onClose} style={s.close}><Text style={s.closeText}>닫기</Text></TouchableOpacity>
         </>}
       </Animated.View>

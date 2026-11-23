@@ -18,7 +18,8 @@ export const PROMOTION_BRANDS = {
   '유튜브 프리미엄': {
     image: require('../assets/promotion-logos/youtube-premium.png'),
     source: 'https://www.youtube.com/premium',
-    background: '#FFFFFF',
+    background: '#FFF0F2',
+    paddedLogo: true,
   },
   'W컨셉(앱/웹)': {
     image: require('../assets/promotion-logos/wconcept.png'),
