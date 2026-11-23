@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  MAX_MINUTE, minuteOfDay, minuteToRatio, paymentAt, paymentDots, paymentLine, paymentRowText,
+  MAX_MINUTE, cardChangeDots, minuteOfDay, minuteToRatio, paymentAt, paymentDots, paymentLine, paymentRowText,
   ratioToMinute, scrubbedCard, segmentAt, timeLabel, toDaySegments,
 } from '../dayTimelineCore.js';
 
@@ -92,4 +92,26 @@ test('결제 한 줄 문구', () => {
   assert.equal(paymentRowText(older, '2026-11-23').when, '11/4 18:01');
   assert.equal(paymentRowText(lunch, '2026-11-23').benefit, '');
   assert.equal(paymentLine(coffee), '이 시각 결제: 스타벅스 5,400원 · 신한 모두의카드');
+});
+
+test('카드가 바뀌는 시각(노란 점): 경계마다 앞뒤 카드가 다를 때만, 0·24시와 겹친 경계는 뺀다', () => {
+  const segments = toDaySegments(response, linked);
+  const fallbackCard = { id: 'FALLBACK' };
+  const cardIdAt = minute => scrubbedCard({ segments, minute, walletCards: wallet, fallbackCard }).card.id;
+  // 11:00 에 Discount Plan → KB ALL(1순위가 지갑에 없어 2순위), 13:00 은 KB ALL 그대로라 점이 없다
+  const dots = cardChangeDots([780, 0, 660, 660, 1440, ...segments.map(segment => segment.startMin)], cardIdAt);
+  assert.deepEqual(dots, [{ key: 'change-660', ratio: minuteToRatio(660), minute: 660 }]);
+});
+
+test('카드가 바뀌는 시각: 구간 카드가 없어 결제 카드로 돌아가는 곳도 점, 경계가 없으면 점도 없다', () => {
+  const segments = [
+    { startMin: 0, endMin: 720, walletId: 'A' },
+    { startMin: 720, endMin: 795, walletId: null },        // 지갑에 없는 카드 → 결제 카드
+    { startMin: 795, endMin: 1440, walletId: 'A' },
+  ];
+  const walletCards = [{ id: 'A' }, { id: 'B' }];
+  const cardIdAt = minute => scrubbedCard({ segments, minute, walletCards, fallbackCard: { id: 'B' } }).card.id;
+  assert.deepEqual(cardChangeDots(segments.map(segment => segment.startMin), cardIdAt).map(dot => dot.minute), [720, 795]);
+  assert.deepEqual(cardChangeDots([], cardIdAt), []);
+  assert.deepEqual(cardChangeDots(undefined, cardIdAt), []);
 });
