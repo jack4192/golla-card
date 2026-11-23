@@ -408,11 +408,12 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
 
     @app.get("/internal/users/{user_id}/missed-benefit", dependencies=[Depends(check_token)])
-    def missed(user_id: int, at: datetime | None = None, days: int = 365,
+    def missed(user_id: int, at: datetime | None = None, days: int = 365, start: date | None = None,
                svc: PlacementService = Depends(current)) -> list[dict]:
-        """연말정산 안내: 지난 기간에 각 신한카드가 있었다면 더 받았을 금액 (상위 3장)."""
+        """연말정산 안내: 지난 기간에 각 신한카드가 있었다면 더 받았을 금액 (상위 3장).
+        start 를 주면 그 달부터 센다 (연말 결산은 올해 1월 1일, 2026-11-24). 1만 원(missed_min_gain) 미만은 뺀다."""
         try:
-            return svc.missed_benefit(user_id, _kst(at), days)
+            return svc.missed_benefit(user_id, _kst(at), days, start)
         except UnknownUser:
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
 

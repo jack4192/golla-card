@@ -1,12 +1,16 @@
+from dataclasses import replace
+from datetime import date, datetime
+
 import pytest
 from fastapi.testclient import TestClient
 
 from engine.api import create_app
 from engine.domain import RankRequest, User
+from engine.params import Params
 from engine.rules import parse_rule
 from engine.service import PlacementEngine, PlacementService
 from engine.store import UnknownUser, UserContext
-from tests.conftest import USER_CARDS, at, online, pay
+from tests.conftest import KST, USER_CARDS, at, online, pay
 
 BANNED = ("더 쓰세요", "더 사용", "추가 결제")
 
@@ -481,3 +485,60 @@ def test_시간대_없는_시각은_한국_시간으로_본다(svc, monkeypatch)
         time.tzset()
     assert naive["at"] == "2026-10-07T12:20:00+09:00" and aware["at"] == "2026-10-07T12:20:00+09:00"
     assert svc.store.payments[-1].paid_at.isoformat() == "2026-10-06T11:00:00+09:00"
+
+
+# 2026-11-24 연말 결산: 시작일(올해 1월 1일)부터, 1만 원 미만은 숨긴다
+NOV_MAR = [(2025, 11), (2025, 12), (2026, 1), (2026, 2), (2026, 3)]
+AT = "2026-03-20T12:00:00+09:00"
+
+
+def _cvs(months, amount):
+    return [pay(101, amount, "CVS", datetime(y, m, d, 12, tzinfo=KST)) for (y, m) in months for d in (10, 11, 12, 13)]
+
+
+def test_놓친_혜택은_시작일을_주면_그_달부터_센다(svc):
+    svc.store.payments = _cvs(NOV_MAR, 1_000_000)
+    with client(svc) as c:
+        r = c.get("/internal/users/1/missed-benefit", params={"at": AT, "start": "2026-01-01"}).json()
+    assert [(m["card_id"], m["months"], m["gain"]) for m in r] == [(4, 3, 60_000)]
+    assert r[0]["message"] == "그때 이 카드를 발급받으셨다면 3개월 동안 60,000원을 더 받으셨어요"
+
+
+def test_놓친_혜택은_시작일이_없으면_지금처럼_days_로_센다(svc):
+    svc.store.payments = _cvs(NOV_MAR, 1_000_000)
+    with client(svc) as c:
+        r = c.get("/internal/users/1/missed-benefit", params={"at": AT}).json()
+    assert [(m["card_id"], m["months"], m["gain"]) for m in r] == [(4, 4, 80_000)]
+
+
+def test_놓친_혜택은_기준_금액_이상만_남긴다(catalog, priors, params):
+    for min_gain, expected in ((60_000, [4]), (60_001, [])):
+        store = FakeStore(User(1))
+        store.payments = _cvs(NOV_MAR, 1_000_000)
+        s = PlacementService(store, PlacementEngine(catalog, priors, replace(params, missed_min_gain=min_gain)))
+        got = s.missed_benefit(1, datetime(2026, 3, 20, 12, tzinfo=KST), start=date(2026, 1, 1))
+        assert [m["card_id"] for m in got] == expected
+
+
+def test_놓친_혜택은_기본_1만_원_미만이면_빈_목록이다(svc):
+    svc.store.payments = _cvs(NOV_MAR, 100_000)                      # 3개월 6,000원
+    with client(svc) as c:
+        assert c.get("/internal/users/1/missed-benefit", params={"at": AT, "start": "2026-01-01"}).json() == []
+    assert Params().missed_min_gain == 10_000
+
+
+def test_놓친_혜택은_시작_달의_전달_결제만_실적_준비로_쓴다(svc, monkeypatch):
+    """12월 결제는 1월 실적을 알기 위해서만 넣고 11월 결제는 넣지 않는다 (설계서 결정 2)."""
+    import engine.recommend as recommend
+    real, seen = recommend.missed_benefit, {}
+
+    def spy(state, rows, *args, **kwargs):
+        seen["months"] = sorted({(p.paid_at.year, p.paid_at.month) for p in rows})
+        seen["kwargs"] = kwargs
+        return real(state, rows, *args, **kwargs)
+
+    monkeypatch.setattr(recommend, "missed_benefit", spy)
+    svc.store.payments = _cvs(NOV_MAR, 1_000_000)
+    svc.missed_benefit(1, datetime(2026, 3, 20, 12, tzinfo=KST), start=date(2026, 1, 1))
+    assert seen["months"] == [(2025, 12), (2026, 1), (2026, 2), (2026, 3)]
+    assert seen["kwargs"] == {"count_from": (2026, 1), "months": 3}

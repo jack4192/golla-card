@@ -1,6 +1,6 @@
 """2026-11-14 멘토링 반영: 일정 암호화·당일 삭제, 외부 AI 개인정보 차단, 신규 카드 추천."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from cryptography.fernet import Fernet
@@ -9,7 +9,7 @@ from engine.crypto import DataCipher, MissingKey, load_cipher
 from engine.domain import ScheduleItem
 from engine.privacy import llm_view, redact
 from engine.recommend import missed_benefit, recommend
-from tests.conftest import at, pay
+from tests.conftest import KST, at, pay
 
 
 # ---------- 암호화 ----------
@@ -143,3 +143,31 @@ def test_표시_순서가_같고_쓰지_않은_카드가_둘이어도_계산한�
     cards = [UserCard(101, 1, "SHINHAN", 99), UserCard(102, 2, "SHINHAN", 99), UserCard(103, 3, "KB", 99)]
     card4 = next(m for m in missed_benefit(UserState(User(1), cards, catalog, params), _year_rows()) if m["card_id"] == 4)
     assert card4["gain"] == 3 * 4 * 500 and card4["basis"] == "add"
+
+
+# 2026-11-24 연말 결산: 센 첫 달을 정하면 앞 달 결제는 실적만 쌓고 그 달부터 센다
+def _cvs(months, amount=100_000):
+    return [pay(101, amount, "CVS", datetime(y, m, d, 12, tzinfo=KST)) for (y, m) in months for d in (10, 11, 12, 13)]
+
+
+def test_센_첫_달을_주면_앞_달은_실적만_쌓는다(state):
+    rows = _cvs([(2026, m) for m in (6, 7, 8, 9, 10)])
+    card4 = next(m for m in missed_benefit(state, rows, swap=False, count_from=(2026, 7)) if m["card_id"] == 4)
+    assert card4["months"] == 4 and card4["gain"] == 4 * 500
+
+
+def test_센_첫_달_앞에_결제가_없어도_그_달부터_센다(state):
+    rows = _cvs([(2026, m) for m in (7, 8, 9, 10)])
+    card4 = next(m for m in missed_benefit(state, rows, swap=False, count_from=(2026, 7)) if m["card_id"] == 4)
+    assert card4["months"] == 4 and card4["gain"] == 4 * 500         # 기본(첫 달은 준비)이면 3개월 1,500원
+
+
+def test_달_수를_주면_그_달_수로_말한다(state):
+    rows = _cvs([(2026, m) for m in (7, 8, 9, 10)])
+    card4 = next(m for m in missed_benefit(state, rows, swap=False, count_from=(2026, 7), months=5) if m["card_id"] == 4)
+    assert card4["months"] == 5
+    assert card4["message"] == "그때 이 카드를 발급받으셨다면 5개월 동안 2,000원을 더 받으셨어요"
+
+
+def test_센_첫_달부터_결제가_없으면_빈_목록이다(state):
+    assert missed_benefit(state, _cvs([(2026, 7)]), count_from=(2026, 8)) == []

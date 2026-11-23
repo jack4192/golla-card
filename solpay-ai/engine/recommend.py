@@ -233,19 +233,28 @@ def _also(card: Card, category: str) -> bool:
 
 
 def missed_benefit(state, rows: list[Payment], threshold: int = 300, swap: bool = True,
-                   only: set[int] | None = None) -> list[dict]:
+                   only: set[int] | None = None, count_from: tuple[int, int] | None = None,
+                   months: int | None = None) -> list[dict]:
     """연말정산 안내용: 이 기간 결제에 각 신한카드가 있었다면 더 받았을 금액 (연회비 반영, 큰 순서).
     결제는 그대로 두고 현장 결제만 다시 고른다. 달마다 실적을 넘긴다. 두 가정 중 큰 쪽을 쓴다 (2026-11-19 사용자 결정):
     - 함께 쓰기(add): 가진 카드 중 최선보다 threshold 원 이상 더 주고 기존 카드의 실적 구간을 지킬 때만 새 카드로 낸다.
     - 바꾸기(swap): 가진 카드 하나를 새 카드로 바꿨다고 본다 (그 카드로 내던 결제가 모두 새 카드로 가 새 카드 실적이 찬다).
       합이 같으면 가장 덜 쓰던 카드를 바꾼 것으로 보고, 그 카드를 이 기간에 전혀 안 썼으면 '함께 쓰기'로 말한다.
       바꾼 카드의 연회비가 줄어드는 몫은 세지 않는다.
-    only: 이 card_id 들만 계산한다 (추천 페이지는 오늘 더 주는 카드만 본다). None 이면 후보 전부."""
+    only: 이 card_id 들만 계산한다 (추천 페이지는 오늘 더 주는 카드만 본다). None 이면 후보 전부.
+    count_from·months (2026-11-24 연말 결산): (연, 월) 을 주면 그 달부터 혜택을 세고 앞 달 결제는 실적만 쌓는다.
+    months 를 안 주면 그 달부터 마지막 결제 달까지의 달 수. 그 달부터 결제가 없으면 빈 목록."""
     month = lambda p: (p.paid_at.year, p.paid_at.month)
     keys = sorted({month(p) for p in rows})
-    if len(keys) < 2:
-        return []
-    count_from, months = keys[1], len(keys) - 1          # 첫 달은 전월 실적을 몰라 실적만 쌓는다
+    if count_from is None:
+        if len(keys) < 2:
+            return []
+        count_from, months = keys[1], len(keys) - 1      # 첫 달은 전월 실적을 몰라 실적만 쌓는다
+    else:
+        if not keys or keys[-1] < count_from:
+            return []
+        if months is None:
+            months = (keys[-1][0] * 12 + keys[-1][1]) - (count_from[0] * 12 + count_from[1]) + 1
     base, perfs = _simulate(state, rows, None, {}, month, count_from, threshold)
     slack = _slack(state, perfs)
     spend = {c.user_card_id: 0 for c in state.cards}
