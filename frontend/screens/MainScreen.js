@@ -700,7 +700,7 @@ export default function MainScreen({
         전체 카드 상품
       </Text>
       <Text style={styles.catalogIssuer}>
-        내 카드가 아닌 상품도 함께 보여요. 눌러서 혜택을 보고 내 카드로 등록할 수 있어요.
+        내 카드가 아닌 상품도 함께 보여요. 눌러서 혜택을 보고 카드를 신청할 수 있어요.
       </Text>
 
       <View style={styles.catalogFilterRow} accessibilityRole="tablist">
