@@ -133,6 +133,9 @@ export const api = {
   aiEvaluate: body => request('/api/ai/payments/evaluate', { method: 'POST', auth: true, body }),
   // AI 가맹점 목록: [{ merchant_id, name, category_code, category_name }]
   aiMerchants: () => request('/api/ai/merchants', { auth: true }),
+  // 행사(카드사 이벤트·마이샵) 목록: [{ promotionId, kind, name, benefitType, benefitText, minAmount, maxAmount, start, end,
+  //   payout, method, note, needsCheck, logoUrl }] (DB promotions, 챗봇·추천과 같은 목록)
+  promotions: () => request('/api/promotions', { auth: true }),
   // 맞춤 추천 페이지: { tabs, card, merchant: { offers } } (AI 가 카드날·행사 여부로 탭을 정한다)
   aiRecommendationPage: () => request('/api/ai/recommendation-page', { method: 'POST', auth: true, timeout: AI_CHAT_TIMEOUT_MS }),
   aiConfirmRuleDraft: draftId => request('/api/ai/rules/drafts/' + encodeURIComponent(draftId) + '/confirm', { method: 'POST', auth: true }),
