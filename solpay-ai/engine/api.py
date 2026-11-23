@@ -77,6 +77,12 @@ class AtBody(BaseModel):
     at: datetime | None = None
 
 
+class DayBody(BaseModel):
+    """하루 배치 (앱 홈 시간 표시줄, 2026-11-23). now 는 백엔드의 '지금' (시연 고정 시각이 있으면 그것)."""
+    day: date
+    now: datetime | None = None
+
+
 class PlaceBody(BaseModel):
     """일정 '직접 입력'의 짧은 말 (2026-11-23). 원문은 저장하지 않는다."""
     text: str = Field(max_length=100)
@@ -381,6 +387,15 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         (kind=promotion, offers 최대 2건). 둘 다 없으면 kind=none. 프로모션을 추천한 일정 시간에는 그 신한카드가 1순위다."""
         try:
             return svc.schedule_popup(user_id, _kst(body.at))
+        except UnknownUser:
+            raise HTTPException(status_code=404, detail="없는 사용자입니다")
+
+    @app.post("/internal/users/{user_id}/day-placement", dependencies=[Depends(check_token)])
+    def day_placement(user_id: int, body: DayBody, svc: PlacementService = Depends(current)) -> dict:
+        """앱 홈 시간 표시줄용 하루 배치 (2026-11-23). 매시 정각·일정 창 경계에서 계산해 1순위가 같은 점을 구간으로
+        합친다: {day, segments:[{start, end, user_card_id, message, reason_code, cards}]}. 추천 기록은 남기지 않는다."""
+        try:
+            return svc.day_placement(user_id, body.day, _kst(body.now))
         except UnknownUser:
             raise HTTPException(status_code=404, detail="없는 사용자입니다")
 
