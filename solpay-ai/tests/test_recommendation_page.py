@@ -1,5 +1,6 @@
 """맞춤 추천 페이지 (설계서 2026-11-19-recommendation-page-design.md)."""
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from engine.benefit_calc import Benefit, Card
@@ -178,13 +179,23 @@ def test_카드날은_두_탭():
     assert [(o.brand, o.user_card_id, o.total) for o in page.offers] == [("메가MGC커피", 201, 1_100)]
 
 
-def test_카드날_아니면_가맹점_탭만():
+def test_매번_카드_탭도_보여준다():
+    # 2026-11-24 사용자 결정: 더 주는 새 카드가 있으면 카드날이 아니어도 매번 카드 탭과 프로모션 탭을 함께
+    assert Params().page_card_every_time is True
     page = build_page(state_of(), habit_payments(), [coffee()], YESTERDAY, PROMOS, NOW, TODAY)
+    assert (page.card_day, page.tabs, page.trigger, page.card.card_id) == (True, ["card", "merchant"], CYCLE, 9)
+
+
+def test_카드날_규칙을_켜면_카드날_아닌_날은_가맹점_탭만():
+    three_days = Params(page_yearly=False, page_card_every_time=False)
+    page = build_page(state_of(), habit_payments(), [coffee()], YESTERDAY, PROMOS, NOW, three_days)
     assert (page.card_day, page.tabs, page.card, page.trigger) == (False, ["merchant"], None, None)
 
 
 def test_프로모션이_없으면_카드_탭만():
-    page = build_page(state_of(), habit_payments(), [coffee()], YESTERDAY, [], NOW, TODAY)
+    # 카드날이 아닌 날 대신 보여 주는 카드(FALLBACK)는 3일 규칙을 켤 때만 생긴다 (2026-11-24 기본은 매번 카드 탭)
+    three_days = Params(page_yearly=False, page_card_every_time=False)
+    page = build_page(state_of(), habit_payments(), [coffee()], YESTERDAY, [], NOW, three_days)
     assert (page.tabs, page.trigger, page.card.card_id) == (["card"], FALLBACK, 9)
 
 
@@ -312,6 +323,7 @@ def test_평소_소비_행사는_결제_화면에_쓰지_않는다(page_svc):
 
 
 def test_대신_보여준_카드_기록(page_svc):
+    page_svc.engine.params = replace(page_svc.engine.params, page_card_every_time=False)   # 3일 규칙을 켤 때만
     page_svc.store.recommended = [{"at": NOW - timedelta(days=1), "card_id": 8, "trigger": CYCLE}]
     page_svc.popup_promotions = []
     _save_coffee(page_svc)

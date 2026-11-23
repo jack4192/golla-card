@@ -321,7 +321,7 @@ def build_page(state, payments: list[Payment], schedules: list[ScheduleItem], hi
                excluded: Callable[[datetime], set[int]] | None = None) -> Page:
     """표시 규칙대로 카드·행사를 고른다. excluded(시각) → 사용자 제외 규칙에 걸린 보유 카드 (행사 카드에서 뺀다)."""
     source, items = today_items(schedules, payments, state.catalog, at, params, state.user.user_id)
-    card_day = is_card_day(history, at, params)
+    card_day = params.page_card_every_time or is_card_day(history, at, params)   # 2026-11-24: 기본은 매번 카드 탭
     offers = _unique(promotion_offers(state, items, promotions, at, params, excluded))[:params.popup_promotions]
     card = pick_card(state, payments, items, history, at, params) if card_day or not offers else None
     trigger = None if card is None else (CYCLE if card_day else FALLBACK)
