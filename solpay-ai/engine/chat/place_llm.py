@@ -61,6 +61,8 @@ class PlaceLLM:
                 response_format={"type": "json_schema",
                                  "json_schema": {"name": "place_classify", "strict": True, "schema": SCHEMA}})
             data = json.loads(resp.choices[0].message.content or "")
+            if not isinstance(data, dict):
+                raise ValueError("JSON 객체가 아닙니다")
         except Exception:                       # OpenAI 장애·시간 초과·형식 오류
             return None
         category = data.get("category") if data.get("category") in categories else "UNKNOWN"

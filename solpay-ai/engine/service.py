@@ -385,6 +385,7 @@ class PlacementService:
             raise ValueError("지난 날의 일정은 넣을 수 없습니다")
         names = self.engine.catalog.category_names
         brands = {m.brand_code for m in self.engine.catalog.merchants.values() if m.brand_code}
+        pairs = self._place_pairs()
         parsed = []
         for i, raw in enumerate(items):
             if raw["category"] not in names or raw["category"] == "ALL":
@@ -392,6 +393,8 @@ class PlacementService:
             brand = raw.get("brand") or None
             if brand is not None and brand not in brands:
                 raise ValueError(f"알 수 없는 가맹점 브랜드: {brand}")
+            if brand is not None and (raw["category"], brand) not in pairs:
+                raise ValueError(f"업종과 맞지 않는 가맹점 브랜드: {raw['category']} · {brand}")
             start = datetime.combine(day, raw["start"], tzinfo=now.tzinfo)
             end = datetime.combine(day, raw["end"], tzinfo=now.tzinfo)
             if end <= start:
@@ -525,6 +528,14 @@ class PlacementService:
         out["ms"] = int((_time.monotonic() - started) * 1000)
         return out
 
+    def _place_pairs(self) -> set[tuple[str, str]]:
+        """카탈로그 가맹점의 (업종, 브랜드 코드) 쌍. 써브웨이처럼 두 업종에 걸친 브랜드가 있어 쌍으로 본다."""
+        pairs = self.__dict__.get("_pairs")
+        if pairs is None:
+            pairs = self.__dict__["_pairs"] = {(m.category, m.brand_code) for m in self.engine.catalog.merchants.values()
+                                               if m.brand_code}
+        return pairs
+
     def _classify_new(self, q: str, llm) -> tuple[dict, bool]:
         """(사용자와 무관한 분류, 캐시해도 되는지). OpenAI 가 실패한 결과는 캐시하지 않는다 (다음에 다시 시도)."""
         from engine.place import _candidate, match_place, resembles
@@ -534,7 +545,14 @@ class PlacementService:
         if m.exact or m.category:
             return {"category": m.category, "brand": m.brand, "brand_name": m.brand_name, "source": "search",
                     "candidates": m.candidates}, True
-        if len({c["brand"] for c in m.candidates if c["brand"]}) >= 2:     # 'GS' 처럼 여러 브랜드면 고르지 않는다
+        brand_cands = {c["brand"] for c in m.candidates if c["brand"]}
+        cats = {c["category"] for c in m.candidates}
+        generic = any(c["brand"] is None for c in m.candidates)          # 업종 이름에 걸린 후보가 있다
+        if len(cats) == 1 and (len(brand_cands) >= 2 or (generic and brand_cands)):
+            # '카페'·'커피'·'주유소': 브랜드는 정하지 않아도 업종은 하나. 업종 이름 부분 일치만 있고 가맹점 근거가
+            # 없으면('동네 헬스' → 헬스앤뷰티) 정하지 않는다
+            return {**empty, "category": next(iter(cats)), "source": "search", "candidates": m.candidates}, True
+        if len(brand_cands) >= 2:                 # 'GS' 처럼 여러 업종의 여러 브랜드면 고르지 않는다
             return {**empty, "source": "search", "candidates": m.candidates}, True
         if not q or llm is None:
             return {**empty, "source": "none", "candidates": m.candidates}, False
@@ -548,6 +566,8 @@ class PlacementService:
         brand = answer["brand"]
         if brand is not None and not resembles(q, brand, brands.get(brand)):
             brand = None                       # 글에 없는 브랜드를 붙이지 않는다 ('커피 한 잔' → 스타벅스)
+        if brand is not None and (answer["category"], brand) not in self._place_pairs():
+            brand = None                       # 그 업종에 없는 브랜드 (카페 + 올리브영)
         if answer["confidence"] == "low":
             return {**empty, "source": "llm",
                     "candidates": [_candidate(catalog, answer["category"], brand, brands.get(brand))]}, True

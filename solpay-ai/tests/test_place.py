@@ -38,7 +38,6 @@ def _merchant_of(catalog, brand):
     ("메가커피", "CAFE", "메가MGC커피"),
     ("올리브영", "HNB", "올리브영"),
     ("신세계백화점", "DEPARTMENT_STORE", "신세계백화점"),
-    ("스타벅스 강남", "CAFE", "스타벅스"),
 ])
 def test_브랜드_별칭_정확_일치(catalog, text, category, brand):
     from engine.place import match_place
@@ -321,3 +320,44 @@ def test_오타_줄임말은_닮았으면_브랜드_유지(svc, text, brand):
     category = {"스타벅스": "CAFE", "올리브영": "HNB", "맥도날드": "FAST_FOOD", "파리바게뜨": "BAKERY", "투썸플레이스": "CAFE"}[brand]
     llm, _ = _llm([_answer(category, brand)])
     assert svc.classify_place(text, llm=llm)["brand"] == brand
+
+
+# ---------- 최종 검토 수정 (2026-11-23) ----------
+
+@pytest.mark.parametrize("text", ["멜론 빙수", "웨이브 펌", "outback", "flower", "biscuit", "kt wiz 야구"])
+def test_짧은_브랜드가_글에_들어_있기만_하면_검색으로_확정하지_않음(catalog, text):
+    from engine.place import match_place
+    m = match_place(text, catalog)
+    assert m.brand is None and m.exact is False
+
+
+def test_브랜드를_품은_글은_후보로만_두고_OpenAI_가_확정(svc, catalog):
+    from engine.place import match_place
+    m = match_place("스타벅스 강남", catalog)
+    assert m.brand is None and m.exact is False and "스타벅스" in {c["brand"] for c in m.candidates}
+    llm, client = _llm([_answer("CAFE", "스타벅스")])
+    r = svc.classify_place("스타벅스 강남", llm=llm)
+    assert (r["category"], r["brand"], r["source"]) == ("CAFE", "스타벅스", "llm") and len(client.requests) == 1
+
+
+def test_OpenAI_업종과_브랜드가_맞지_않으면_브랜드는_버림(svc):
+    llm, _ = _llm([_answer("CAFE", "올리브영")])
+    r = svc.classify_place("올리브엉 앞 카페", llm=llm)
+    assert (r["category"], r["brand"]) == ("CAFE", None)
+
+
+def test_업종과_맞지_않는_brand_일정은_422(client):
+    r = client.put("/internal/users/1/schedules/2026-11-05", params=AT_Q, json={"items": [_item(category="FUEL", brand="스타벅스")]})
+    assert r.status_code == 422 and "업종과 맞지 않는" in r.json()["detail"]
+
+
+def test_OpenAI_가_JSON_객체가_아닌_답을_주면_none(svc):
+    llm, _ = _llm(["[1, 2]"])
+    assert svc.classify_place("필라테스 센터", llm=llm)["source"] == "none"
+
+
+@pytest.mark.parametrize("text, category", [("카페", "CAFE"), ("커피", "CAFE"), ("주유소", "FUEL")])
+def test_여러_브랜드가_한_업종이면_업종은_정함(svc, text, category):
+    llm, client = _llm([])
+    r = svc.classify_place(text, llm=llm)
+    assert (r["category"], r["brand"], r["source"]) == (category, None, "search") and client.requests == []
