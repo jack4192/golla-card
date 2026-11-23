@@ -1,0 +1,71 @@
+package com.paymate.backend.config;
+
+import com.paymate.backend.auth.filter.JwtAuthenticationFilter;
+import com.paymate.backend.auth.service.TokenBlacklist;
+import com.paymate.backend.common.exception.CommonErrorCode;
+import com.paymate.backend.common.exception.ErrorCode;
+import com.paymate.backend.util.JWTUtil;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+@Configuration
+@RequiredArgsConstructor
+public class SecurityConfig {
+
+    private final JWTUtil jwtUtil;
+    private final TokenBlacklist tokenBlacklist;
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+                .csrf(csrf -> csrf.disable())
+                .formLogin(login -> login.disable())
+                .httpBasic(basic -> basic.disable())
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth
+                        // 로그인 없이 호출할 수 있는 API
+                        .requestMatchers("/api/auth/signup", "/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/users/email-availability",
+                                "/api/users/phone-availability").permitAll()
+                        .requestMatchers("/error").permitAll()
+                        // 그 외 모든 API는 로그인(토큰) 필요 → 새 기능은 아무 설정 없이 자동으로 보호됨
+                        .anyRequest().authenticated())
+                .exceptionHandling(e -> e
+                        // 토큰이 없거나 유효하지 않음 → 401
+                        .authenticationEntryPoint((req, res, ex) -> writeError(res, CommonErrorCode.UNAUTHORIZED))
+                        // 로그인은 했지만 권한 부족 → 403
+                        .accessDeniedHandler((req, res, ex) -> writeError(res, CommonErrorCode.FORBIDDEN)))
+                .addFilterBefore(new JwtAuthenticationFilter(jwtUtil, tokenBlacklist),
+                        UsernamePasswordAuthenticationFilter.class);
+
+        return http.build();
+    }
+
+    private static void writeError(HttpServletResponse res, ErrorCode errorCode) throws IOException {
+        res.setStatus(errorCode.getStatus().value());
+        res.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        res.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        res.getWriter().write("{\"code\":\"" + errorCode.getCode()
+                + "\",\"message\":\"" + errorCode.getMessage() + "\"}");
+    }
+}
