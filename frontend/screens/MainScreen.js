@@ -23,6 +23,8 @@ import { createPinSalt, hashPin } from '../utils/pinCrypto';
 import PaymentScreen, { realProductCard, realWalletCards } from './PaymentScreen';
 import { getActiveWalletCard } from '../data/cards';
 import { canRegisterWalletCard } from '../utils/wallet';
+import { SERVER_MODE, api } from '../utils/api';
+import { suggestionsFor, toChatHistory } from '../utils/homeChat';
 const NAV = [{
   id: 'home',
   label: '홈',
@@ -293,6 +295,9 @@ export default function MainScreen({
   const [chatVisible, setChatVisible] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState([]);
+  const [chatBusy, setChatBusy] = useState(false);   // AI 챗봇이 답하는 중
+  const chatSeq = React.useRef(0);
+  const chatScroll = React.useRef(null);   // 새 답이 오면 맨 아래로 내린다
   const [exitOpen, setExitOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [yearEndOpen, setYearEndOpen] = useState(false);
@@ -574,14 +579,8 @@ export default function MainScreen({
       setRegisteringCard(false);
     }
   };
-  // 화면(탭)에 맞춘 인사말·추천 질문
-  const CHAT_BY_TAB = {
-    home: ['오늘 일정에 맞는 카드', '내 카드 정보', '진행 중인 프로모션'],
-    schedule: ['일정은 어떻게 추가해?', '오늘 일정에 맞는 카드', '내 카드 정보'],
-    benefits: ['진행 중인 프로모션', '혜택은 어디서 봐?', '내 카드 정보'],
-    cards: ['내 카드 정보', '카드 등록은 어떻게 해?', '결제 카드 바꾸는 법'],
-  };
-  const chatQuick = CHAT_BY_TAB[tab] || CHAT_BY_TAB.home;
+  // 화면(탭)에 맞춘 추천 질문. AI 챗봇 평가 질문에서 골라 내 카드 이름을 넣는다 (utils/homeChat.js)
+  const chatQuick = useMemo(() => suggestionsFor(tab, walletCards), [tab, walletCards]);
   const openChat = () => {
     if (typeof onOpenChat === 'function') {
       onOpenChat({
@@ -592,15 +591,16 @@ export default function MainScreen({
     }
     const where = { home: '홈', schedule: '오늘의 일정', benefits: '혜택', cards: '카드' }[tab] || '홈';
     setChatMessages([{
+      id: 'greeting',
       role: 'bot',
+      greeting: true,
       text: `안녕하세요, SOL 카드 도우미예요. ${where} 화면에서 궁금한 점을 물어보세요.` + (currentCard ? ` 지금 결제 카드는 ${currentCard.name}예요.` : '')
     }]);
     setChatInput('');
     setChatVisible(true);
   };
-  const askBot = (question = chatInput) => {
-    const q = String(question).trim();
-    if (!q) return;
+  // 앱 안의 기본 안내 (데모 모드, 또는 AI 챗봇에 연결하지 못했을 때)
+  const localAnswer = q => {
     let answer = '카드 정보, 진행 중인 프로모션, 일정 등록 방법을 안내해드려요. 아래 추천 질문을 눌러보세요.';
     if (/프로모션|이벤트|진행/.test(q)) {
       const list = activePromotions();
@@ -626,14 +626,43 @@ export default function MainScreen({
     } else if (/실적|한도/.test(q)) {
       answer = '전월 실적과 남은 혜택 한도는 실제 금융 데이터가 연결되지 않아 확인할 수 없어요.';
     }
-    setChatMessages(items => [...items, {
-      role: 'user',
-      text: q
-    }, {
-      role: 'bot',
-      text: answer
-    }]);
+    return answer;
+  };
+  const updateChat = (id, change) => setChatMessages(items => items.map(item => (item.id === id ? { ...item, ...change } : item)));
+  // 서버 모드에서는 AI 챗봇(/api/ai/chat)에 묻는다 (2026-11-23 결정: 앱 사용법·프로모션도 AI 가 답한다).
+  const askBot = (question = chatInput) => {
+    const q = String(question).trim();
+    if (!q || chatBusy) return;
     setChatInput('');
+    const id = ++chatSeq.current;
+    if (!SERVER_MODE) {
+      setChatMessages(items => [...items, { id: 'q' + id, role: 'user', text: q }, { id, role: 'bot', text: localAnswer(q) }]);
+      return;
+    }
+    const history = toChatHistory(chatMessages);
+    setChatBusy(true);
+    setChatMessages(items => [...items, { id: 'q' + id, role: 'user', text: q }, { id, role: 'bot', pending: true, text: '답변을 준비하고 있어요…' }]);
+    api.aiChat({ message: q, history, screen: { name: tab } })
+      .then(data => {
+        if (!data?.reply) return { text: localAnswer(q), offline: true };
+        const draft = data.rule_draft?.draft_id != null
+          ? { id: data.rule_draft.draft_id, summary: data.rule_draft.summary || '', state: 'pending' }
+          : null;
+        return { text: data.reply, draft };
+      })
+      .catch(() => ({ text: localAnswer(q), offline: true }))
+      .then(answer => {
+        updateChat(id, { pending: false, ...answer });
+        setChatBusy(false);
+      });
+  };
+  // 챗봇이 만든 규칙 초안을 저장하거나 버린다
+  const decideDraft = (item, action) => {
+    updateChat(item.id, { draft: { ...item.draft, state: 'working' } });
+    (action === 'confirm' ? api.aiConfirmRuleDraft(item.draft.id) : api.aiCancelRuleDraft(item.draft.id))
+      .then(() => (action === 'confirm' ? 'saved' : 'cancelled'))
+      .catch(() => 'error')
+      .then(state => updateChat(item.id, { draft: { ...item.draft, state } }));
   };
   const benefitTile = item => {
     const logo = PROMOTION_BRANDS[item.merchant]?.image || MYSHOP_LOGOS[item.merchant];
@@ -1163,20 +1192,36 @@ export default function MainScreen({
           <KeyboardAvoidingView style={{
           flex: 1
         }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <ScrollView style={{
+            <ScrollView ref={chatScroll} onContentSizeChange={() => chatScroll.current?.scrollToEnd({ animated: true })} style={{
             flex: 1
           }} contentContainerStyle={styles.messages}>
-              {chatMessages.map((item, index) => <View key={index} style={[styles.chatBubble, item.role === 'user' && styles.chatUserBubble]}>
+              {chatMessages.map((item, index) => <View key={item.id ?? index} style={[styles.chatBubble, item.role === 'user' && styles.chatUserBubble]}>
                   <Text style={[styles.chatBubbleText, item.role === 'user' && styles.chatUserText]}>
                     {item.text}
                   </Text>
+                  {!!item.offline && <Text style={styles.chatNote}>AI 챗봇에 연결하지 못해 기본 안내로 답했어요.</Text>}
+                  {!!item.draft && <View style={styles.chatDraft}>
+                      {!!item.draft.summary && <Text style={styles.chatBubbleText}>{item.draft.summary}</Text>}
+                      {(item.draft.state === 'pending' || item.draft.state === 'error') && <View style={styles.chatDraftButtons}>
+                          <TouchableOpacity accessibilityRole="button" style={styles.chatDraftSave} onPress={() => decideDraft(item, 'confirm')}>
+                            <Text style={styles.chatDraftSaveText}>저장</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity accessibilityRole="button" style={styles.quickButton} onPress={() => decideDraft(item, 'cancel')}>
+                            <Text style={styles.quickButtonText}>취소</Text>
+                          </TouchableOpacity>
+                        </View>}
+                      {item.draft.state === 'working' && <Text style={styles.chatNote}>처리하고 있어요…</Text>}
+                      {item.draft.state === 'saved' && <Text style={styles.chatNote}>저장했어요. 다음 결제 화면부터 적용돼요.</Text>}
+                      {item.draft.state === 'cancelled' && <Text style={styles.chatNote}>저장하지 않았어요.</Text>}
+                      {item.draft.state === 'error' && <Text style={styles.chatNote}>처리하지 못했어요. 다시 눌러 주세요.</Text>}
+                    </View>}
                 </View>)}
             </ScrollView>
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickArea} contentContainerStyle={{
             paddingHorizontal: 14
           }}>
-              {chatQuick.map(item => <TouchableOpacity key={item} style={styles.quickButton} onPress={() => askBot(item)}>
+              {chatQuick.map(item => <TouchableOpacity key={item} disabled={chatBusy} style={[styles.quickButton, chatBusy && { opacity: 0.5 }]} onPress={() => askBot(item)}>
                   <Text style={styles.quickButtonText}>
                     {item}
                   </Text>
@@ -1185,7 +1230,7 @@ export default function MainScreen({
 
             <View style={styles.chatInputRow}>
               <TextInput style={styles.chatInput} value={chatInput} onChangeText={setChatInput} placeholder="질문을 입력하세요" returnKeyType="send" onSubmitEditing={() => askBot()} />
-              <TouchableOpacity style={styles.chatSend} onPress={() => askBot()}>
+              <TouchableOpacity style={[styles.chatSend, chatBusy && { opacity: 0.5 }]} disabled={chatBusy} onPress={() => askBot()}>
                 <Ionicons name="send" size={19} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
@@ -2037,6 +2082,35 @@ const styles = StyleSheet.create({
   chatUserBubble: {
     alignSelf: 'flex-end',
     backgroundColor: "#245DE5"
+  },
+  chatNote: {
+    marginTop: 6,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#5A6E89'
+  },
+  chatDraft: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    gap: 8
+  },
+  chatDraftButtons: {
+    flexDirection: 'row',
+    gap: 6
+  },
+  chatDraftSave: {
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#1756DF'
+  },
+  chatDraftSaveText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800'
   },
   chatBubbleText: {
     color: '#374459',
