@@ -330,24 +330,46 @@ def load_team(src: TableSource | None = None, cmap: CardMap | None = None) -> Te
 
 def load_promotions(src: TableSource, catalog: Catalog, cmap: CardMap) -> list[Promotion]:
     """promotions 표. 브랜드(merchant_name)로 가맹점을 찾는다 (업종 칸은 대표 업종이라 쓰지 않는다).
-    기간은 시작일 0시 ~ 종료일 23:59:59 (KST)."""
+    점수 기간은 start_date 0시 ~ end_date 23:59:59 (KST, 가상 1년 결제용으로 대부분 2025-11-01 부터).
+    화면용 칸(2026-11-23: display_name·display_start/end·needs_check·logo_url)이 있으면 싣고, 없으면(마이그레이션 전 DB·
+    예전 zip·v2 폴더) promotions.yml 에서 같은 번호의 확인 필요·실제 기간·화면 이름을 채운다 (점수가 지금과 같게)."""
     aliases = _table_aliases(src)
+    df = src.read("promotions")
+    complete = "display_name" in df.columns
+    fallback = {} if complete else {p.promotion_id: p for p in _yml_promotions(catalog)}
     out = []
-    for r in src.read("promotions").itertuples():
+    for r in df.itertuples():
         fixed = r.value_type == "FIXED"
         s, e = pd.Timestamp(r.start_date).date(), pd.Timestamp(r.end_date).date()
         brand = _none(r.merchant_name)
+        pid = int(r.promotion_id)
+        if complete:
+            ds, de = _none(r.display_start), _none(r.display_end)
+            shown_from = None if ds is None else datetime.combine(pd.Timestamp(ds).date(), time(0), tzinfo=KST)
+            shown_to = None if de is None else datetime.combine(pd.Timestamp(de).date(), time(23, 59, 59), tzinfo=KST)
+            display = {"display_name": _none(r.display_name), "shown_from": shown_from, "shown_to": shown_to,
+                       "logo_url": _none(r.logo_url), "needs_check": _bool(r.needs_check)}
+        else:
+            y = fallback.get(pid)
+            display = {"display_name": y.brand if y else None, "shown_from": y.starts_at if y else None,
+                       "shown_to": y.ends_at if y else None, "logo_url": None,
+                       "needs_check": bool(y.needs_check) if y else False}
         out.append(promotion_from_row({
-            "promotion_id": int(r.promotion_id), "brand": brand or r.promo_name,
+            "promotion_id": pid, "brand": brand or r.promo_name,
             "match_brand": cmap.merchant_brand(brand, aliases) if brand else None, "category_code": None,
             "issuer_code": cmap.issuer(r.issuer) if _none(r.issuer) else None, "card_id": _int(r.card_id),
             "amount": int(r.value) if fixed else None, "rate": None if fixed else float(r.value) / 100,
             "min_amount": _int(getattr(r, "min_amount", 0)) or 0, "max_amount": _int(r.max_amount),
             "starts_at": datetime.combine(s, time(0), tzinfo=KST),
             "ends_at": datetime.combine(e, time(23, 59, 59), tzinfo=KST),
-            "title": r.promo_name, "kind": _none(getattr(r, "kind", None)) or "event", "needs_check": False,
+            "title": r.promo_name, "kind": _none(getattr(r, "kind", None)) or "event", **display,
         }, catalog))
     return out
+
+
+def _yml_promotions(catalog: Catalog) -> list[Promotion]:
+    from engine.loader import load_popup_promotions
+    return load_popup_promotions(catalog)
 
 
 # ---------- 저장소 ----------
@@ -358,6 +380,7 @@ from engine.store import ParquetStore  # noqa: E402  (store 가 loader 를 쓰�
 class TeamDbStore(ParquetStore):
     """팀 DB 표를 메모리에 올려 쓴다. 규칙·일정·추천 기록은 시연용으로 메모리에 둔다
     (운영에서는 Spring 이 DB 에 쓰고 엔진은 읽기만 한다)."""
+    promotions_complete = True    # 행사 목록이 화면 정보·확인 필요까지 갖춰 yml 을 합치지 않는다 (2026-11-23)
 
     def __init__(self, source: TableSource | None = None, card_map: CardMap | None = None):
         self.source = source or source_from_env()

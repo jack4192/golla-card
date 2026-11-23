@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Animated, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { PROMOTION_BRANDS } from '../data/promotionBrands';
 import useRecommendationReveal from './useRecommendationReveal';
 
 const money = value => Number(value).toLocaleString('ko-KR') + '원';
@@ -9,8 +8,9 @@ const money = value => Number(value).toLocaleString('ko-KR') + '원';
 export default function PromotionOffer({ offer, reason, status, onBrowse, recommendation = false, reduced = true }) {
   const [expanded, setExpanded] = useState(false);
   const [logoStatus, setLogoStatus] = useState('loading');
-  const brand = PROMOTION_BRANDS[offer.merchant];
-  const hasLogo = brand && logoStatus !== 'failed';
+  // 로고는 서버가 준다 (offer.logo = { uri }, 2026-11-23 행사 DB 이전). 없거나 받지 못하면 이름만
+  const logo = offer.logo;
+  const hasLogo = Boolean(logo) && logoStatus !== 'failed';
   const summary = String(offer.benefit || offer.merchant).replace(' 마이신한포인트', 'P');
   const detailsLabel = expanded ? '상세 혜택 접기' : '더 자세한 혜택 보기';
   const { motionStyle } = useRecommendationReveal({
@@ -22,15 +22,13 @@ export default function PromotionOffer({ offer, reason, status, onBrowse, recomm
       {hasLogo ? <View style={recommendation && s.stage}>
         <Animated.View style={[
           s.logoBox,
-          { backgroundColor: brand.background },
+          s.logoBackground,
           recommendation && s.recommendationLogoBox,
           recommendation && motionStyle,
         ]}>
-          <Image source={brand.image} style={[
+          <Image source={logo} style={[
             s.logo,
-            brand.paddedLogo && s.paddedLogo,
             recommendation && s.recommendationLogo,
-            recommendation && brand.paddedLogo && s.recommendationPaddedLogo,
           ]} resizeMode="contain" fadeDuration={0} accessible accessibilityLabel={offer.merchant + ' 로고'}
             onLoad={() => setLogoStatus('loaded')} onError={() => setLogoStatus('failed')} />
         </Animated.View>
@@ -75,6 +73,7 @@ const s = StyleSheet.create({
   stage: { width: '100%', minHeight: 168, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   logoBox: { width: 142, maxWidth: '100%', height: 64, alignItems: 'center', justifyContent: 'center', borderRadius: 12, borderWidth: 1, borderColor: '#E8EBF0', overflow: 'hidden' },
   logo: { width: 118, height: 46, maxWidth: '100%' },
+  logoBackground: { backgroundColor: '#FFFFFF' },     // 브랜드별 배경색은 앱 데이터라 두지 않는다 (2026-11-23)
   paddedLogo: { width: 134, height: 70 },
   recommendationLogoBox: { width: '100%', maxWidth: 252, height: 120, borderRadius: 20 },
   recommendationLogo: { width: '82%', height: 80 },

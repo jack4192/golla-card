@@ -3,13 +3,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, AppState, Image, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import PromotionOffer from '../components/PromotionOffer';
 import { resolveWalletProduct } from '../components/WalletProductCard';
-import { recommendPromotion } from '../data/promotions';
 import { CardReveal, officialProduct } from './RoutinePatternRecommendationScreen';
-import { dateKey, eventEndDate, makeSignals, readEvents, readProfile } from '../utils/routineData';
+import { dateKey, eventEndDate, readEvents, readProfile } from '../utils/routineData';
 import { benefitText, emptyPreferences, money, rankRecommendations, readPreferences } from '../utils/cardRecommendation';
 import { recordRecommendation } from '../utils/savingsRecords';
 import { addNotification } from '../utils/notifications';
-import { SERVER_MODE, api } from '../utils/api';
+import { API_BASE_URL, SERVER_MODE, api } from '../utils/api';
 import { CARD_CATALOG_40 } from '../data/cardCatalog40';
 import { toCardRecommendation, toPromotionOffer, visibleTabs } from '../utils/aiRecommendCore';
 export { officialProduct, recentPattern } from './RoutinePatternRecommendationScreen';
@@ -33,7 +32,6 @@ function buildRecommendations(profile, events, saved, now, useCurrentTime, cardA
     now >= new Date(`${event.date}T${event.start}:00`) && now < eventEndDate(event)) : [];
   const relevant = active.length ? active.map(event => ({ ...event, date: day })) : events;
   const input = active.length ? null : profile;
-  const signals = makeSignals(input, relevant, day);
   const preferences = emptyPreferences();
   preferences.owned = saved.owned;
   const rank = (routine, schedules) => rankRecommendations(routine, schedules, preferences, now).filter(row =>
@@ -49,7 +47,8 @@ function buildRecommendations(profile, events, saved, now, useCurrentTime, cardA
   // 연말 결산용: 같은 일정에서 혜택이 가장 좋은 '내 카드'(카드사 상관없이)
   const ownedBest = example ? null : rankRecommendations(input, relevant, preferences, now)
     .find(row => row.owned && row.matches.some(match => match.status !== 'blocked')) || null;
-  return { card, example, ownedBest, ...(cardAd ? {} : recommendPromotion(signals, now)) };
+  // 행사 추천은 서버 모드의 AI 맞춤 추천만 (2026-11-23: 앱에 행사 데이터를 두지 않는다)
+  return { card, example, ownedBest };
 }
 export default function RoutineRecommendationScreen({
   onNext,
@@ -129,7 +128,7 @@ export default function RoutineRecommendationScreen({
     if (!aiPage) return local;
     // AI 가 카드를 주면 그것을, 못 주면(결제 내역이 없는 새 가입자 등) 설문 기반 앱 계산을 쓴다 (2026-11-23 결정)
     const aiCard = toCardRecommendation(aiPage, CARD_CATALOG_40);
-    const aiOffer = toPromotionOffer(aiPage);
+    const aiOffer = toPromotionOffer(aiPage, API_BASE_URL);
     return {
       ...local,
       ...(aiCard ? { card: aiCard, example: false, ownedBest: null } : {}),
