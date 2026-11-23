@@ -4,6 +4,7 @@ import com.paymate.backend.schedule.entity.Schedule;
 import com.paymate.backend.schedule.event.ScheduleChangedEvent;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,9 +26,11 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>AI 엔진은 '몇 시부터 몇 시까지, 어느 업종에서, 얼마쯤 쓴다'만 받는다. 그래서
  * <ul>
- *   <li>장소 일정(PLACE)만 넘긴다. 상황 일정은 업종을 알 수 없어 넘기지 않는다.</li>
+ *   <li>장소 일정(PLACE)을 넘긴다. 상황 일정은 업종을 알 수 없어 넘기지 않는다.</li>
  *   <li>직접 입력(OTHER) 일정은 이름(예: 스타벅스)을 AI 분류기에 물어, 업종이 나오면 그 업종과 가맹점으로 넘긴다.
  *       업종을 못 찾거나 분류에 실패하면 넘기지 않는다. DB 의 일정은 바꾸지 않는다.</li>
+ *   <li>일정 추가 창(팀원 PR #5)의 직접 입력은 상황 일정(종류 other + 이름)으로 저장된다. 시간이 있으면 이것도
+ *       장소 일정의 직접 입력처럼 이름을 분류해 넘긴다 (2026-11-24: 영화관·골프 일정이 AI 에 안 가던 문제).</li>
  *   <li>분류는 일정 저장 중에 일어나므로, 한 번 넘길 때 분류에 쓰는 시간을 4초로 묶는다 (남은 것은 넘기지 않는다).</li>
  *   <li>금액은 일정에 없으므로 과거 결제로 채운다: 내 중앙값 → 전체 사용자 중앙값 → 10,000원.</li>
  *   <li>하루 일정을 통째로 바꾼다 (AI 엔진 API 가 그렇게 받는다). 하루 10개까지.</li>
@@ -38,6 +41,8 @@ import tools.jackson.databind.json.JsonMapper;
 public class ScheduleAiSync {
 
     private static final String PLACE = "PLACE";
+    private static final String SITUATION = "SITUATION";
+    private static final String TYPED_DIRECT_INPUT = "other";     // 상황 일정의 '직접 입력' 종류 (앱 일정 추가 창)
     private static final String DIRECT_INPUT = "OTHER";
     private static final Set<String> UNKNOWN_CATEGORIES = Set.of("OTHER", "ALL");
     private static final int DEFAULT_AMOUNT = 10_000;
@@ -151,24 +156,26 @@ public class ScheduleAiSync {
             if (items.size() == MAX_ITEMS) {
                 break;
             }
-            if (!PLACE.equals(s.getKind()) || s.getCategory() == null || s.getStartTime() == null || s.getEndTime() == null) {
+            boolean typedDirect = isTypedDirectInput(s);
+            boolean place = PLACE.equals(s.getKind()) && s.getCategory() != null;
+            if (!(place || typedDirect) || s.getStartTime() == null || s.getEndTime() == null) {
                 continue;
             }
             String end = "24:00".equals(s.getEndTime()) ? "23:59" : s.getEndTime();   // AI 엔진은 24:00 을 못 읽는다
             if (end.compareTo(s.getStartTime()) <= 0) {
                 continue;
             }
-            Place place = placeOf(s, guesses, deadline, out);
-            if (place == null) {
+            Place found = typedDirect ? classifyTitle(s, guesses, deadline, out) : placeOf(s, guesses, deadline, out);
+            if (found == null) {
                 continue;
             }
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("start", s.getStartTime());
             item.put("end", end);
-            item.put("category", place.category());
-            item.put("amount", amountOf(userId, place.category()));
-            if (place.brand() != null) {
-                item.put("brand", place.brand());
+            item.put("category", found.category());
+            item.put("amount", amountOf(userId, found.category()));
+            if (found.brand() != null) {
+                item.put("brand", found.brand());
             }
             items.add(item);
         }
@@ -181,6 +188,19 @@ public class ScheduleAiSync {
         if (!DIRECT_INPUT.equals(s.getCategory())) {
             return UNKNOWN_CATEGORIES.contains(s.getCategory()) ? null : new Place(s.getCategory(), null);
         }
+        return classifyTitle(s, guesses, deadline, out);
+    }
+
+    /** 상황 일정인데 종류가 '직접 입력(other)'이고 이름이 있는지 (앱 일정 추가 창). */
+    private static boolean isTypedDirectInput(Schedule s) {
+        if (!SITUATION.equals(s.getKind()) || s.getTypes() == null || s.getTitle() == null || s.getTitle().isBlank()) {
+            return false;
+        }
+        return Arrays.stream(s.getTypes().split(",")).map(String::strip).anyMatch(TYPED_DIRECT_INPUT::equalsIgnoreCase);
+    }
+
+    /** 일정 이름을 분류해 업종을 정한다. 정하지 못하면 null, 실패·시간 초과면 out.complete 를 false 로 둔다. */
+    private Place classifyTitle(Schedule s, Map<String, Optional<Place>> guesses, long deadline, Collected out) {
         String title = s.getTitle() == null ? "" : s.getTitle().strip();
         if (title.isEmpty() || title.length() > TITLE_LIMIT) {
             return null;
