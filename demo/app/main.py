@@ -249,6 +249,7 @@ class ScheduleItem(BaseModel):
     end: dtime
     category: str = Field(..., max_length=40)
     amount: int = Field(..., ge=1, le=10_000_000)
+    brand: str | None = Field(default=None, max_length=40)   # 직접 입력 분류로 받은 가맹점 브랜드 (2026-11-23)
 
 
 class ScheduleRequest(BaseModel):
@@ -271,7 +272,7 @@ def put_schedule(req: ScheduleRequest):
     if any(i.category not in _CATEGORY_NAMES for i in req.items):
         raise HTTPException(422, "고를 수 없는 업종입니다.")
     items = [{"start": i.start.strftime("%H:%M"), "end": i.end.strftime("%H:%M"), "category": i.category,
-              "amount": i.amount} for i in req.items]
+              "amount": i.amount, **({"brand": i.brand} if i.brand else {})} for i in req.items]
     try:
         saved = ai.put_schedule(st["user_id"], st["demo_at"][:10], items, st["demo_at"])
     except ai.AIUnavailable:
@@ -302,6 +303,36 @@ def schedule_popup():
         offer["window"] = f"{offer['window_from'][11:16]}~{offer['window_to'][11:16]}"
         offer["schedule_time"] = f"{offer['start'][11:16]}~{offer['end'][11:16]}"
     return popup
+
+
+class PlaceRequest(BaseModel):
+    text: str = Field(..., max_length=100)
+
+
+@app.post("/api/places/classify")
+def classify_place(req: PlaceRequest):
+    """일정 줄의 '가게 이름' 칸 → 업종·가맹점 (검색 먼저, 못 찾으면 OpenAI). 입력 글은 저장하지 않는다."""
+    st = state()
+    try:
+        return ai.classify_place(req.text, st["user_id"], st["demo_at"])
+    except ai.AIUnavailable:
+        raise HTTPException(503, "AI 엔진이 꺼져 있어 분류할 수 없습니다.")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(422, _detail(e))
+
+
+@app.post("/api/recommendation-page")
+def recommendation_page():
+    """일정 다음 화면 (2026-11-23부터): 맞춤 추천 페이지. tabs 에 card(새 신한카드)·merchant(일정 프로모션)."""
+    st = state()
+    try:
+        page = ai.recommendation_page(st["user_id"], st["demo_at"])
+    except ai.AIUnavailable:
+        return {"tabs": [], "error": "AI 엔진이 꺼져 있어 추천을 건너뜁니다."}
+    for offer in (page.get("merchant") or {}).get("offers", []):
+        offer["window"] = f"{offer['window_from'][11:16]}~{offer['window_to'][11:16]}"
+        offer["schedule_time"] = f"{offer['start'][11:16]}~{offer['end'][11:16]}"
+    return page
 
 
 @app.post("/api/card-recommendation")
