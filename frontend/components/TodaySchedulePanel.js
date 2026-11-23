@@ -134,6 +134,7 @@ export default function TodaySchedulePanel({
   onViewBenefits,
   onPay,
   onOpenCards,
+  cardList = null,
   onOpenSchedule,
   sampleActive,
   onStartSample,
@@ -381,11 +382,12 @@ export default function TodaySchedulePanel({
         <Ionicons name="qr-code-outline" size={19} color="#FFFFFF" />
         <Text style={styles.white}>이 카드로 결제</Text>
       </TouchableOpacity>}
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel={cardAction}
+      {/* 카드가 있으면 '다른 카드로 변경' 대신 내 카드 목록(누르면 결제 카드 변경, ☰로 순서 변경) */}
+      {card && cardList ? cardList : <TouchableOpacity accessibilityRole="button" accessibilityLabel={cardAction}
         style={card ? styles.homeChangeCard : styles.primary} onPress={onOpenCards}>
         {card && <Ionicons name="swap-horizontal-outline" size={19} color="#245DE5" accessible={false} />}
         <Text style={card ? styles.blue : styles.white}>{cardAction}</Text>
-      </TouchableOpacity>
+      </TouchableOpacity>}
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="오늘의 일정 열기" style={styles.homeSchedule} onPress={onOpenSchedule}>
         <Ionicons name="calendar-outline" size={21} color="#1854D8" />
         <Text style={styles.title}>오늘의 일정</Text>
