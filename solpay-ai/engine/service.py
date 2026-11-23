@@ -149,6 +149,8 @@ class PlacementService:
         self.popups: dict = {}
         # 맞춤 추천 페이지 결과 (사용자, 날짜) → 응답. 같은 날 다시 열면 그대로 준다 (재시작하면 다시 계산).
         self.pages: dict = {}
+        # 일정 '직접 입력' 분류 결과 (정리한 글 → 사용자와 무관한 분류). 같은 글자는 OpenAI 를 다시 부르지 않는다
+        self.place_cache: dict = {}
         # 월간 리포트의 OpenAI 답: 사용자 → (보낸 사실, 문구, 기록). 숫자는 부를 때마다 다시 계산하고, OpenAI 답만
         # 보낸 사실이 같을 때 다시 쓴다 (2026-11-22 사용자 결정. 사용자마다 마지막 답 하나, 정해진 문구는 두지 않는다).
         self.reports: dict = {}
@@ -487,6 +489,62 @@ class PlacementService:
                                             "trigger": rec.trigger, "gain": rec.gain})
         return {"recommend": True, "card_id": rec.card_id, "card_name": rec.card_name, "gain": rec.gain,
                 "trigger": rec.trigger, "reason": rec.reason, "first_month_note": rec.first_month_note}
+
+    # ---------- 일정 '직접 입력' 업종·가맹점 분류 (2026-11-23 설계서) ----------
+    def classify_place(self, text: str, user_id: int | None = None, at=None, llm=None) -> dict:
+        """짧은 말 → 업종·브랜드. 규칙 검색이 딱 맞으면 search, 못 찾으면 llm(PlaceLLM) 이 목록 안에서 고른다.
+        확신이 낮으면 후보만, 실패하면 none. 원문은 어디에도 남기지 않는다 (정리한 글만 캐시 키로 쓴다)."""
+        import time as _time
+        from zoneinfo import ZoneInfo
+        from engine.place import amount_hint, clean_text
+        started = _time.monotonic()
+        catalog = self.engine.catalog
+        if user_id is not None:
+            self.store.user(user_id)                  # 없는 사용자는 UnknownUser
+        at = at or datetime.now(ZoneInfo("Asia/Seoul"))
+        q = clean_text(text)
+        base = self.place_cache.get(q)
+        if base is None:
+            base, cacheable = self._classify_new(q, llm)
+            if cacheable:
+                self.place_cache[q] = base
+        out = {**base, "category_name": catalog.category_name(base["category"]) if base["category"] else None,
+               "candidates": [dict(c) for c in base["candidates"]]}
+        hint = None
+        if base["category"]:
+            if user_id is not None:
+                payments = self.store.context(user_id, at).payments
+                hint = amount_hint(payments, catalog, base["category"], base["brand"], at, self.engine.priors)
+            else:
+                hint = int(round(self.engine.priors.amount_median(base["category"]), -2))
+        out["amount_hint"] = hint
+        out["ms"] = int((_time.monotonic() - started) * 1000)
+        return out
+
+    def _classify_new(self, q: str, llm) -> tuple[dict, bool]:
+        """(사용자와 무관한 분류, 캐시해도 되는지). OpenAI 가 실패한 결과는 캐시하지 않는다 (다음에 다시 시도)."""
+        from engine.place import _candidate, match_place
+        catalog = self.engine.catalog
+        empty = {"category": None, "brand": None, "brand_name": None}
+        m = match_place(q, catalog)
+        if m.exact or m.category:
+            return {"category": m.category, "brand": m.brand, "brand_name": m.brand_name, "source": "search",
+                    "candidates": m.candidates}, True
+        if not q or llm is None:
+            return {**empty, "source": "none", "candidates": m.candidates}, False
+        categories = {c: n for c, n in catalog.category_names.items() if c != "ALL"}
+        brands = {mm.brand_code: mm.brand or mm.brand_code for mm in catalog.merchants.values() if mm.brand_code}
+        answer = llm.classify(q, categories, brands)
+        if answer is None:
+            return {**empty, "source": "none", "candidates": m.candidates}, False
+        if answer["category"] == "UNKNOWN":
+            return {**empty, "source": "none", "candidates": m.candidates}, True
+        brand = answer["brand"]
+        if answer["confidence"] == "low":
+            return {**empty, "source": "llm",
+                    "candidates": [_candidate(catalog, answer["category"], brand, brands.get(brand))]}, True
+        return {"category": answer["category"], "brand": brand, "brand_name": brands.get(brand), "source": "llm",
+                "candidates": []}, True
 
     def missed_benefit(self, user_id: int, at, days: int = 365) -> list[dict]:
         """연말정산 안내: 지난 days 일 동안 각 신한카드가 있었다면 더 받았을 금액 (상위 3장)."""
