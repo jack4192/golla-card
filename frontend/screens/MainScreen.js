@@ -12,6 +12,9 @@ import { ActivityIndicator, View, Text, Image, Linking, TouchableOpacity, Scroll
 import { Ionicons } from '@expo/vector-icons';
 import YearEndReport from '../components/YearEndReport';
 import PaymentCardOrder from '../components/PaymentCardOrder';
+import AutoPlacementSwitch from '../components/AutoPlacementSwitch';
+import { useAutoPlacement } from '../utils/autoPlacement';
+import { loadPlacementPreview } from '../utils/aiPlacement';
 import RecentPayments from '../components/RecentPayments';
 import QuickPaySheet from '../components/QuickPaySheet';
 import NotificationCenter, { NotificationBell, useInbox } from '../components/NotificationCenter';
@@ -21,7 +24,7 @@ import { Alert } from '../utils/demoAlert';
 import * as SecureStore from '../utils/demoStore';
 import PaymentScreen, { realProductCard, realWalletCards } from './PaymentScreen';
 import { getActiveWalletCard } from '../data/cards';
-import { canRegisterWalletCard } from '../utils/wallet';
+import { applyUrl } from '../utils/autoPlacementCore';
 import { SERVER_MODE, api } from '../utils/api';
 import { suggestionsFor, toChatHistory } from '../utils/homeChat';
 import { useCardCatalog } from '../utils/serverCatalog';
@@ -248,9 +251,10 @@ export default function MainScreen({
   walletCards = [],
   activeCardId,
   onRegisterCard,
+  initialTab = 'home',
   onSelectCard = () => {}
 }) {
-  const [tab, setTab] = useState('home');
+  const [tab, setTab] = useState(initialTab || 'home');   // '일정 다시 확인'으로 돌아오면 오늘의 일정 탭 (2026-11-24)
   const [schedulePayment, setSchedulePayment] = useState(null);
   const [sampleActive, setSampleActive] = useState(null);
   const [adRequest, setAdRequest] = useState(null);
@@ -265,7 +269,9 @@ export default function MainScreen({
     return new Set(catalogCards.filter(card => codes.has(card.code)).map(card => card.code));
   }, [walletCards, catalogCards]);
   const [selectedCatalog, setSelectedCatalog] = useState(null);
-  const [registeringCard, setRegisteringCard] = useState(false);
+  // 카드 상품 상세: 내 지갑에 있는 카드인지, 미보유면 카드사 신청 페이지 주소 (없으면 '카드 신청'을 숨긴다)
+  const catalogOwned = Boolean(selectedCatalog) && walletCards.some(card => card.catalogCode === selectedCatalog.code);
+  const catalogApply = selectedCatalog && !catalogOwned ? applyUrl(selectedCatalog) : null;
   const currentCard = getActiveWalletCard(walletCards, activeCardId);
   const homeWalletCards = useMemo(() => realWalletCards(null, walletCards), [walletCards]);
   const [filter, setFilter] = useState('전체');
@@ -294,6 +300,27 @@ export default function MainScreen({
   // 홈 일정 카드가 AI 미리보기를 다시 물을 때 올리는 번호: 홈 추천 팝업(일정 행사를 계산함)이 닫히거나 챗봇 규칙을 확정했을 때 (2026-11-23)
   const [aiRefresh, setAiRefresh] = useState(0);
   const refreshAi = () => setAiRefresh(value => value + 1);
+  // 카드 자동 배치 ON/OFF (2026-11-24 수정사항): ON 이면 홈 '내 카드'가 지금 시각 AI 추천 순서(기록 없는 미리보기)를 따른다
+  const auto = useAutoPlacement();
+  const [homeAiOrder, setHomeAiOrder] = useState(null);
+  const [placementHour, setPlacementHour] = useState(() => new Date().getHours());
+  useEffect(() => {
+    const timer = setInterval(() => setPlacementHour(new Date().getHours()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+  const homeWalletKey = homeWalletCards.map(card => card.id).join(',');
+  useEffect(() => {
+    if (!SERVER_MODE || !auto.on || tab !== 'home' || !homeWalletCards.length) {
+      setHomeAiOrder(null);
+      return undefined;
+    }
+    let stopped = false;
+    loadPlacementPreview(homeWalletCards)
+      .then(result => { if (!stopped) setHomeAiOrder(result && !result.fallback ? result.order : null); })
+      .catch(() => { if (!stopped) setHomeAiOrder(null); });
+    return () => { stopped = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto.on, tab, homeWalletKey, placementHour, aiRefresh]);
   const openPaySheet = context => {
     if (context?.cardId) onSelectCard(context.cardId);
     setPaySheet({ ...context, returnTab: tab });
@@ -421,17 +448,6 @@ export default function MainScreen({
     setSchedulePayment(null);
     setTab(nextTab);
   };
-  const registerCard = async code => {
-    if (!onRegisterCard || registeringCard) return;
-    setRegisteringCard(true);
-    try {
-      await onRegisterCard(code);
-    } catch (error) {
-      Alert.alert('카드 등록', error?.message || '카드를 등록하지 못했어요.');
-    } finally {
-      setRegisteringCard(false);
-    }
-  };
   // 화면(탭)에 맞춘 추천 질문. AI 챗봇 평가 질문에서 골라 내 카드 이름을 넣는다 (utils/homeChat.js)
   const chatQuick = useMemo(() => suggestionsFor(tab, walletCards), [tab, walletCards]);
   const openChat = () => {
@@ -462,15 +478,15 @@ export default function MainScreen({
     } else if (/일정|추천/.test(q)) {
       answer = currentCard
         ? `홈의 '오늘의 일정'에서 지금 일정에 맞는 카드를 추천해드려요. 일정이 없으면 현재 결제 카드(${currentCard.name})를 보여드려요.`
-        : '카드를 먼저 등록하면 일정에 맞는 카드를 추천해드려요. 카드 탭에서 등록해보세요.';
+        : '내 지갑에 카드가 있어야 일정에 맞는 카드를 추천해드려요. 카드 탭의 전체 카드 상품에서 카드를 둘러보고 신청할 수 있어요.';
     } else if (/등록/.test(q)) {
-      answer = '카드 탭의 카드 상품에서 원하는 카드를 열어 내 카드로 등록할 수 있어요.';
+      answer = '카드 탭의 전체 카드 상품에서 원하는 카드를 열면 혜택을 보고 \'카드 신청\'으로 카드사 신청 페이지에 갈 수 있어요.';
     } else if (/바꾸|변경|순서/.test(q)) {
       answer = '결제 탭 위쪽의 [카드 변경]이나 아래 \'내 카드\' 목록에서 카드를 누르면 결제 카드가 바뀌어요. 목록의 ☰를 끌면 순서도 바꿀 수 있어요.';
     } else if (/내 카드|카드 정보|현재 카드|이유|왜/.test(q)) {
       answer = walletCards.length
         ? `내 카드는 ${walletCards.length}장이에요: ${walletCards.map(card => card.name).join(', ')}.` + (currentCard ? ` 지금 결제 카드는 ${currentCard.name}예요.` : '')
-        : '등록된 카드가 없어요. 카드 탭에서 등록해보세요.';
+        : '내 지갑에 카드가 없어요. 카드 탭의 전체 카드 상품에서 카드를 둘러보고 신청할 수 있어요.';
     } else if (/혜택|할인|적립|어디/.test(q)) {
       answer = '혜택 탭에서 진행 중인 이벤트와 마이샵을 확인할 수 있어요. 항목을 누르면 결제 조건과 기간이 나와요.';
     } else if (/실적|한도/.test(q)) {
@@ -544,7 +560,9 @@ export default function MainScreen({
     home={home}
     onOpenCards={() => selectTab('cards')}
     cardList={home ? <PaymentCardOrder cards={homeWalletCards} selectedId={currentCard?.id}
-      onSelect={onSelectCard} syncSelection={!paySheet} /> : null}
+      onSelect={onSelectCard} syncSelection={!paySheet}
+      aiOrder={auto.on ? homeAiOrder : null} autoOn={auto.on} onAutoChange={auto.setOn} /> : null}
+    headerRight={home ? <AutoPlacementSwitch on={auto.on} onChange={auto.setOn} /> : null}
     paymentsList={home && SERVER_MODE ? <RecentPayments today={dateKey()} refreshKey={aiRefresh} /> : null}
     onOpenSchedule={() => selectTab('schedule')}
     disabled={scheduleDisabled}
@@ -682,7 +700,7 @@ export default function MainScreen({
         전체 카드 상품
       </Text>
       <Text style={styles.catalogIssuer}>
-        내 카드가 아닌 상품도 함께 보여요. 눌러서 혜택을 보고 내 카드로 등록할 수 있어요.
+        내 카드가 아닌 상품도 함께 보여요. 눌러서 혜택을 보고 카드를 신청할 수 있어요.
       </Text>
 
       <View style={styles.catalogFilterRow} accessibilityRole="tablist">
@@ -829,7 +847,10 @@ export default function MainScreen({
           onClose={() => selectTab(schedulePayment?.returnTab || 'home')}
           onOpenCards={() => selectTab('cards')}
         /> : tab === 'cards' ? renderCards() : <ScrollView key={tab} style={styles.mainScroll} contentContainerStyle={[styles.pageContent, styles.chatClearance]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            {tab === 'home' && <>{renderSchedule(true)}{renderYearEndTile()}{renderHomeHighlights()}</>}
+            {tab === 'home' && <>{renderSchedule(true)}{renderYearEndTile()}{renderHomeHighlights()}
+              {/* AI 안내 (2026-11-24 수정사항: 시스템 맨 아래 작게) */}
+              <Text style={styles.aiNotice}>본 시스템은 AI를 활용한 카드 자동 배치 및 추천으로 부정확한 안내가 포함될 수 있습니다. 평소 소비가 아주 적은 편이거나 불규칙적이신 분께는 일부 오안내가 섞일 수 있습니다.</Text>
+            </>}
             {tab === 'benefits' && renderBenefits()}
             {tab === 'schedule' && renderSchedule()}
           </ScrollView>}
@@ -1094,14 +1115,8 @@ export default function MainScreen({
                     {selectedCatalog.description}
                   </Text>
                   {!!selectedCatalog.image && <Image source={selectedCatalog.image} resizeMode="contain" style={styles.catalogPlate} accessibilityLabel={selectedCatalog.name + ' 상품 이미지'}/>}
-                  {onRegisterCard && canRegisterWalletCard(selectedCatalog.code) && (
-                    walletCards.some(card => card.catalogCode === selectedCatalog.code)
-                      ? <Text style={styles.catalogIssuer}>지갑에 등록된 카드</Text>
-                      : <TouchableOpacity accessibilityRole="button" disabled={registeringCard}
-                          style={styles.walletBenefitDetailButton} onPress={() => registerCard(selectedCatalog.code)}>
-                          <Text style={styles.walletBenefitDetailButtonText}>{registeringCard ? '등록 중…' : '보유 카드로 등록'}</Text>
-                        </TouchableOpacity>
-                  )}
+                  {/* '보유 카드로 등록'은 없앴다 (2026-11-24 수정사항). 미보유 카드는 아래 '카드 신청'으로 카드사 신청 페이지를 연다 */}
+                  {catalogOwned && <Text style={styles.catalogIssuer}>지갑에 등록된 카드</Text>}
                   {selectedCatalog.registryCardId != null && <Text style={styles.catalogFee}>
                     국내 연회비 {money(selectedCatalog.annualFeeDomestic)} · 해외 연회비 {money(selectedCatalog.annualFeeOverseas)}
                   </Text>}
@@ -1179,7 +1194,17 @@ export default function MainScreen({
                 </>}
             </ScrollView>
 
-            <TouchableOpacity onPress={() => setSelectedCatalog(null)} style={{
+            {catalogApply ? <View style={styles.catalogActions}>
+                <TouchableOpacity accessibilityRole="button" onPress={() => setSelectedCatalog(null)} style={[styles.catalogAction, styles.catalogClose]}>
+                  <Text style={styles.catalogCloseText}>닫기</Text>
+                </TouchableOpacity>
+                <TouchableOpacity accessibilityRole="link" accessibilityLabel={selectedCatalog.name + ' 카드 신청'}
+                  onPress={() => Linking.openURL(catalogApply).catch(() => Alert.alert('카드 신청', '브라우저에서 카드사 신청 페이지를 열어주세요.'))}
+                  style={[styles.catalogAction, styles.catalogApply]}>
+                  <Text style={styles.catalogApplyText}>카드 신청</Text>
+                </TouchableOpacity>
+              </View>
+              : <TouchableOpacity onPress={() => setSelectedCatalog(null)} style={{
             backgroundColor: "#245DE5",
             padding: 14,
             alignItems: 'center',
@@ -1192,7 +1217,7 @@ export default function MainScreen({
             }}>
                 닫기
               </Text>
-            </TouchableOpacity>
+            </TouchableOpacity>}
           </View>
         </View>
       </Modal>
@@ -1681,6 +1706,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     padding: 25
   },
+  catalogActions: { flexDirection: 'row', gap: 8, margin: 15 },
+  catalogAction: { minHeight: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  catalogClose: { flex: 1, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#BFD3FA' },
+  catalogApply: { flex: 2, backgroundColor: '#245DE5' },
+  catalogCloseText: { color: '#245DE5', fontWeight: '800' },
+  catalogApplyText: { color: '#FFFFFF', fontWeight: '800' },
+  aiNotice: { fontSize: 11, lineHeight: 16, color: '#8B95A5', textAlign: 'center', paddingHorizontal: 12, marginTop: 4 },
   disclaimer: {
     fontSize: 12,
     color: '#8B95A5',
