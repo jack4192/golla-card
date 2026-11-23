@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { AppState, Image, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { AppState, Image, PanResponder, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { findCatalog40Product } from '../data/cardCatalog40';
 import { CSV_CARD_CATALOG } from '../data/cardCatalogCsv';
@@ -11,6 +11,9 @@ import { SERVER_MODE } from '../utils/api';
 import { loadAiEstimates } from '../utils/aiEstimate';
 import { bestCardOf, exampleScenario } from '../utils/aiEstimateCore';
 import { loadPlacementPreview } from '../utils/aiPlacement';
+import { loadDayPlacement } from '../utils/dayTimeline';
+import { loadTodayPayments } from '../utils/payments';
+import { MAX_MINUTE, STEP_MINUTES, minuteOfDay, minuteToRatio, paymentAt, paymentDots, paymentLine, ratioToMinute, scrubbedCard, timeLabel } from '../utils/dayTimelineCore';
 import { aiWindowKey, inAiWindow, scheduleAiExample, scheduleAiMatch } from '../utils/scheduleAiCore';
 import { SCHEDULE_SAMPLES } from '../data/samplePayment';
 import { resolveWalletProduct } from './WalletProductCard';
@@ -36,31 +39,94 @@ const categoryIcons = {
 
 const hourLabel = hour => `${String(hour).padStart(2, '0')}:00`;
 const hourMs = 60 * 60 * 1000;
-const hourTicks = [0, 1, 2, 3];
+const dayMs = 24 * hourMs;
+// 홈 시간 표시줄은 하루 전체(0~24시)다. 파란 동그라미를 끌거나 눌러 그 시각의 AI 카드를 미리 본다 (2026-11-23 설계서 home-day-timeline)
+const dayTicks = [0, 6, 12, 18, 24];
 const chartPercent = ratio => `${ratio * 100}%`;
 const scheduleLabel = label => label.replace(/^\p{Extended_Pictographic}\uFE0F?\s+/u, '');
 const homeScheduleLimit = 3;
+const bubbleWidth = 92;
+const dotTapPx = 12;      // 결제 점을 누른 것으로 보는 거리
 
-function HomeScheduleRibbon({ clock, clockTime, start, rows, selected, onSelect, onOpenSchedule, emptyMessage }) {
-  const duration = 3 * hourMs;
-  const position = time => Math.min(1, Math.max(0, (time - start) / duration));
-  const cursor = position(clock);
+function HomeScheduleRibbon({ start, clockTime, nowMinute, viewMinute, onScrub, onNow, dots = [], rows, selected, onSelect, onOpenSchedule, emptyMessage }) {
+  const [axisWidth, setAxisWidth] = useState(0);
+  const position = time => Math.min(1, Math.max(0, (time - start) / dayMs));
+  const scrubbing = viewMinute != null;
+  const cursorMinute = scrubbing ? viewMinute : nowMinute;
+  const cursor = minuteToRatio(cursorMinute);
   const hiddenCount = Math.max(0, rows.length - homeScheduleLimit);
+  const bubbleText = scrubbing ? `${timeLabel(viewMinute)} 미리보기` : `지금 ${clockTime}`;
+  // 말풍선이 표시줄 밖으로 나가지 않게 (옮겼을 때는 오른쪽 위 '지금' 버튼 자리도 비운다)
+  const bubbleLeft = axisWidth > 0
+    ? Math.min(Math.max(cursor * axisWidth - bubbleWidth / 2, -22), axisWidth - bubbleWidth + (scrubbing ? -46 : 22))
+    : null;
+
+  // 끌기·누르기: 표시줄 위 투명한 판 하나가 받는다. 위치는 페이지 x 에서 표시줄의 페이지 x 를 빼서 구한다
+  // (웹에서는 locationX 가 판 기준으로 오지 않을 때가 있어 쓰지 않는다)
+  const axisRef = useRef(null);
+  const axisLeft = useRef(0);
+  const measureAxis = () => axisRef.current?.measure?.((x, y, width, height, pageX) => {
+    if (Number.isFinite(pageX)) axisLeft.current = pageX;
+  });
+  const latest = useRef({});
+  latest.current = { axisWidth, dots, onScrub };
+  const grantX = useRef(0);
+  const moved = useRef(false);
+  const scrubTo = x => {
+    const { axisWidth: width, onScrub: scrub } = latest.current;
+    if (width > 0) scrub(ratioToMinute(x / width));
+  };
+  const pan = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderGrant: event => {
+      grantX.current = event.nativeEvent.pageX - axisLeft.current;      moved.current = false;
+      measureAxis();
+    },
+    onPanResponderMove: (_, gesture) => {
+      if (Math.abs(gesture.dx) > 3) moved.current = true;
+      if (moved.current) scrubTo(grantX.current + gesture.dx);
+    },
+    onPanResponderRelease: (_, gesture) => {
+      if (moved.current) {
+        scrubTo(grantX.current + gesture.dx);
+        return;
+      }
+      const { axisWidth: width, dots: marks, onScrub: scrub } = latest.current;
+      const hit = width > 0 ? marks.map(dot => ({ dot, gap: Math.abs(dot.ratio * width - grantX.current) }))
+        .filter(item => item.gap <= dotTapPx).sort((a, b) => a.gap - b.gap)[0] : null;
+      if (hit) scrub(hit.dot.minute);
+      else scrubTo(grantX.current);
+    },
+  })).current;
+  const step = direction => onScrub(Math.min(MAX_MINUTE, Math.max(0, cursorMinute + direction * STEP_MINUTES)));
 
   return <View style={styles.homeRibbon}>
-    <View style={styles.homeAxis} accessible accessibilityLabel={`지금 ${clockTime}`}>
+    {scrubbing && <TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 시각으로 돌아가기"
+      style={styles.homeNowButton} onPress={onNow} hitSlop={8}>
+      <Ionicons name="refresh-outline" size={14} color="#1D55D9" />
+      <Text style={styles.homeNowButtonText}>지금</Text>
+    </TouchableOpacity>}
+    <View ref={axisRef} style={styles.homeAxis} onLayout={event => {
+      setAxisWidth(event.nativeEvent.layout.width);
+      measureAxis();
+    }}>
       <View style={styles.homeAxisLine} />
-      {hourTicks.map(tick => {
-        const hour = new Date(start.getTime() + tick * hourMs).getHours();
-        return <View key={tick} style={[styles.homeTick, { left: chartPercent(tick / 3) }]}>
-          <Text style={styles.homeTickLabel}>{hourLabel(hour)}</Text>
-          <View style={styles.homeTickMark} />
-        </View>;
-      })}
-      <View style={[styles.homeNow, { left: chartPercent(cursor) }]}>
-        <Text style={styles.homeNowText}>지금 {clockTime}</Text>
+      {dayTicks.map(tick => <View key={tick} style={[styles.homeTick, { left: chartPercent(tick / 24) }]}>
+        <Text style={styles.homeTickLabel}>{hourLabel(tick)}</Text>
+        <View style={styles.homeTickMark} />
+      </View>)}
+      {dots.map(dot => <View key={dot.key} pointerEvents="none" style={[styles.homePayDot, { left: chartPercent(dot.ratio) }]} />)}
+      <View style={[styles.homeNow, scrubbing && styles.homeNowPreview,
+        bubbleLeft == null ? { left: chartPercent(cursor), marginLeft: -bubbleWidth / 2 } : { left: bubbleLeft, marginLeft: 0 }]}>
+        <Text style={styles.homeNowText}>{bubbleText}</Text>
       </View>
       <View style={[styles.homeNowDot, { left: chartPercent(cursor) }]} />
+      <View {...pan.panHandlers} style={styles.homeAxisTouch} accessible accessibilityRole="adjustable"
+        accessibilityLabel={`시각 옮기기, ${bubbleText}`}
+        accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+        onAccessibilityAction={event => step(event.nativeEvent.actionName === 'increment' ? 1 : -1)} />
     </View>
     {rows.slice(0, homeScheduleLimit).map(row => {
       const left = position(row.startDate);
@@ -137,6 +203,7 @@ export default function TodaySchedulePanel({
   onPay,
   onOpenCards,
   cardList = null,
+  paymentsList = null,   // 홈 '최근 결제' (서버 모드, MainScreen 이 넣는다)
   onOpenSchedule,
   sampleActive,
   onStartSample,
@@ -162,6 +229,11 @@ export default function TodaySchedulePanel({
   // 서버 모드: 일정 창(시작 30분 전 ~ 끝 30분 후) 안이면 AI 배치 미리보기(기록 없음)와 그 예시 거래의 계산
   //   { key: 창 열쇠, result: applyRank 결과, estimates: { [지갑 카드 id]: 예상 혜택 } } (2026-11-23 홈 일정 카드 설계서)
   const [aiPreview, setAiPreview] = useState({ key: '', result: null, estimates: null });
+  // 홈 시간 표시줄 (2026-11-23 설계서 home-day-timeline): 옮긴 시각(분, null 이면 지금),
+  //   하루 배치 구간(null 이면 읽는 중, [] 이면 실패·없음), 오늘 결제(결제 점)
+  const [viewMinute, setViewMinute] = useState(null);
+  const [daySegments, setDaySegments] = useState(null);
+  const [todayPayments, setTodayPayments] = useState([]);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     if (disabled) return;
@@ -347,6 +419,27 @@ export default function TodaySchedulePanel({
     || timeline.find(row => row.inProgress && row.match);
   const current = currentMatch || timeline.find(row => row.inProgress);
   const clockTime = clock.toTimeString().slice(0, 5);
+  // 홈 시간 표시줄: 날짜가 바뀌면 미리보기를 지금으로 돌린다
+  useEffect(() => { setViewMinute(null); }, [day]);
+  // 하루 배치: 날짜·지갑 카드·그날 일정이 바뀌거나 AI 쪽 상태가 바뀌면(aiRefresh) 다시 묻는다 (기록 없음)
+  const dayScheduleKey = timeline.filter(row => row.startDate).map(row => `${row.key}@${row.time}`).join('|');
+  useEffect(() => {
+    if (!home || !SERVER_MODE || disabled || !cards.length) return undefined;
+    let stopped = false;
+    setDaySegments(null);
+    loadDayPlacement(cards).then(segments => { if (!stopped) setDaySegments(segments || []); })
+      .catch(() => { if (!stopped) setDaySegments([]); });
+    return () => { stopped = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [home, disabled, day, walletKey, dayScheduleKey, aiRefresh]);
+  // 오늘 결제(결제 점): 1분 시계가 돌 때마다 다시 읽어 지나간 결제가 새로 보이게 한다. 실패하면 점을 숨긴다
+  useEffect(() => {
+    if (!home || !SERVER_MODE || disabled) return undefined;
+    let stopped = false;
+    loadTodayPayments(day).then(rows => { if (!stopped) setTodayPayments(rows); })
+      .catch(() => { if (!stopped) setTodayPayments([]); });
+    return () => { stopped = true; };
+  }, [home, disabled, day, clockTime]);
   const payFor = row => onPay?.({
     cardId: row.match.card.id,
     category: row.match.category,
@@ -359,32 +452,53 @@ export default function TodaySchedulePanel({
   });
   if (home) {
     const ready = !disabled && !loading && !error;
-    const windowStart = new Date(clock);
-    windowStart.setMinutes(0, 0, 0);
-    const windowEnd = windowStart.getTime() + 3 * hourMs;
-    const windowRows = ready ? timeline.filter(row => row.startDate && row.startDate < windowEnd && row.endDate > clock)
+    // 표시줄은 그날 0~24시: 그날의 시간 있는 일정을 모두 그린다 (진행 중 먼저, 그다음 시작 순)
+    const dayStart = new Date(day + 'T00:00:00');
+    const dayEnd = dayStart.getTime() + dayMs;
+    const dayRows = ready ? timeline.filter(row => row.startDate && row.startDate < dayEnd && row.endDate > dayStart)
       .sort((a, b) => Number(b.inProgress) - Number(a.inProgress) || a.startDate - b.startDate) : [];
-    const defaultSchedule = windowRows.find(row => row.key === current?.key);
+    const defaultSchedule = dayRows.find(row => row.key === current?.key);
     const rows = defaultSchedule
-      ? [defaultSchedule, ...windowRows.filter(row => row.key !== defaultSchedule.key)]
-      : windowRows;
+      ? [defaultSchedule, ...dayRows.filter(row => row.key !== defaultSchedule.key)]
+      : dayRows;
     const chosenSchedule = selection?.scope === day
       ? rows.slice(0, homeScheduleLimit).find(row => row.key === selection.key)
       : null;
     const selectedSchedule = chosenSchedule ?? defaultSchedule;
     const recommended = selectedSchedule?.match ? selectedSchedule : null;
-    const card = recommended?.match.card || selectedCard;
-    const artwork = recommended?.match.card.image || selectedProduct?.image;
-    const canPay = Boolean(recommended || canPayWithSelected);
+    // 동그라미를 옮겼으면 큰 카드만 그 시각의 AI 1순위 카드로 바뀐다 ('내 카드' 목록은 그대로, 결제는 지금에서만)
+    const nowMinute = minuteOfDay(clock);
+    const scrubbing = viewMinute != null;
+    const dots = paymentDots(todayPayments, nowMinute);
+    let scrubbed = null;
+    if (scrubbing && SERVER_MODE) {
+      scrubbed = daySegments == null
+        ? { card: selectedCard, note: '이 시각 AI 카드를 불러오는 중이에요' }
+        : scrubbedCard({ segments: daySegments, minute: viewMinute, walletCards: cards, fallbackCard: selectedCard });
+    } else if (scrubbing) {
+      // 데모 모드: 그 시각을 덮는 일정의 앱 계산 카드, 없으면 결제 카드
+      const viewAt = new Date(dayStart.getTime() + viewMinute * 60 * 1000);
+      const row = timeline.find(item => item.match && item.startDate && item.startDate <= viewAt && viewAt < item.endDate);
+      scrubbed = { card: row?.match.card || selectedCard, note: row ? row.match.label : '' };
+    }
+    const scrubPayment = scrubbing ? paymentAt(dots.map(dot => dot.payment), viewMinute) : null;
+    const card = scrubbing ? scrubbed.card : recommended?.match.card || selectedCard;
+    // 미리보기 카드 그림: 결제 카드와 같은 방식(resolveWalletProduct), 글자 주소면 { uri } 로
+    const scrubImage = scrubbing ? resolveWalletProduct(scrubbed.card)?.image || scrubbed.card?.image : null;
+    const artwork = scrubbing ? (typeof scrubImage === 'string' ? { uri: scrubImage } : scrubImage)
+      : recommended?.match.card.image || selectedProduct?.image;
+    const canPay = !scrubbing && Boolean(recommended || canPayWithSelected);
     const next = ready && (current || timeline.find(row => row.time >= clockTime) || timeline.find(row => !row.time));
     const cardAction = card ? '다른 카드로 변경' : '카드 등록';
     return <View style={styles.home}>
       <Text accessibilityRole="header" style={styles.headline}>내 지갑</Text>
       <View style={[styles.homeCard, styles.homeCardScheduled]}>
-        <HomeScheduleRibbon clock={clock} clockTime={clockTime} start={windowStart} rows={rows} selected={selectedSchedule}
-          onSelect={row => setSelection({ scope: day, key: row.key })} onOpenSchedule={onOpenSchedule}
-          emptyMessage={error || (loading && !disabled ? '일정을 불러오는 중이에요' : '이 시간대에 등록된 일정이 없어요')} />
-        {recommended && <View style={styles.homeRecommendation}>
+        <HomeScheduleRibbon start={dayStart} clockTime={clockTime} nowMinute={nowMinute} viewMinute={viewMinute}
+          onScrub={setViewMinute} onNow={() => setViewMinute(null)} dots={dots}
+          rows={rows} selected={selectedSchedule}
+          onSelect={row => { setViewMinute(null); setSelection({ scope: day, key: row.key }); }} onOpenSchedule={onOpenSchedule}
+          emptyMessage={error || (loading && !disabled ? '일정을 불러오는 중이에요' : '오늘 등록된 일정이 없어요')} />
+        {!scrubbing && recommended && <View style={styles.homeRecommendation}>
           <View style={styles.homeRecommendationIcon}>
             <Ionicons name="sparkles" size={16} color="#245DE5" />
           </View>
@@ -392,7 +506,7 @@ export default function TodaySchedulePanel({
             {recommended.inProgress ? '지금 일정에 맞는 카드예요' : '다가오는 일정에 맞는 카드예요'}
           </Text>
         </View>}
-        {selectedSchedule && !recommended && <Text style={styles.homeFallback}>
+        {!scrubbing && selectedSchedule && !recommended && <Text style={styles.homeFallback}>
           {card ? '이 일정에는 평소 쓰시는 이 카드로 결제하는 걸 추천드려요.' : '카드를 등록하면 이 일정에 맞는 혜택을 확인할 수 있어요.'}
         </Text>}
         {artwork && <View style={styles.homeCardStage}>
@@ -402,7 +516,9 @@ export default function TodaySchedulePanel({
             accessibilityLabel={card.name + ' 상품 이미지'} />
         </View>}
         <Text style={[styles.homeCardName, card && styles.homeCardCaption]}>{card?.name || '등록된 카드가 없습니다'}</Text>
-        {recommended && <Text style={styles.homeBenefit} numberOfLines={2}>{recommended.match.label}</Text>}
+        {!scrubbing && recommended && <Text style={styles.homeBenefit} numberOfLines={2}>{recommended.match.label}</Text>}
+        {scrubbing && Boolean(scrubbed.note) && <Text style={styles.homeScrubNote} numberOfLines={2}>{scrubbed.note}</Text>}
+        {scrubPayment && <Text style={styles.homeScrubPayment} numberOfLines={1}>{paymentLine(scrubPayment)}</Text>}
       </View>
       {card && <TouchableOpacity accessibilityRole="button" accessibilityLabel="이 카드로 결제"
         accessibilityState={{ disabled: !canPay }}
@@ -411,12 +527,14 @@ export default function TodaySchedulePanel({
         <Ionicons name="qr-code-outline" size={19} color="#FFFFFF" />
         <Text style={styles.white}>이 카드로 결제</Text>
       </TouchableOpacity>}
+      {card && scrubbing && <Text style={styles.homePayHint}>미리보기 중에는 결제할 수 없어요</Text>}
       {/* 카드가 있으면 '다른 카드로 변경' 대신 내 카드 목록(누르면 결제 카드 변경, ☰로 순서 변경) */}
       {card && cardList ? cardList : <TouchableOpacity accessibilityRole="button" accessibilityLabel={cardAction}
         style={card ? styles.homeChangeCard : styles.primary} onPress={onOpenCards}>
         {card && <Ionicons name="swap-horizontal-outline" size={19} color="#245DE5" accessible={false} />}
         <Text style={card ? styles.blue : styles.white}>{cardAction}</Text>
       </TouchableOpacity>}
+      {paymentsList}
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="오늘의 일정 열기" style={styles.homeSchedule} onPress={onOpenSchedule}>
         <Ionicons name="calendar-outline" size={21} color="#1854D8" />
         <Text style={styles.title}>오늘의 일정</Text>
@@ -565,10 +683,24 @@ const styles = StyleSheet.create({
   homeTickLabel:{fontSize:11,lineHeight:15,color:'#4B6284',fontWeight:'700',fontVariant:['tabular-nums']},
   homeTickMark:{width:2,height:7,borderRadius:1,backgroundColor:'#AAC3F1'},
   homeNow:{
-    position:'absolute',top:0,width:83,marginLeft:-17,minHeight:24,justifyContent:'center',alignItems:'center',
+    position:'absolute',top:0,width:92,marginLeft:0,minHeight:24,justifyContent:'center',alignItems:'center',
     borderRadius:12,backgroundColor:'#1D55D9'
   },
   homeNowText:{fontSize:11,fontWeight:'800',color:'#FFFFFF',fontVariant:['tabular-nums']},
+  homeNowPreview:{backgroundColor:'#5B3FC4'},
+  homeNowButton:{
+    position:'absolute',top:6,right:8,zIndex:2,flexDirection:'row',alignItems:'center',gap:3,height:26,
+    paddingHorizontal:9,borderRadius:13,borderWidth:1,borderColor:'#BFD3FA',backgroundColor:'#FFFFFF'
+  },
+  homeNowButtonText:{fontSize:12,fontWeight:'800',color:'#1D55D9'},
+  homeAxisTouch:{position:'absolute',left:-12,right:-12,top:0,bottom:-6,zIndex:3,cursor:'pointer'},
+  homePayDot:{
+    position:'absolute',top:49,width:8,height:8,marginLeft:-4,borderRadius:4,borderWidth:1.5,
+    borderColor:'#FFFFFF',backgroundColor:'#FF8A3D'
+  },
+  homeScrubNote:{color:'#3A4F6E',fontSize:13,lineHeight:18,textAlign:'center',paddingHorizontal:8},
+  homeScrubPayment:{color:'#B4560F',fontSize:12,lineHeight:17,textAlign:'center',paddingHorizontal:8,fontWeight:'700'},
+  homePayHint:{color:'#526783',fontSize:12,lineHeight:17,textAlign:'center',marginTop:-6},
   homeNowDot:{
     position:'absolute',top:46,width:14,height:14,marginLeft:-7,borderWidth:3,borderColor:'#FFFFFF',
     borderRadius:7,backgroundColor:'#245DE5',zIndex:1
