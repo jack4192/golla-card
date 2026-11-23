@@ -384,15 +384,19 @@ class PlacementService:
         if day < now.date():
             raise ValueError("지난 날의 일정은 넣을 수 없습니다")
         names = self.engine.catalog.category_names
+        brands = {m.brand_code for m in self.engine.catalog.merchants.values() if m.brand_code}
         parsed = []
         for i, raw in enumerate(items):
             if raw["category"] not in names or raw["category"] == "ALL":
                 raise ValueError(f"알 수 없는 업종: {raw['category']}")
+            brand = raw.get("brand") or None
+            if brand is not None and brand not in brands:
+                raise ValueError(f"알 수 없는 가맹점 브랜드: {brand}")
             start = datetime.combine(day, raw["start"], tzinfo=now.tzinfo)
             end = datetime.combine(day, raw["end"], tzinfo=now.tzinfo)
             if end <= start:
                 raise ValueError("끝 시각은 시작 시각보다 늦어야 합니다")
-            parsed.append(ScheduleItem(i + 1, user_id, start, end, raw["category"], int(raw["amount"])))
+            parsed.append(ScheduleItem(i + 1, user_id, start, end, raw["category"], int(raw["amount"]), brand))
         self.store.put_schedule(user_id, day, parsed)
         self.forget_day(user_id, day)
         return parsed

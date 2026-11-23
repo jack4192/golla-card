@@ -177,3 +177,46 @@ def test_OpenAI_로_가는_글은_가려지고_원문은_응답에_없음(svc):
 def test_사용자가_있으면_그_사람_금액(svc):
     r = svc.classify_place("스타벅스", user_id=1, at=at(month=11, day=5))
     assert isinstance(r["amount_hint"], int) and r["amount_hint"] > 0 and isinstance(r["ms"], int)
+
+
+# ---------- Task 3: API 와 일정 브랜드 저장 ----------
+
+AT_Q = {"at": "2026-11-05T09:00:00+09:00"}
+
+
+@pytest.fixture
+def client(svc):
+    from fastapi.testclient import TestClient
+    from engine.api import create_app
+    with TestClient(create_app(svc, chat_client=None)) as c:
+        yield c
+        c.put("/internal/users/1/schedules/2026-11-05", params=AT_Q, json={"items": []})
+
+
+def _item(**kw):
+    return {"start": "14:00", "end": "15:00", "category": "CAFE", "amount": 6000, **kw}
+
+
+def test_api_분류_200_빈글_422_없는사용자_404(client):
+    r = client.post("/internal/places/classify", json={"text": "스타벅스"})
+    assert r.status_code == 200 and r.json()["source"] == "search" and r.json()["brand"] == "스타벅스"
+    r = client.post("/internal/places/classify", json={"text": "   "})
+    assert r.status_code == 422 and r.json()["detail"] == "가게 이름을 입력해 주세요"
+    assert client.post("/internal/places/classify", json={"text": "스벅", "user_id": 99_999_999}).status_code == 404
+
+
+def test_일정_brand_저장과_조회(client):
+    r = client.put("/internal/users/1/schedules/2026-11-05", params=AT_Q, json={"items": [_item(brand="스타벅스")]})
+    assert r.status_code == 200 and r.json()["items"][0]["brand"] == "스타벅스"
+    got = client.get("/internal/users/1/schedules/2026-11-05")
+    assert got.json()["items"][0]["brand"] == "스타벅스"
+
+
+def test_브랜드_없는_예전_일정도_그대로(client):
+    r = client.put("/internal/users/1/schedules/2026-11-05", params=AT_Q, json={"items": [_item()]})
+    assert r.status_code == 200 and r.json()["items"][0]["brand"] is None
+
+
+def test_목록_밖_brand_는_422(client):
+    r = client.put("/internal/users/1/schedules/2026-11-05", params=AT_Q, json={"items": [_item(brand="없는브랜드")]})
+    assert r.status_code == 422 and "알 수 없는 가맹점 브랜드" in r.json()["detail"]
