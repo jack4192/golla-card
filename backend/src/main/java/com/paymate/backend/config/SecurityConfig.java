@@ -76,6 +76,8 @@ public class SecurityConfig {
                         .requestMatchers("/error").permitAll()
                         // 카드 상품 이미지 (공개된 상품 이미지라 로그인 없이 받는다. 앱의 <Image> 는 토큰을 보낼 수 없다)
                         .requestMatchers(HttpMethod.GET, "/card-images/**").permitAll()
+                        // 행사 브랜드 로고 (카드 이미지와 같은 이유로 로그인 없이, 2026-11-23)
+                        .requestMatchers(HttpMethod.GET, "/brand-logos/**").permitAll()
                         // 그 외 모든 API는 로그인(토큰) 필요 → 새 기능은 아무 설정 없이 자동으로 보호됨
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e
