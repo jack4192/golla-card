@@ -40,16 +40,19 @@ PostgreSQL (5432)
 | 구간 | 상태 |
 |---|---|
 | 앱 → 백엔드 | 회원가입, 로그인, 로그아웃, 이메일·휴대폰 중복 확인, 내 정보 6개가 연결되어 있다. 서버 주소(`EXPO_PUBLIC_API_URL`)를 넣었을 때만 서버를 부르고, 없으면 앱 안의 데이터로 동작한다 |
-| 앱 → 백엔드 (카드·일정) | 백엔드에 카드(`/api/cards`), 카드 상품(`/api/card-products`), 일정(`/api/schedules`) API 가 있으나 앱은 아직 부르지 않는다 |
-| 백엔드 → AI 엔진 | 아직 없다. 백엔드에 AI 엔진을 부르는 코드와 주소·토큰 설정이 없다 |
-| 웹 브라우저 → 백엔드 | 백엔드에 CORS 설정이 없어 웹(8081)에서 부르면 브라우저가 막는다. 휴대폰 앱은 영향이 없다. 고칠 내용은 [frontend/docs/백엔드_연동_전달사항.md](frontend/docs/백엔드_연동_전달사항.md) 에 있다 |
+| 앱 → 백엔드 (카드·일정) | 결제 화면을 열 때 기기 지갑의 카드를 서버에 등록하고(`/api/cards`), 일정을 저장·삭제할 때 서버에도 반영한다(`/api/schedules`). 기기가 기준이고 서버에서 내려받지는 않는다 |
+| 백엔드 → AI 엔진 | 연결되어 있다. 백엔드의 `/api/ai/...` 가 AI 엔진을 부르고, 일정을 저장하면 AI 엔진에도 넘어간다. 결제 기록 전달만 빠져 있다(백엔드에 결제 API 가 없다). [backend/docs/AI_연동.md](backend/docs/AI_연동.md) |
+| 앱 → 백엔드 (AI 기능) | 결제 화면이 카드 순서(`/api/ai/rank`)와 챗봇(`/api/ai/chat`)을 부르고, 앱에서 넣은 일정이 서버로 올라가 AI 배치에 반영된다. 맞춤 추천·리포트 화면은 아직 없다. [frontend/docs/AI_연동.md](frontend/docs/AI_연동.md) |
+| 웹 브라우저 → 백엔드 | CORS 설정이 있어 웹(8081)에서도 부를 수 있다. 허용 주소는 `CORS_ALLOWED_ORIGINS` 로 바꾼다 |
 
-백엔드가 AI 엔진을 붙일 때 볼 것:
+AI 연결에서 알아둘 것:
 
+- 앱이 부를 주소와 AI 엔진 API 의 대응은 [backend/docs/AI_연동.md](backend/docs/AI_연동.md) 에 있다. 응답은 AI 엔진의 JSON 그대로다.
 - API 계약은 [solpay-ai/openapi.json](solpay-ai/openapi.json) 이고, 서버를 켜면 http://127.0.0.1:8001/docs 에서도 볼 수 있다.
 - 주요 API: 카드 배치 `POST /internal/rank`, 결제 기록 `POST /internal/payments`, 하루 일정 `PUT /internal/users/{id}/schedules/{day}`, 맞춤 추천 `POST /internal/users/{id}/recommendation-page`, 챗봇 `POST /internal/chat`, 월간 리포트 `GET /internal/users/{id}/monthly-report`, 연말정산 `GET /internal/users/{id}/missed-benefit`, 규칙 `GET·PUT /internal/users/{id}/rules`.
 - 등록한 카드가 없는 사용자는 카드 배치가 오류 없이 빈 목록으로 온다 (`cards=[]`, `reason_code="NO_CARD"`, `recommendation_id=null`).
-- 카드 배치는 0.8초 안에 답이 없으면 기본 순서로 보여 주는 것을 전제로 만들었다.
+- AI 엔진이 0.8초 안에 답하지 못하면 백엔드가 내 카드 순서대로 돌려준다 (`reason_code="FALLBACK"`).
+- AI 엔진은 백엔드와 같은 DB 를 봐야 한다 (`SOLPAY_STORE=db`). CSV 로 켜면 새로 가입한 사용자를 몰라 404 가 난다.
 
 ## 실행
 
@@ -80,13 +83,15 @@ SOLPAY_STORE=teamdb uv run uvicorn engine.api:app --port 8001
 
 ### 2. 백엔드 (8080)
 
-환경 변수 4개가 있어야 뜬다. 값은 팀에서 따로 받는다.
+아래 4개가 있어야 뜬다. `backend/.env.example` 을 `backend/.env` 로 복사해 채우면 서버가 뜰 때 읽는다 (환경 변수로 넣어도 된다). 값은 팀에서 따로 받는다.
 
 | 변수 | 뜻 |
 |---|---|
 | `DB_URL` | DB 주소 (`jdbc:postgresql://주소:5432/DB이름`) |
 | `DB_USERNAME`, `DB_PASSWORD` | DB 계정 |
 | `JWT_SECRET` | 로그인 토큰 서명용 비밀키 |
+
+AI 엔진 주소(`AI_BASE_URL`, 기본 `http://localhost:8001`)와 내부 토큰(`AI_INTERNAL_TOKEN`) 등은 [backend/docs/AI_연동.md](backend/docs/AI_연동.md) 의 '설정' 에 있다.
 
 ```bash
 cd backend
