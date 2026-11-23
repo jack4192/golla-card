@@ -325,6 +325,17 @@ def test_내_카드가_아닌_결제는_저장하지_않고_422다(svc):
         assert c.post("/internal/payments", json={**body, "user_card_id": 101}).json() == {"saved": True}
 
 
+def test_record_false면_같은_배치를_주고_기록은_남기지_않는다(svc):
+    # 홈 일정 카드 미리보기 (2026-11-23 설계서 home-schedule-ai): 기록이 '직전 기본 카드'를 바꾸지 않게
+    with client(svc) as c:
+        preview = c.post("/internal/rank", json={"user_id": 1, "at": AT, "record": False}).json()
+        assert svc.store.logs == [] and preview["recommendation_id"] is None
+        real = c.post("/internal/rank", json={"user_id": 1, "at": AT}).json()
+    assert real["recommendation_id"] == 1 and len(svc.store.logs) == 1      # 기본값은 기록을 남긴다
+    assert [x["user_card_id"] for x in preview["cards"]] == [x["user_card_id"] for x in real["cards"]]
+    assert preview["example"] == real["example"] and preview["reason_code"] == real["reason_code"]
+
+
 def _no_cards(svc):
     from engine.domain import User
     svc.store.context = lambda user_id, when: UserContext(User(1), [], [])

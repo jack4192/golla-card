@@ -344,14 +344,17 @@ class PlacementService:
         lookup = getattr(self.store, "recommendation", None)
         return lookup(user_id, recommendation_id) if lookup is not None else None
 
-    def rank(self, req: RankRequest) -> tuple[int | None, RankResult]:
-        """(추천 기록 번호, 배치 결과). 등록한 카드가 없으면 기록을 남기지 않고 번호는 None 이다."""
+    def rank(self, req: RankRequest, record: bool = True) -> tuple[int | None, RankResult]:
+        """(추천 기록 번호, 배치 결과). 등록한 카드가 없으면 기록을 남기지 않고 번호는 None 이다.
+        record=False(앱 홈 일정 카드 미리보기)도 같은 계산을 하고 기록만 남기지 않는다: 기록의 base_card 가
+        다음 배치의 '직전 기본 카드(last_base)'가 되므로, 홈에서 남기면 결제 화면의 '앞 카드 실적을 채워 …'
+        안내가 먹힐 수 있다 (2026-11-23 사용자 결정 '기록 없는 미리보기')."""
         context = self.store.context(req.user_id, req.at)
         state = self.build_state(context, req.at)
         result = self.engine.rank_state(state, req, context.rules, context.weights, self._all_promotions(context),
                                         context.last_base, schedules=context.schedules,
                                         promo_offers=self.popups.get((req.user_id, req.at.date())))
-        if not result.cards:
+        if not result.cards or not record:
             return None, result
         return self._log_rank(req, result), result
 
