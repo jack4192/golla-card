@@ -72,14 +72,30 @@ AI 가 고르지 않는 경우:
 화면의 '이 거래의 예상 혜택' 숫자는 서버 모드에서 AI 계산(`POST /api/ai/payments/evaluate`)을 쓴다.
 AI 가 답하지 못하거나 데모 모드면 앱 자체 계산으로 보여 주므로, 그때는 AI 답변의 숫자와 다를 수 있다.
 
+'이 거래의 예상 혜택'의 거래는 AI 추천 문구가 가리키는 거래다 (2026-11-23).
+AI 카드 배치 응답의 `example`(업종·가게·금액·가능성)로 계산해서, 'AI 추천' 상자와 같은 가게·같은 카드를 말하게 한다.
+예: "현대백화점 마이샵 15%로 약 480원…" → 상자 `현대백화점 · 77,200원`, Discount Plan 11,580원 / KB ALL 770원.
+
+| 경우 | 상자의 거래 |
+|---|---|
+| AI 가 답하고 그 거래의 계산도 옴 | AI 예시 거래 (`example`) |
+| 일정에서 들어온 결제 | 일정 거래 (지금처럼) |
+| AI 가 기본 순서로 답함·꺼짐·데모 모드, 예시 계산 실패, 1순위 카드가 기기 지갑에 없음 | 고정 예시 '스타벅스 · 15,000원' (지금처럼) |
+
+- 행사 문구일 때만 상자 아래에 한 줄을 붙인다: "AI 문구의 '약 480원'은 이 시간대에 결제할 만한 곳의 행사 혜택을 가능성만큼 더한 금액이에요. 현대백화점에서 결제할 가능성은 약 3%예요."
+  AI 문구의 금액은 이 시간대 행사 혜택 전체(현대백화점 + 올리브영 …)의 기대 금액이라 상자 금액(그 거래 한 건)과 다르다.
+- 실적을 채우려고 고른 카드면, 예시 거래에서 다른 카드가 더 유리하다고 보일 수 있다. 그때는 AI 문구("실적 달성까지 …")가 이유를 말한다.
+- 상자 맨 아래 줄은 예시를 고른 근거(`example.basis`)에 따라 말한다: 행사·혜택 문구면 "AI 추천 문구가 말하는 거래로", 실적·구간 지키기처럼 문구가 거래를 말하지 않으면 "지금 시간대에 결제할 가능성이 가장 높은 거래로", 일정 프로모션 카드면 "오늘 일정에 맞춘 거래로" (`exampleBasisLine`).
+- 일정 프로모션 카드 화면(일정 팝업에서 추천한 행사)은 앱 일정에 브랜드가 없어도 추천한 행사 가게로 계산한다.
+
 ## 파일
 
 | 파일 | 내용 |
 |---|---|
 | `utils/api.js` | AI 호출 (`aiRank`, `aiChat`, `aiEvaluate`, `aiMerchants`, `aiRecommendationPage`, `aiConfirmRuleDraft`, `aiCancelRuleDraft`) |
-| `utils/aiPlacementCore.js` | AI 순위를 지갑 순서로 바꾸기, 챗봇에 보낼 이전 대화 (순수 함수) |
+| `utils/aiPlacementCore.js` | AI 순위를 지갑 순서로 바꾸기, 1순위 카드의 예시 거래(`example`), 챗봇에 보낼 이전 대화 (순수 함수) |
 | `utils/aiPlacement.js` | 순서를 묻고 지갑에 맞추는 `loadPlacement` |
-| `utils/aiEstimate.js`, `aiEstimateCore.js` | 예상 혜택을 AI 에 묻고 지갑 카드별 값으로 바꾸기 (결제 화면, 홈 '오늘의 일정') |
+| `utils/aiEstimate.js`, `aiEstimateCore.js` | 예상 혜택을 AI 에 묻고 지갑 카드별 값으로 바꾸기 (결제 화면, 홈 '오늘의 일정'). 예시 거래 → 계산 요청(`exampleScenario`), 상자 거래 고르기(`chooseEstimateScenario`), 안내 줄(`exampleNote`) |
 | `utils/aiRecommendCore.js` | AI 맞춤 추천 응답 → 카드 추천·프로모션 추천·보일 탭 (순수 함수) |
 | `utils/serverCards.js` | 지갑 카드 ↔ 서버 카드 번호 짝 (`serverCardLinks`). 22장에 없는 카드는 40장 데이터로 짝짓는다 |
 | `utils/serverCatalog.js`, `serverCatalogCore.js` | 카드 탭 상품 목록·상세를 서버에서 읽고 앱 모양으로 바꾸기, 서버 이미지 주소 |
@@ -97,7 +113,7 @@ AI 가 답하지 못하거나 데모 모드면 앱 자체 계산으로 보여 �
 
 ## 테스트
 
-`frontend` 폴더에서 실행한다 (파일 6개, 28개).
+`frontend` 폴더에서 실행한다 (파일 6개, 32개).
 
 ```bash
 node --test utils/__tests__/*.test.mjs
