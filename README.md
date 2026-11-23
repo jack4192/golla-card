@@ -1,36 +1,176 @@
-# SOL페이 스마트 카드 배치 에이전트
+# SOL페이 스마트 카드 배치 에이전트 (PayMate)
 
-결제화면의 카드 순서를 AI 가 정하고 결제 확정은 고객이 하는 SOL페이 기능의 저장소다. 신한 교육과정 금융 AI 에이전트 경진대회용이다.
+결제 화면의 카드 순서를 AI 가 정하고, 결제 확정은 고객이 하는 SOL페이 기능이다. 신한 교육과정 금융 AI 에이전트 경진대회용 저장소다.
 
-## 구성
+이 브랜치(`final`)는 앱·백엔드·AI 를 한곳에 모은 것이다. 카드 이름과 혜택, 결제 내역은 모두 가상 데이터이고 실제 카드·결제망과 연결되지 않는다.
 
-| 폴더 | 내용 | 실행 방법 |
+## 전체 구조
+
+```
+앱 (frontend/, Expo·React Native, 웹 8081)
+   │  /api/...  (JWT)
+   ▼
+백엔드 (backend/, Spring Boot, 8080)  ── 회원·카드·일정, DB 저장
+   │  /internal/...  (X-Internal-Token)
+   ▼
+AI 엔진 (solpay-ai/, FastAPI, 8001)  ── 카드 배치, 추천, 챗봇, 리포트
+   │
+   ▼
+PostgreSQL (5432)
+```
+
+앱은 백엔드만 부르고, 백엔드가 AI 엔진을 부른다. AI 엔진이 늦거나 꺼져 있어도 결제는 기본 카드 순서로 진행되어야 한다.
+
+## 폴더 구성
+
+| 폴더 | 내용 | 자세한 설명 |
 |---|---|---|
-| `data/` | 가상 소비 데이터 생성기와 카드 상품 수집기 | `data/README.md` |
-| `solpay-ai/` | 카드 배치 AI 엔진(FastAPI), 학습·평가 코드 | `solpay-ai/README.md` |
-| `demo/` | AI 를 붙인 결제 데모 (일회용 코드, 가상 POS). Spring 역할을 대신한다 | `demo/README.md` |
-| `db/`, `docker-compose.yml` | 로컬 PostgreSQL(PostGIS) | `docker compose up -d db` |
+| `frontend/` | 앱. 회원가입, 간편비밀번호, 오늘의 일정, 추천, 카드 지갑, 결제 화면 | [frontend/README.md](frontend/README.md) |
+| `backend/` | Spring Boot 서버. 회원·로그인(JWT), 카드, 카드 상품, 일정 API | 아래 '2. 백엔드' 참고 |
+| `solpay-ai/` | AI 엔진. 결제 화면 카드 배치, 맞춤 추천, 챗봇, 월간 리포트, 연말정산 | [solpay-ai/README.md](solpay-ai/README.md) |
+| `data/` | 가상 소비 데이터 생성기. AI 엔진이 `data/config` 를 읽는다 | [data/README.md](data/README.md) |
+| `demo/` | AI 엔진만 붙인 결제 데모(일회용 코드, 가상 POS). Spring 역할을 대신한다 | [demo/README.md](demo/README.md) |
+| `db/`, `docker-compose.yml` | 로컬 PostgreSQL(PostGIS)과 DB 스크립트 | 아래 '로컬 DB' 참고 |
+| `docs/` | AI 설계 문서와 구현 계획 | `docs/superpowers/` |
 
-앱(Expo)과 Spring 서버는 이 저장소에 `frontend/`, `backend/` 로 합칠 예정이다. 앱은 Spring 만 호출하고, Spring 이 `solpay-ai` 의 `POST /internal/rank` 를 부른다. API 계약은 `solpay-ai/openapi.json` 에 있다.
+## 지금 연결 상태
 
-## 결제 데모 써 보기
+파일은 한곳에 모였지만 세 부분이 모두 이어진 것은 아니다.
 
-[uv](https://docs.astral.sh/uv/getting-started/installation/) 를 설치하고 저장소 루트에서 실행한다. 처음에는 가상 데이터를 만드느라 1분 정도 걸린다.
+| 구간 | 상태 |
+|---|---|
+| 앱 → 백엔드 | 회원가입, 로그인, 로그아웃, 이메일·휴대폰 중복 확인, 내 정보 6개가 연결되어 있다. 서버 주소(`EXPO_PUBLIC_API_URL`)를 넣었을 때만 서버를 부르고, 없으면 앱 안의 데이터로 동작한다 |
+| 앱 → 백엔드 (카드·일정) | 백엔드에 카드(`/api/cards`), 카드 상품(`/api/card-products`), 일정(`/api/schedules`) API 가 있으나 앱은 아직 부르지 않는다 |
+| 백엔드 → AI 엔진 | 아직 없다. 백엔드에 AI 엔진을 부르는 코드와 주소·토큰 설정이 없다 |
+| 웹 브라우저 → 백엔드 | 백엔드에 CORS 설정이 없어 웹(8081)에서 부르면 브라우저가 막는다. 휴대폰 앱은 영향이 없다. 고칠 내용은 [frontend/docs/백엔드_연동_전달사항.md](frontend/docs/백엔드_연동_전달사항.md) 에 있다 |
+
+백엔드가 AI 엔진을 붙일 때 볼 것:
+
+- API 계약은 [solpay-ai/openapi.json](solpay-ai/openapi.json) 이고, 서버를 켜면 http://127.0.0.1:8001/docs 에서도 볼 수 있다.
+- 주요 API: 카드 배치 `POST /internal/rank`, 결제 기록 `POST /internal/payments`, 하루 일정 `PUT /internal/users/{id}/schedules/{day}`, 맞춤 추천 `POST /internal/users/{id}/recommendation-page`, 챗봇 `POST /internal/chat`, 월간 리포트 `GET /internal/users/{id}/monthly-report`, 연말정산 `GET /internal/users/{id}/missed-benefit`, 규칙 `GET·PUT /internal/users/{id}/rules`.
+- 등록한 카드가 없는 사용자는 카드 배치가 오류 없이 빈 목록으로 온다 (`cards=[]`, `reason_code="NO_CARD"`, `recommendation_id=null`).
+- 카드 배치는 0.8초 안에 답이 없으면 기본 순서로 보여 주는 것을 전제로 만들었다.
+
+## 실행
+
+켜는 순서는 AI 엔진 → 백엔드 → 앱이다. 지금은 서로 이어지지 않은 구간이 있어 하나씩 따로 켜도 된다.
+
+### 필요한 프로그램
+
+| 프로그램 | 쓰는 곳 |
+|---|---|
+| [uv](https://docs.astral.sh/uv/getting-started/installation/) | AI 엔진, 데이터 생성기, 결제 데모 (Python 은 uv 가 설치한다) |
+| Java 21 (JDK) | 백엔드 |
+| Node.js 24 | 앱 |
+| Docker | 로컬 DB 를 쓸 때만 |
+
+### 1. AI 엔진 (8001)
+
+저장소에는 데이터와 학습 결과가 없어 처음 한 번 만든다. 팀에서 받은 `카드서비스_DB_1년/` 폴더를 저장소 맨 위에 먼저 둔다.
+
+```bash
+cd data && uv sync && uv run python -m generate.main
+cd ../solpay-ai && uv sync
+uv run python -m training.build_priors
+uv run python -m training.train_category
+SOLPAY_STORE=teamdb uv run uvicorn engine.api:app --port 8001
+```
+
+시험 화면은 http://127.0.0.1:8001/dev 이다. 챗봇과 OpenAI 문구를 쓰려면 `solpay-ai/.env` 에 `OPENAI_API_KEY` 를 넣는다. 없으면 정해진 문구로 동작한다. 테스트는 `solpay-ai` 폴더에서 `uv run pytest` 로 돌린다.
+
+### 2. 백엔드 (8080)
+
+환경 변수 4개가 있어야 뜬다. 값은 팀에서 따로 받는다.
+
+| 변수 | 뜻 |
+|---|---|
+| `DB_URL` | DB 주소 (`jdbc:postgresql://주소:5432/DB이름`) |
+| `DB_USERNAME`, `DB_PASSWORD` | DB 계정 |
+| `JWT_SECRET` | 로그인 토큰 서명용 비밀키 |
+
+```bash
+cd backend
+sh gradlew bootRun
+```
+
+- `Started PaymateBackendApplication` 이 보이면 http://localhost:8080 에서 받는다. Windows 는 `gradlew.bat bootRun` 을 쓴다.
+- 저장소의 `gradlew` 에 실행 권한이 없어 Mac·Linux 에서는 `./gradlew` 가 거절된다. 위처럼 `sh gradlew` 로 부른다.
+- 테이블이 이미 있는 DB 여야 한다 (`ddl-auto: validate`). 표가 없는 빈 DB 로는 뜨지 않는다.
+- IntelliJ 로 열 때는 저장소 전체가 아니라 `backend/` 폴더를 연다.
+
+### 3. 앱 (8081)
+
+```bash
+cd frontend
+npm ci
+npx expo start --go
+```
+
+- 이대로 켜면 서버 없이 앱 안의 데이터로 동작한다. 휴대폰은 Expo Go 로 QR 코드를 찍고, 웹은 http://localhost:8081 을 연다.
+- 백엔드에 붙이려면 서버 주소를 넣고 켠다. 휴대폰에서 볼 때는 `localhost` 대신 PC 의 IP 를 쓴다.
+
+```bash
+EXPO_PUBLIC_API_URL=http://localhost:8080 npx expo start --go --clear
+```
+
+- Windows 는 `.\scripts\start-with-backend.ps1` 이 같은 일을 한다. 테스트 계정과 웹 배포 방법은 [frontend/README.md](frontend/README.md) 와 [frontend/docs/새_노트북_설정.md](frontend/docs/새_노트북_설정.md) 에 있다.
+
+### 결제 데모만 써 보기
+
+앱과 백엔드 없이 AI 엔진의 카드 배치를 바로 볼 수 있다. 저장소 맨 위에서 실행하면 가상 데이터 생성(처음 한 번, 1분 안팎), AI 엔진, 데모 서버가 함께 켜진다.
 
 ```bash
 ./run_demo.sh
 ```
 
-결제 화면은 http://localhost:8000/pay, 가상 POS 는 http://localhost:8000/pos 이다. 시연 순서는 `demo/README.md` 에 있다.
+결제 화면은 http://localhost:8000/pay, 가상 POS 는 http://localhost:8000/pos 이다. 시연 순서는 [demo/README.md](demo/README.md) 에 있다.
 
-## 처음 실행 (개발)
+### 로컬 DB
+
+저장소 맨 위의 `.env.example` 을 `.env` 로 복사해 `POSTGRES_PASSWORD` 를 채운 뒤 켠다.
 
 ```bash
-cd data && uv sync && uv run python -m generate.main
-cd ../solpay-ai && uv sync && uv run python -m training.build_priors && uv run pytest
+docker compose up -d db
 ```
 
-## 깃에 올리지 않는 것
+PostGIS 확장만 들어 있는 빈 DB 가 5432 포트에 뜬다. 표와 데이터를 넣는 방법은 [solpay-ai/docs/상세_기록.md](solpay-ai/docs/상세_기록.md) 에 있다.
 
-`.env`(비밀번호·API 키), `data/out`(생성 결과), `data/cache`(카카오 수집 결과), `solpay-ai/artifacts`(학습 결과)는 각자 만든다.
-카드 이름과 혜택은 모두 임의로 만든 가정값이다.
+## 포트
+
+| 포트 | 무엇 |
+|---|---|
+| 5432 | PostgreSQL |
+| 8000 | 결제 데모 (`demo/`) |
+| 8001 | AI 엔진 (`solpay-ai/`) |
+| 8080 | 백엔드 (`backend/`) |
+| 8081 | 앱 웹 화면 (`frontend/`) |
+
+## 저장소에 없는 것
+
+비밀값이거나 크기가 커서 깃에 올리지 않는다. 각자 만들거나 팀에서 따로 받는다.
+
+| 무엇 | 어떻게 |
+|---|---|
+| `.env` 파일들 | `.env.example` 을 복사해 채우거나 팀에서 값을 받는다. DB 비밀번호, JWT 비밀키, OpenAI 키가 들어 있다 |
+| `카드서비스_DB_1년/` (102MB) | 팀에서 압축 파일로 받아 저장소 맨 위에 푼다 |
+| `data/out/` | `data` 폴더에서 `uv run python -m generate.main` |
+| `solpay-ai/artifacts/` | `solpay-ai` 폴더에서 `training.build_priors`, `training.train_category` |
+| `frontend/node_modules/`, `backend/build/` | `npm ci`, `gradlew bootRun` 이 만든다 |
+
+## 브랜치
+
+| 브랜치 | 내용 |
+|---|---|
+| `final` | 통합본. 이 README 가 있는 곳 |
+| `ai` | AI 엔진과 데이터 (`final` 의 맨 위 폴더들) |
+| `back` | 백엔드 (`final` 의 `backend/`) |
+| `front` | 앱 (`final` 의 `frontend/`) |
+
+`back`, `front` 는 파일을 저장소 맨 위에 두고 있어 `final` 에는 폴더로 넣었다. 두 브랜치에 새로 올라온 내용은 아래처럼 가져온다. 작업 폴더에 커밋하지 않은 변경이 없어야 한다.
+
+```bash
+git fetch origin
+git merge origin/ai
+git subtree pull --prefix=backend origin back
+git subtree pull --prefix=frontend origin front
+```
