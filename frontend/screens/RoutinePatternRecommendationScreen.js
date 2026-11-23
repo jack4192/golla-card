@@ -1,4 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { SERVER_MODE, api } from '../utils/api';
+import { CARD_CATALOG_40 } from '../data/cardCatalog40';
+import { toCardRecommendation } from '../utils/aiRecommendCore';
 import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Image, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { CARD_PRODUCTS } from '../data/cardRecommendationProducts';
 import { findCatalog40Product } from '../data/cardCatalog40';
@@ -263,6 +266,16 @@ export default function RoutineRecommendationScreen({
       off();
     };
   }, [reload]);
+  // 서버 모드: 결제 내역이 있으면 AI 맞춤 추천의 카드를 맨 앞에 둔다. 없으면(새 가입자) 설문 기반 앱 계산 (2026-11-23 결정)
+  const [aiCard, setAiCard] = useState(null);
+  useEffect(() => {
+    if (!SERVER_MODE) return undefined;
+    let active = true;
+    api.aiRecommendationPage()
+      .then(page => { if (active) setAiCard(toCardRecommendation(page, CARD_CATALOG_40)); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [reload]);
   const recommendations = useMemo(() => {
     if (!input) return [];
 
@@ -272,8 +285,10 @@ export default function RoutineRecommendationScreen({
     preferences.owned = input.saved.owned;
     const rows = rankRecommendations(input.profile, input.events, preferences, now).filter(row => officialProduct(row.card.code));
     const unowned = rows.filter(row => !row.owned);
-    return (unowned.length ? unowned : rows).slice(0, 3);
-  }, [input, data, now]);
+    const local = (unowned.length ? unowned : rows).slice(0, 3);
+    if (!aiCard || input.saved.owned.includes(aiCard.card.code)) return local;
+    return [aiCard, ...local.filter(row => row.card.code !== aiCard.card.code)].slice(0, 3);
+  }, [input, data, now, aiCard]);
   const selected = recommendations[Math.min(index, Math.max(0, recommendations.length - 1))];
   const match = selected ? [...selected.matches].sort((a, b) => b.weight - a.weight)[0] : null;
   const pattern = match ? recentPattern(data, match.category) : null;

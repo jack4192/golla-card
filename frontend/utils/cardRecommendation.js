@@ -1,12 +1,14 @@
 import { Platform } from 'react-native';
 import * as Store from './demoStore';
 import { CSV_CARD_CATALOG } from '../data/cardCatalogCsv';
+import cards40 from '../data/cardCatalog40.json';
 import { categoryWords, dateKey, isCustomCategory, makeSignals } from './routineData';
 
 const KEY = 'solpay_recommendation_preferences_v1';
 const PREFIX = 'solpay_demo_';
 
-const codes = new Set(CSV_CARD_CATALOG.map(card => card.code));
+// 보유 카드로 둘 수 있는 코드: 혜택 계산용 22장 + 서버 DB 와 같은 40장 (서버의 카드가 지갑에서 빠지지 않게)
+const codes = new Set([...CSV_CARD_CATALOG, ...cards40].map(card => card.code));
 
 const record = value =>
   value && typeof value === 'object' && !Array.isArray(value);
@@ -192,6 +194,8 @@ export function limitGroups(card) {
 }
 
 export function benefitText(benefit) {
+  // AI 맞춤 추천이 준 혜택은 문구가 정해져 있다 (utils/aiRecommendCore.js)
+  if (benefit?.label) return benefit.label;
   if (benefit.type === 'PER_LITER_DISCOUNT') {
     return `${benefit.fixedAmount}원/ℓ`;
   }

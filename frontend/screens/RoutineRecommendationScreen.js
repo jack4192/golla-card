@@ -9,6 +9,9 @@ import { dateKey, eventEndDate, makeSignals, readEvents, readProfile } from '../
 import { benefitText, emptyPreferences, money, rankRecommendations, readPreferences } from '../utils/cardRecommendation';
 import { recordRecommendation } from '../utils/savingsRecords';
 import { addNotification } from '../utils/notifications';
+import { SERVER_MODE, api } from '../utils/api';
+import { CARD_CATALOG_40 } from '../data/cardCatalog40';
+import { toCardRecommendation, toPromotionOffer, visibleTabs } from '../utils/aiRecommendCore';
 export { officialProduct, recentPattern } from './RoutinePatternRecommendationScreen';
 export const RECOMMENDATION_LABELS = ['카드 추천', '프로모션 추천'];
 function CardFallback({ selectedWalletCard }) {
@@ -65,6 +68,8 @@ export default function RoutineRecommendationScreen({
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
   const [now, setNow] = useState(() => new Date());
+  // 서버 모드: AI 맞춤 추천 페이지 (카드 추천·프로모션 추천과 탭 규칙). 못 받으면 앱 계산을 쓴다.
+  const [aiPage, setAiPage] = useState(null);
   const alive = useRef(true);
   const lock = useRef(false);
   useEffect(() => {
@@ -109,12 +114,33 @@ export default function RoutineRecommendationScreen({
       active = false;
     };
   }, [reload]);
+  useEffect(() => {
+    // 오늘 일정의 추천만 AI 에 묻는다 (AI 맞춤 추천은 오늘 기준)
+    if (!SERVER_MODE || (scheduleDate && scheduleDate !== dateKey(new Date()))) return undefined;
+    let active = true;
+    api.aiRecommendationPage().then(page => { if (active) setAiPage(page); }).catch(() => {});
+    return () => { active = false; };
+  }, [reload, scheduleDate]);
   const recommendations = useMemo(() => {
     if (!input) return null;
     const useCurrentTime = !scheduleDate || scheduleDate === dateKey(now);
     const when = useCurrentTime ? now : new Date(scheduleDate + 'T12:00:00');
-    return buildRecommendations(input.profile, input.events, input.saved, when, useCurrentTime, cardAd);
-  }, [input, now, scheduleDate, cardAd]);
+    const local = buildRecommendations(input.profile, input.events, input.saved, when, useCurrentTime, cardAd);
+    if (!aiPage) return local;
+    // AI 가 카드를 주면 그것을, 못 주면(결제 내역이 없는 새 가입자 등) 설문 기반 앱 계산을 쓴다 (2026-11-23 결정)
+    const aiCard = toCardRecommendation(aiPage, CARD_CATALOG_40);
+    const aiOffer = toPromotionOffer(aiPage);
+    return {
+      ...local,
+      ...(aiCard ? { card: aiCard, example: false, ownedBest: null } : {}),
+      ...(aiOffer && !cardAd ? aiOffer : {}),
+    };
+  }, [input, now, scheduleDate, cardAd, aiPage]);
+  // 탭은 AI 규칙을 따른다: 카드날에만 카드 추천, 행사가 없으면 카드 추천만 (2026-11-23 결정)
+  const tabs = useMemo(() => cardAd ? [0] : visibleTabs(aiPage), [aiPage, cardAd]);
+  useEffect(() => {
+    if (!tabs.includes(index)) setIndex(tabs[0]);
+  }, [tabs, index]);
   const promotionTab = !cardAd && index === 1;
   const selected = recommendations?.card;
   const card = promotionTab ? null : selected?.card;
@@ -124,7 +150,8 @@ export default function RoutineRecommendationScreen({
   // 추천을 보여주면 연말 결산 기록을 남깁니다(같은 날·같은 카드·같은 업종은 한 번만).
   const recordedKey = useRef('');
   useEffect(() => {
-    if (!selected || recommendations?.example || !match?.category) return;
+    // AI 추천은 앱 업종 기준인 연말 결산 기록 방식과 맞지 않아 기록하지 않는다
+    if (!selected || selected.ai || recommendations?.example || !match?.category) return;
     const key = `${selected.card.code}:${match.category}`;
     if (recordedKey.current === key) return;
     recordedKey.current = key;
@@ -188,7 +215,7 @@ export default function RoutineRecommendationScreen({
   if (presentation === 'popup' || cardAd) {
     return <ScrollView style={s.screen} contentContainerStyle={{padding:18,gap:16}}>
       {!cardAd && <View style={{flexDirection:'row',gap:8}}>
-        {RECOMMENDATION_LABELS.map((label,i) => <TouchableOpacity key={label} accessibilityRole="tab"
+        {RECOMMENDATION_LABELS.map((label,i) => !tabs.includes(i) ? null : <TouchableOpacity key={label} accessibilityRole="tab"
           accessibilityState={{selected:index===i}} onPress={() => {setIndex(i);setError('');}}
           style={{flex:1,minHeight:44,alignItems:'center',justifyContent:'center',borderRadius:14,backgroundColor:index===i?'#123EAC':'#E3EBFD'}}>
           <Text style={{color:index===i?'white':'#294674',fontWeight:'700'}}>{label}</Text>
@@ -217,7 +244,7 @@ export default function RoutineRecommendationScreen({
         </FlowHeading>
 
         <View style={s.pager}>
-          {RECOMMENDATION_LABELS.map((label, i) => (
+          {RECOMMENDATION_LABELS.map((label, i) => !tabs.includes(i) ? null : (
             <TouchableOpacity
               key={label}
               accessibilityRole="tab"
