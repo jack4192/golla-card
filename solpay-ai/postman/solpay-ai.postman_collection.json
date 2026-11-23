@@ -143,7 +143,8 @@
 									"pm.test('카드는 항상 1장만 보여 준다', () => pm.expect(r.display_count).to.eql(1));",
 									"pm.test('1순위 카드에 안내 문구가 있다', () => pm.expect(r.cards[0].message).to.be.a('string').and.not.empty);",
 									"pm.test('1순위는 이 사용자의 카드', () => pm.expect([1, 2, 3]).to.include(r.cards[0].user_card_id));",
-									"pm.test('패턴으로 배치', () => pm.expect(r.version).to.eql('pattern'));"
+									"pm.test('패턴으로 배치', () => pm.expect(r.version).to.eql('pattern'));",
+									"pm.test('결제 화면 예시 거래가 있다', () => { pm.expect(r.example).to.include.keys('basis', 'category_code', 'amount', 'prob'); pm.expect(r.example.amount).to.be.above(0); });"
 								]
 							}
 						}
@@ -434,7 +435,8 @@
 									"pm.test('카드는 항상 1장만 보여 준다', () => pm.expect(r.display_count).to.eql(1));",
 									"pm.test('1순위 카드에 안내 문구가 있다', () => pm.expect(r.cards[0].message).to.be.a('string').and.not.empty);",
 									"pm.test('프로모션 카드가 1순위', () => pm.expect(r.reason_code).to.eql('PROMOTION_CARD'));",
-									"pm.test('팝업에서 추천한 카드', () => pm.expect(r.cards[0].user_card_id).to.eql(Number(pm.collectionVariables.get('promoCard'))));"
+									"pm.test('팝업에서 추천한 카드', () => pm.expect(r.cards[0].user_card_id).to.eql(Number(pm.collectionVariables.get('promoCard'))));",
+									"pm.test('예시 거래는 지금 일정', () => pm.expect(r.example.basis).to.eql('schedule'));"
 								]
 							}
 						}

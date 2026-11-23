@@ -2118,6 +2118,18 @@
        }
       ],
       "title": "Explanation"
+     },
+     "example": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Example"
      }
     },
     "type": "object",

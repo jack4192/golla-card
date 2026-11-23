@@ -53,6 +53,10 @@ class RankResponse(BaseModel):
     version: str
     scenario_mode: str
     explanation: dict | None = None
+    # 결제 화면 '이 거래의 예상 혜택'에 보일 예시 거래 (1순위 카드 문구가 가리키는 거래, NO_CARD 면 null).
+    # 키: basis(promotion/benefit/schedule/likely), category_code, category_name, merchant_id, name, amount,
+    # prob(업종 확률 × 그 가게 비중. 행사 문구의 '약 N원'은 이 시간대 행사 전체의 기대 금액이라 행사가 하나일 때만 예시 혜택 × prob 와 같다)
+    example: dict | None = None
 
 
 class ScheduleItemBody(BaseModel):
@@ -283,6 +287,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
             reason_code=result.reason_code, rule_applied=result.rule_applied,
             version=result.version, scenario_mode=result.scenario_mode,
             explanation=_explain(svc, result) if body.explain else None,
+            example=result.example,
         )
 
     @app.get("/internal/users/{user_id}", dependencies=[Depends(check_token)])
