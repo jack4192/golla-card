@@ -204,6 +204,7 @@ export default function TodaySchedulePanel({
   onOpenCards,
   cardList = null,
   paymentsList = null,   // 홈 '최근 결제' (서버 모드, MainScreen 이 넣는다)
+  headerRight = null,    // 홈 '내 지갑' 제목 오른쪽 (자동 배치 스위치, 2026-11-24 수정사항)
   onOpenSchedule,
   sampleActive,
   onStartSample,
@@ -514,7 +515,10 @@ export default function TodaySchedulePanel({
     const next = ready && (current || timeline.find(row => row.time >= clockTime) || timeline.find(row => !row.time));
     const cardAction = card ? '다른 카드로 변경' : '카드 등록';
     return <View style={styles.home}>
-      <Text accessibilityRole="header" style={styles.headline}>내 지갑</Text>
+      <View style={styles.homeHeadRow}>
+        <Text accessibilityRole="header" style={styles.headline}>내 지갑</Text>
+        {headerRight}
+      </View>
       <View style={[styles.homeCard, styles.homeCardScheduled]}>
         <HomeScheduleRibbon start={dayStart} clockTime={clockTime} nowMinute={nowMinute} viewMinute={viewMinute}
           onScrub={setViewMinute} onNow={() => setViewMinute(null)} dots={dots}
@@ -814,6 +818,7 @@ const styles = StyleSheet.create({
   sampleSelected:{backgroundColor:'#E2EDFF'},
   hero:{flexDirection:'row',alignItems:'center',gap:14,marginBottom:9},
   headline:{fontSize:33,lineHeight:41,letterSpacing:-1.2,fontWeight:'800',color:'#13213E'},
+  homeHeadRow:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},
   dateChip:{alignSelf:'flex-start',flexDirection:'row',alignItems:'center',gap:7,backgroundColor:'#EDF4FF',borderRadius:13,paddingVertical:8,paddingHorizontal:10,marginTop:10},
   heroIcon:{width:66,height:66,borderRadius:23,alignItems:'center',justifyContent:'center',backgroundColor:'#E5F5FA'},
   empty:{padding:18,borderRadius:18,backgroundColor:'#F1F6FE',gap:5},

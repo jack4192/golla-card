@@ -12,6 +12,9 @@ import { ActivityIndicator, View, Text, Image, Linking, TouchableOpacity, Scroll
 import { Ionicons } from '@expo/vector-icons';
 import YearEndReport from '../components/YearEndReport';
 import PaymentCardOrder from '../components/PaymentCardOrder';
+import AutoPlacementSwitch from '../components/AutoPlacementSwitch';
+import { useAutoPlacement } from '../utils/autoPlacement';
+import { loadPlacementPreview } from '../utils/aiPlacement';
 import RecentPayments from '../components/RecentPayments';
 import QuickPaySheet from '../components/QuickPaySheet';
 import NotificationCenter, { NotificationBell, useInbox } from '../components/NotificationCenter';
@@ -294,6 +297,27 @@ export default function MainScreen({
   // 홈 일정 카드가 AI 미리보기를 다시 물을 때 올리는 번호: 홈 추천 팝업(일정 행사를 계산함)이 닫히거나 챗봇 규칙을 확정했을 때 (2026-11-23)
   const [aiRefresh, setAiRefresh] = useState(0);
   const refreshAi = () => setAiRefresh(value => value + 1);
+  // 카드 자동 배치 ON/OFF (2026-11-24 수정사항): ON 이면 홈 '내 카드'가 지금 시각 AI 추천 순서(기록 없는 미리보기)를 따른다
+  const auto = useAutoPlacement();
+  const [homeAiOrder, setHomeAiOrder] = useState(null);
+  const [placementHour, setPlacementHour] = useState(() => new Date().getHours());
+  useEffect(() => {
+    const timer = setInterval(() => setPlacementHour(new Date().getHours()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+  const homeWalletKey = homeWalletCards.map(card => card.id).join(',');
+  useEffect(() => {
+    if (!SERVER_MODE || !auto.on || tab !== 'home' || !homeWalletCards.length) {
+      setHomeAiOrder(null);
+      return undefined;
+    }
+    let stopped = false;
+    loadPlacementPreview(homeWalletCards)
+      .then(result => { if (!stopped) setHomeAiOrder(result && !result.fallback ? result.order : null); })
+      .catch(() => { if (!stopped) setHomeAiOrder(null); });
+    return () => { stopped = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto.on, tab, homeWalletKey, placementHour, aiRefresh]);
   const openPaySheet = context => {
     if (context?.cardId) onSelectCard(context.cardId);
     setPaySheet({ ...context, returnTab: tab });
@@ -544,7 +568,9 @@ export default function MainScreen({
     home={home}
     onOpenCards={() => selectTab('cards')}
     cardList={home ? <PaymentCardOrder cards={homeWalletCards} selectedId={currentCard?.id}
-      onSelect={onSelectCard} syncSelection={!paySheet} /> : null}
+      onSelect={onSelectCard} syncSelection={!paySheet}
+      aiOrder={auto.on ? homeAiOrder : null} autoOn={auto.on} onAutoChange={auto.setOn} /> : null}
+    headerRight={home ? <AutoPlacementSwitch on={auto.on} onChange={auto.setOn} /> : null}
     paymentsList={home && SERVER_MODE ? <RecentPayments today={dateKey()} refreshKey={aiRefresh} /> : null}
     onOpenSchedule={() => selectTab('schedule')}
     disabled={scheduleDisabled}
@@ -829,7 +855,10 @@ export default function MainScreen({
           onClose={() => selectTab(schedulePayment?.returnTab || 'home')}
           onOpenCards={() => selectTab('cards')}
         /> : tab === 'cards' ? renderCards() : <ScrollView key={tab} style={styles.mainScroll} contentContainerStyle={[styles.pageContent, styles.chatClearance]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            {tab === 'home' && <>{renderSchedule(true)}{renderYearEndTile()}{renderHomeHighlights()}</>}
+            {tab === 'home' && <>{renderSchedule(true)}{renderYearEndTile()}{renderHomeHighlights()}
+              {/* AI 안내 (2026-11-24 수정사항: 시스템 맨 아래 작게) */}
+              <Text style={styles.aiNotice}>본 시스템은 AI를 활용한 카드 자동 배치 및 추천으로 부정확한 안내가 포함될 수 있습니다. 평소 소비가 아주 적은 편이거나 불규칙적이신 분께는 일부 오안내가 섞일 수 있습니다.</Text>
+            </>}
             {tab === 'benefits' && renderBenefits()}
             {tab === 'schedule' && renderSchedule()}
           </ScrollView>}
@@ -1681,6 +1710,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     padding: 25
   },
+  aiNotice: { fontSize: 11, lineHeight: 16, color: '#8B95A5', textAlign: 'center', paddingHorizontal: 12, marginTop: 4 },
   disclaimer: {
     fontSize: 12,
     color: '#8B95A5',
