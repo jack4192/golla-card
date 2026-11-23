@@ -220,3 +220,72 @@ def test_브랜드_없는_예전_일정도_그대로(client):
 def test_목록_밖_brand_는_422(client):
     r = client.put("/internal/users/1/schedules/2026-11-05", params=AT_Q, json={"items": [_item(brand="없는브랜드")]})
     assert r.status_code == 422 and "알 수 없는 가맹점 브랜드" in r.json()["detail"]
+
+
+# ---------- Task 4: 브랜드를 추천에 반영 ----------
+
+from datetime import date, datetime, time  # noqa: E402
+from zoneinfo import ZoneInfo  # noqa: E402
+
+KST = ZoneInfo("Asia/Seoul")
+DAY = date(2026, 11, 5)
+MORNING = datetime(2026, 11, 5, 9, tzinfo=KST)
+
+
+def _sched(category, brand=None, hour=14, amount=6000):
+    from engine.domain import ScheduleItem
+    return ScheduleItem(1, 1, datetime.combine(DAY, time(hour), KST), datetime.combine(DAY, time(hour + 1), KST),
+                        category, amount, brand)
+
+
+def _state(svc, when):
+    return svc.build_state(svc.store.context(1, when), when)
+
+
+def _scenario(svc, item):
+    from engine.domain import RankRequest
+    from engine.scenarios import build
+    when = datetime.combine(DAY, time(item.start.hour, 5), KST)
+    st = _state(svc, when)
+    sset = build(st, RankRequest(1, when), svc.engine.catalog, svc.engine.priors, svc.engine.params, None, None, [item])
+    return st, sset
+
+
+def test_브랜드_일정은_그_브랜드_확률_1(svc):
+    st, sset = _scenario(svc, _sched("CONVENIENCE", "CU"))
+    assert "CU" in st.relevant_brands
+    s = sset.scenarios[0]
+    assert s.brands == {"CU": 1.0} and s.promo_brands == {"CU": 1.0}
+
+
+def test_내_카드와_무관한_브랜드는_혜택_계산에서_None_행사_계산은_그대로(svc):
+    st0 = _state(svc, MORNING)
+    other = sorted(m.brand_code for m in svc.engine.catalog.merchants.values()
+                   if m.category == "CAFE" and m.brand_code and m.brand_code not in st0.relevant_brands)[0]
+    st, sset = _scenario(svc, _sched("CAFE", other))
+    assert other not in st.relevant_brands
+    s = sset.scenarios[0]
+    assert s.brands == {None: 1.0} and s.promo_brands == {other: 1.0}
+
+
+def test_팝업_행사는_일정_브랜드만(svc):
+    from engine.popup import promotion_offers
+    st = _state(svc, MORNING)
+    promos = svc._all_promotions(svc.store.context(1, MORNING))
+    hollys = promotion_offers(st, [_sched("CAFE", "할리스커피")], promos, MORNING, svc.engine.params)   # 행사 이름은 '할리스'
+    assert hollys and {o.brand for o in hollys} == {"할리스"}
+    assert promotion_offers(st, [_sched("CAFE", "스타벅스")], promos, MORNING, svc.engine.params) == []
+
+
+def test_추천_페이지는_일정_브랜드로_계산(svc):
+    svc.put_schedule(1, DAY, [{"start": time(14), "end": time(15), "category": "CAFE", "amount": 6000,
+                               "brand": "메가MGC커피"}], MORNING)
+    try:
+        page = svc.recommendation_page(1, MORNING, None)
+        offers = (page["merchant"] or {}).get("offers", [])
+        assert offers and {o["brand"] for o in offers} == {"메가MGC커피"}
+        for i in (page["card"] or {}).get("items", []):
+            if i["category"] == "CAFE":
+                assert i["brand"] == "메가MGC커피"
+    finally:
+        svc.put_schedule(1, DAY, [], MORNING)
