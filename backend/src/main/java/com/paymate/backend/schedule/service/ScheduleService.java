@@ -5,6 +5,7 @@ import com.paymate.backend.common.exception.CommonErrorCode;
 import com.paymate.backend.schedule.dto.ScheduleRequest;
 import com.paymate.backend.schedule.dto.ScheduleResponse;
 import com.paymate.backend.schedule.entity.Schedule;
+import com.paymate.backend.schedule.event.ScheduleChangedEvent;
 import com.paymate.backend.schedule.exception.ScheduleErrorCode;
 import com.paymate.backend.schedule.repository.CategoryNameRow;
 import com.paymate.backend.schedule.repository.ScheduleRepository;
@@ -18,6 +19,7 @@ import java.util.Set;
 
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +33,7 @@ public class ScheduleService {
     private static final Set<String> OTHER_TYPES = Set.of("기타", "OTHER");
 
     private final ScheduleRepository scheduleRepository;
+    private final ApplicationEventPublisher events;   // 일정이 바뀐 날짜를 알린다 (AI 엔진에 다시 넘기는 데 쓴다)
 
     private record Parsed(String kind, String types, String category, String title,
                           String start, String end, String memo) {
@@ -64,6 +67,7 @@ public class ScheduleService {
         Schedule saved = scheduleRepository.save(new Schedule(
                 userId, req.getDate(), p.kind(), p.types(), p.category(),
                 p.title(), p.start(), p.end(), p.memo()));
+        events.publishEvent(new ScheduleChangedEvent(userId, Set.of(req.getDate())));
         return saved.getId();
     }
 
@@ -71,13 +75,17 @@ public class ScheduleService {
     public void update(Long userId, Long scheduleId, ScheduleRequest req) {
         Schedule schedule = findMine(userId, scheduleId);
         Parsed p = parse(req);
+        Set<LocalDate> changed = new LinkedHashSet<>(List.of(schedule.getScheduleDate(), req.getDate()));   // 날짜를 옮기면 두 날짜 모두
         schedule.update(req.getDate(), p.kind(), p.types(), p.category(),
                 p.title(), p.start(), p.end(), p.memo());
+        events.publishEvent(new ScheduleChangedEvent(userId, changed));
     }
 
     @Transactional
     public void delete(Long userId, Long scheduleId) {
-        scheduleRepository.delete(findMine(userId, scheduleId));
+        Schedule schedule = findMine(userId, scheduleId);
+        scheduleRepository.delete(schedule);
+        events.publishEvent(new ScheduleChangedEvent(userId, Set.of(schedule.getScheduleDate())));
     }
 
     private Schedule findMine(Long userId, Long scheduleId) {

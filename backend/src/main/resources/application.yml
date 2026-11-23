@@ -2,6 +2,10 @@ spring:
   application:
     name: paymate-backend
 
+  # backend/.env (DB 접속 정보·JWT 비밀키·AI 주소)를 자동으로 읽는다. 없으면 환경 변수를 쓴다.
+  config:
+    import: optional:file:.env[.properties]
+
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -17,6 +21,22 @@ spring:
 jwt:
   secret: ${JWT_SECRET}
   access-token-expire-time: 3600000
+
+# AI 엔진(solpay-ai, FastAPI) 연결
+ai:
+  base-url: ${AI_BASE_URL:http://localhost:8001}
+  # AI 엔진의 SOLPAY_INTERNAL_TOKEN 과 같은 값. 비우면 헤더를 보내지 않는다
+  internal-token: ${AI_INTERNAL_TOKEN:}
+  # 카드 배치 제한 시간(ms). 넘기면 기본 순서로 답한다
+  rank-timeout-ms: ${AI_RANK_TIMEOUT_MS:800}
+  # 챗봇·리포트 등 나머지 호출 제한 시간(ms)
+  timeout-ms: ${AI_TIMEOUT_MS:20000}
+  # 시연용 기준 시각 (예: 2026-11-05T09:30:00). 비우면 현재 시각
+  fixed-at: ${AI_FIXED_AT:}
+
+# 웹(Expo 웹, Vercel)에서 부를 수 있게 허용할 주소 (쉼표 구분)
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:8081,http://localhost:19006}
 
 logging.level:
   org.hibernate.SQL: debug
