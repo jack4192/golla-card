@@ -380,7 +380,7 @@ export default function App() {
     const snapshot = await readWallet();
 
     if (!snapshot.preferences.owned.includes(code)) {
-      throw Error('보유 카드로 등록하고 저장한 후 선택해주세요.');
+      throw Error('내 지갑에 있는 카드만 결제에 쓸 수 있어요. 이 카드는 \'카드 신청\'으로 먼저 신청해주세요.');
     }
 
     const id = walletIdForCode(code);
@@ -763,7 +763,7 @@ export default function App() {
     const cards = previewCards.some(card => card.id === id) ? previewCards : (await readWallet()).cards;
 
     if (!cards.some(card => card.id === id)) {
-      throw Error('보유 카드로 등록하고 저장해주세요.');
+      throw Error('내 지갑에 있는 카드만 결제에 쓸 수 있어요. 이 카드는 \'카드 신청\'으로 먼저 신청해주세요.');
     }
 
     setPreviewWallet({ cards, id });
