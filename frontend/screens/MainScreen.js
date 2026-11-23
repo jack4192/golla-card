@@ -1,7 +1,7 @@
 import BenefitReport from '../components/BenefitReport';
 import { CARD_CATALOG_40, findCatalog40Product } from '../data/cardCatalog40';
 import { usePromotions } from '../utils/promotions';
-import { PROMO_TEXT, activePromotions, benefitStatus as statusOn } from '../utils/promotionsCore';
+import { PROMO_TEXT, activePromotions, benefitStatus as statusOn, benefitSummary, emptyPromotionText, promotionAnswer, visibleLogo } from '../utils/promotionsCore';
 import PinDotsInput from '../components/PinDotsInput';
 import WalletDeck from '../components/WalletDeck';
 import RecommendationLaunchPopup from '../components/RecommendationLaunchPopup';
@@ -279,6 +279,10 @@ export default function MainScreen({
   const promotions = usePromotions();
   const allBenefits = promotions.rows;
   const activeNow = activePromotions(allBenefits, kstToday());
+  const summary = benefitSummary(promotions.status, allBenefits, kstToday());   // 다 읽었을 때만 (데모·실패에 0건을 보이지 않는다)
+  // 받지 못한 로고 주소 → 그림 대신 이름 (최종 검토 반영)
+  const [failedLogos, setFailedLogos] = useState(() => new Set());
+  const onLogoError = uri => setFailedLogos(current => (current.has(uri) ? current : new Set([...current, uri])));
   const [walletBenefitDetailsOpen, setWalletBenefitDetailsOpen] = useState(false);
   const [chatVisible, setChatVisible] = useState(false);
   const [chatInput, setChatInput] = useState('');
@@ -591,10 +595,7 @@ export default function MainScreen({
   const localAnswer = q => {
     let answer = '카드 정보, 진행 중인 프로모션, 일정 등록 방법을 안내해드려요. 아래 추천 질문을 눌러보세요.';
     if (/프로모션|이벤트|진행/.test(q)) {
-      const list = activeNow;
-      answer = list.length
-        ? `지금 진행 중인 프로모션이 ${list.length}개 있어요. 예: ${[...new Set(list.map(item => item.merchant))].slice(0, 3).join(', ')}. 혜택 탭에서 각 항목을 누르면 결제 조건과 기간을 볼 수 있어요.`
-        : '지금 진행 중인 프로모션이 없어요.';
+      answer = promotionAnswer(promotions.status, activeNow);
     } else if (/일정.*(추가|등록|어떻게)|어떻게.*일정/.test(q)) {
       answer = '오늘의 일정 탭에서 [+ 일정 추가]를 누르면 반차·회식 같은 일정이나 카페·편의점 같은 장소 일정을 등록할 수 있어요. 등록한 일정에 맞는 카드는 홈에서 추천해드려요.';
     } else if (/일정|추천/.test(q)) {
@@ -653,7 +654,7 @@ export default function MainScreen({
       .then(state => updateChat(item.id, { draft: { ...item.draft, state } }));
   };
   const benefitTile = item => {
-    const logo = item.logo;
+    const logo = visibleLogo(item.logo, failedLogos);
     return <TouchableOpacity
       key={item.id}
       accessibilityRole="button"
@@ -664,7 +665,7 @@ export default function MainScreen({
     >
       <View style={styles.tileLogoArea}>
         {logo
-          ? <Image source={logo} resizeMode="contain" style={styles.tileLogo} accessible={false} />
+          ? <Image source={logo} resizeMode="contain" style={styles.tileLogo} accessible={false} onError={() => onLogoError(logo.uri)} />
           : <Text style={styles.tileMerchant} numberOfLines={2}>{item.merchant}</Text>}
       </View>
       {logo && <Text style={styles.tileBrandLabel} numberOfLines={1}>{item.merchant}</Text>}
@@ -724,13 +725,13 @@ export default function MainScreen({
       </View>
       <View style={styles.homeHighlightsRow}>
         {highlights.map((item, index) => {
-          const logo = item.logo;
+          const logo = visibleLogo(item.logo, failedLogos);
           return <TouchableOpacity key={item.id} accessibilityRole="button"
             accessibilityLabel={item.merchant + ' ' + item.benefit + ' 상세 조건'}
             style={[styles.homeHighlight, index === 1 && styles.homeHighlightMint, index === 2 && styles.homeHighlightPeach]}
             onPress={() => setSelectedBenefit(item)}>
             <View style={styles.homeHighlightIcon}>
-              {logo ? <Image source={logo} resizeMode="contain" style={styles.homeHighlightLogo} accessible={false} />
+              {logo ? <Image source={logo} resizeMode="contain" style={styles.homeHighlightLogo} accessible={false} onError={() => onLogoError(logo.uri)} />
                 : <Ionicons name="gift-outline" size={20} color="#245DE5" accessible={false} />}
             </View>
             <Text style={styles.homeHighlightMerchant} numberOfLines={1}>{item.merchant}</Text>
@@ -742,11 +743,11 @@ export default function MainScreen({
   };
   const renderBenefits = () => <>
 
-      <BenefitReport offers={allBenefits} date={kstToday()} />
+      {summary && <BenefitReport offers={allBenefits} date={kstToday()} />}
       <Text accessibilityRole="header" style={styles.sectionTitle}>혜택 둘러보기</Text>
-      {appNotice && <View style={styles.noticeStrip}>
+      {appNotice && summary && <View style={styles.noticeStrip}>
         <Ionicons name="notifications-outline" size={16} color="#2C60C2" />
-        <Text style={styles.noticeStripText}>이번 달 혜택 {allBenefits.filter(item => benefitStatus(item) === '기간 내').length}건</Text>
+        <Text style={styles.noticeStripText}>이번 달 혜택 {summary?.active ?? 0}건</Text>
       </View>}
       {[['sparkles-outline', '오늘의 카드 추천', 'recommendation'], ['pricetag-outline', '오늘의 프로모션', 'promotion']].map(([icon, label, kind]) =>
         <TouchableOpacity key={kind} accessibilityRole="button" accessibilityLabel={label}
@@ -942,7 +943,7 @@ export default function MainScreen({
 
       </ScrollView>
     </>;
-  return <SafeAreaView style={styles.root}><RecommendationLaunchPopup selectedWalletCard={currentCard} allowAutomaticAds={tab === 'home' && allowAutomaticAds} onViewPromotions={() => selectTab('benefits')} promotions={activeNow} openRequest={adRequest} enabled={(tab === 'home' || tab === 'benefits') && !settingsOpen && !exitOpen && !pinChangeOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
+  return <SafeAreaView style={styles.root}><RecommendationLaunchPopup selectedWalletCard={currentCard} allowAutomaticAds={tab === 'home' && allowAutomaticAds} onViewPromotions={() => selectTab('benefits')} promotions={activeNow} emptyText={emptyPromotionText(promotions.status)} openRequest={adRequest} enabled={(tab === 'home' || tab === 'benefits') && !settingsOpen && !exitOpen && !pinChangeOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
       {!settingsOpen && tab !== 'payment' && <View style={[styles.topBar, tab === 'cards' && styles.walletTopBar]}>
           <View>
             <Text style={[styles.brand,{color:tab === 'cards' ? "#FFFFFF" : "#134CCA",fontSize:27}]}>SOL·Pay</Text>
