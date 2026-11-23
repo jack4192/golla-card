@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: paymate-backend
+
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expire-time: 3600000
+
+logging.level:
+  org.hibernate.SQL: debug
