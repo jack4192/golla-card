@@ -1,5 +1,6 @@
 package com.paymate.backend.payment.controller;
 
+import com.paymate.backend.payment.dto.MonthSummaryResponse;
 import com.paymate.backend.payment.dto.PaymentResponse;
 import com.paymate.backend.payment.dto.YearSummaryResponse;
 import com.paymate.backend.payment.service.PaymentService;
@@ -33,6 +34,12 @@ public class PaymentController {
     @GetMapping("/year-summary")
     public YearSummaryResponse yearSummary(@AuthenticationPrincipal AuthUser authUser) {
         return paymentService.yearSummary(authUser.getId());
+    }
+
+    /** 지난 한 달 이용: 한 달 전 같은 날부터 기준 시각까지 건수·결제 금액 합 (카드이용내역 화면, 2026-11-24). */
+    @GetMapping("/month-summary")
+    public MonthSummaryResponse monthSummary(@AuthenticationPrincipal AuthUser authUser) {
+        return paymentService.monthSummary(authUser.getId());
     }
 
     /** 최근순 (limit 기본 5, 최대 50). beforeId 를 주면 그 번호보다 오래된 결제 (더 보기). */

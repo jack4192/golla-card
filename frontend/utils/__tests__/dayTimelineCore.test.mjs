@@ -85,12 +85,16 @@ test('옮긴 시각과 10분 안쪽의 가장 가까운 결제를 고른다', ()
   assert.equal(paymentAt([coffee, lunch], 750), lunch);
 });
 
-test('결제 한 줄 문구', () => {
-  assert.deepEqual(paymentRowText(coffee, '2026-11-23'),
-    { when: '08:12', merchant: '스타벅스', amount: '5,400원', card: '신한 모두의카드', benefit: '-540원' });
+test('결제 한 줄 문구 (신한 카드이용내역처럼 날짜는 늘 yyyy.MM.dd HH:mm, 혜택은 금액 아래 \'N원 할인\')', () => {
+  assert.deepEqual(paymentRowText(coffee),
+    { when: '2026.11.23 08:12', merchant: '스타벅스', amount: '5,400원', card: '신한 모두의카드', benefit: '540원 할인' });
   const older = { ...lunch, paidAt: '2026-11-04T18:01:36' };
-  assert.equal(paymentRowText(older, '2026-11-23').when, '11/4 18:01');
-  assert.equal(paymentRowText(lunch, '2026-11-23').benefit, '');
+  assert.equal(paymentRowText(older).when, '2026.11.04 18:01');
+  assert.equal(paymentRowText(lunch).benefit, '');
+  assert.equal(paymentRowText({ ...lunch, benefitAmount: 300, promotionAmount: 500 }).benefit, '800원 할인');
+  // 한 줄에 들어가게 '신한카드 ' 머리는 뗀다 (다른 카드 이름은 그대로)
+  assert.equal(paymentRowText(lunch).card, 'Discount Plan');
+  assert.equal(paymentRowText({ ...lunch, cardName: 'KB ALL 카드' }).card, 'KB ALL 카드');
   assert.equal(paymentLine(coffee), '이 시각 결제: 스타벅스 5,400원 · 신한 모두의카드');
 });
 

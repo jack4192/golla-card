@@ -14,3 +14,9 @@ export async function loadRecentPayments({ beforeId, limit = 5 } = {}) {
   if (!SERVER_MODE) return [];
   return list(await api.paymentsRecent({ beforeId, limit }));
 }
+
+// 지난 한 달 이용 (카드이용내역 머리): { from, until, count, amount }. 서버 모드가 아니면 null. 실패하면 예외.
+export async function loadMonthSummary() {
+  if (!SERVER_MODE) return null;
+  return await api.paymentsMonthSummary();
+}

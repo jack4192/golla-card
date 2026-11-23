@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.paymate.backend.common.DemoClock;
+import com.paymate.backend.payment.dto.MonthSummaryResponse;
 import com.paymate.backend.payment.dto.PaymentResponse;
 import com.paymate.backend.payment.dto.YearSummaryResponse;
 import com.paymate.backend.payment.repository.PaymentRepository;
@@ -102,6 +103,28 @@ class PaymentServiceTest {
         assertThat(s.cards()).extracting(YearSummaryResponse.CardSum::userCardId).containsExactly(2L, 3L);
         assertThat(s.cards()).extracting(YearSummaryResponse.CardSum::total).containsExactly(1500L, 540L);
         assertThat(s.cards().get(1).count()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("지난 한 달 이용: 한 달 전 같은 날 0시부터 기준 시각까지 건수와 결제 금액 합 (빈 금액은 0)")
+    void monthSummary() {
+        repository.rows = List.of(
+                new Row(1L, "2026-10-24T09:00:00", "스타벅스", "CAFE", "카페", 5400, 540, 0, 3L, "신한 모두의카드"),
+                new Row(2L, "2026-11-23T20:45:00", "원당감자탕", "RESTAURANT", "음식점", 11000, 0, 0, 2L, "KB ALL 카드"),
+                new Row(3L, "2026-11-24T01:00:00", "GS25", "CVS", "편의점", null, null, null, 3L, "신한 모두의카드"));
+        MonthSummaryResponse s = service("2026-11-24T01:12:30.5").monthSummary(1L);
+        assertThat(repository.between.get(0)).containsExactly(1L, LocalDateTime.of(2026, 10, 24, 0, 0),
+                LocalDateTime.of(2026, 11, 24, 1, 12, 30));
+        assertThat(s.from()).isEqualTo("2026-10-24");
+        assertThat(s.until()).isEqualTo("2026-11-24T01:12:30");
+        assertThat(s.count()).isEqualTo(3);
+        assertThat(s.amount()).isEqualTo(16400L);
+    }
+
+    @Test
+    @DisplayName("지난 한 달 이용: 3월 31일이면 2월 마지막 날부터")
+    void monthSummaryMonthEnd() {
+        assertThat(service("2026-03-31T10:00:00").monthSummary(1L).from()).isEqualTo("2026-02-28");
     }
 
     @Test

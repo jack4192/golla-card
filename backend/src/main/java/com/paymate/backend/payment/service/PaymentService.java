@@ -1,6 +1,7 @@
 package com.paymate.backend.payment.service;
 
 import com.paymate.backend.common.DemoClock;
+import com.paymate.backend.payment.dto.MonthSummaryResponse;
 import com.paymate.backend.payment.dto.PaymentResponse;
 import com.paymate.backend.payment.dto.YearSummaryResponse;
 import com.paymate.backend.payment.repository.PaymentRepository;
@@ -84,6 +85,15 @@ public class PaymentService {
                 .toList();
         return new YearSummaryResponse(now.getYear(), from.toString(), now.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
                 all.count, all.benefit, all.promotion, all.total(), months, cards);
+    }
+
+    /** 지난 한 달 이용 (2026-11-24): 기준 시각 한 달 전 같은 날 0시부터 기준 시각까지 건수와 결제 금액 합. 빈 금액은 0. */
+    public MonthSummaryResponse monthSummary(Long userId) {
+        LocalDateTime now = clock.now().truncatedTo(ChronoUnit.SECONDS);
+        LocalDate from = now.toLocalDate().minusMonths(1);
+        List<PaymentRow> rows = payments.findBetween(userId, from.atStartOfDay(), now);
+        long amount = rows.stream().mapToLong(row -> orZero(row.getAmount())).sum();
+        return new MonthSummaryResponse(from.toString(), now.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), rows.size(), amount);
     }
 
     private static int orZero(Integer value) {

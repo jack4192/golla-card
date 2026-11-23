@@ -146,6 +146,8 @@ export const api = {
   paymentsOfDay: date => request('/api/payments?date=' + encodeURIComponent(date), { auth: true }),
   paymentsRecent: ({ beforeId, limit } = {}) => request('/api/payments/recent?limit=' + encodeURIComponent(limit ?? 5)
     + (beforeId != null ? '&beforeId=' + encodeURIComponent(beforeId) : ''), { auth: true }),
+  // 지난 한 달 이용 (카드이용내역 화면, 2026-11-24): { from: 'yyyy-MM-dd', until, count, amount }
+  paymentsMonthSummary: () => request('/api/payments/month-summary', { auth: true }),
   // 연말 결산 (2026-11-24). 받은 혜택: { year, from, until, count, benefit, promotion, total,
   //   months: [{ month, count, benefit, promotion, total }], cards: [{ userCardId, cardName, count, benefit, promotion, total }] }
   paymentsYearSummary: () => request('/api/payments/year-summary', { auth: true, timeout: AI_CHAT_TIMEOUT_MS }),

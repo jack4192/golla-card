@@ -19,7 +19,7 @@ import RecentPayments from '../components/RecentPayments';
 import QuickPaySheet from '../components/QuickPaySheet';
 import NotificationCenter, { NotificationBell, useInbox } from '../components/NotificationCenter';
 import { PHONE_NOTIFICATIONS_SUPPORTED, addPhoneNotificationOpenListener, refreshDailyNotifications, requestPhonePermission, syncPhoneNotifications } from '../utils/notifications';
-import { dateKey, eventTitle, readEvents } from '../utils/routineData';
+import { eventTitle, readEvents } from '../utils/routineData';
 import { Alert } from '../utils/demoAlert';
 import * as SecureStore from '../utils/demoStore';
 import PaymentScreen, { realProductCard, realWalletCards } from './PaymentScreen';
@@ -563,7 +563,7 @@ export default function MainScreen({
       onSelect={onSelectCard} syncSelection={!paySheet}
       aiOrder={auto.on ? homeAiOrder : null} autoOn={auto.on} onAutoChange={auto.setOn} /> : null}
     headerRight={home ? <AutoPlacementSwitch on={auto.on} onChange={auto.setOn} /> : null}
-    paymentsList={home && SERVER_MODE ? <RecentPayments today={dateKey()} refreshKey={aiRefresh} /> : null}
+    paymentsList={home && SERVER_MODE ? <RecentPayments refreshKey={aiRefresh} /> : null}
     onOpenSchedule={() => selectTab('schedule')}
     disabled={scheduleDisabled}
     aiRefresh={aiRefresh}

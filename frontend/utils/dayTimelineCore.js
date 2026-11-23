@@ -100,22 +100,21 @@ export function paymentAt(payments, minute) {
   return best;
 }
 
-// 최근 결제 한 줄: 같은 날이면 'HH:MM', 아니면 'M/D HH:MM'
-export function paymentRowText(payment, today) {
+// 결제 한 줄 (홈 '최근 이용내역'·카드이용내역 화면, 2026-11-24 '실제 신한처럼'): 날짜는 늘 'yyyy.MM.dd HH:mm',
+// 혜택(카드 혜택+가맹점 행사)은 금액 아래 'N원 할인'
+export function paymentRowText(payment) {
   const [date = '', time = ''] = String(payment?.paidAt || '').split('T');
-  const [, month, day] = date.split('-');
-  const hhmm = time.slice(0, 5);
   const benefit = (Number(payment?.benefitAmount) || 0) + (Number(payment?.promotionAmount) || 0);
   return {
-    when: date === today ? hhmm : `${Number(month)}/${Number(day)} ${hhmm}`,
+    when: `${date.replace(/-/g, '.')} ${time.slice(0, 5)}`.trim(),
     merchant: String(payment?.merchantName || ''),
     amount: won(Number(payment?.amount) || 0),
-    card: String(payment?.cardName || ''),
-    benefit: benefit > 0 ? '-' + won(benefit) : '',
+    card: String(payment?.cardName || '').replace(/^신한카드\s+/, ''),     // 한 줄에 들어가게 '신한카드 ' 머리는 뗀다
+    benefit: benefit > 0 ? won(benefit) + ' 할인' : '',
   };
 }
 
 export function paymentLine(payment) {
-  const row = paymentRowText(payment, '');
+  const row = paymentRowText(payment);
   return `이 시각 결제: ${row.merchant} ${row.amount} · ${row.card}`;
 }
