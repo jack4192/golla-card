@@ -1,4 +1,4 @@
-import { CATEGORIES } from './routineData';
+import { categoryWords } from './routineData';
 import { PAYMENT_SCENARIOS } from '../data/paymentBenefits';
 
 // These amounts are used only for the payment simulation.
@@ -18,6 +18,9 @@ const examples = {
   medical: ['병원·약국', 20000],
 };
 
+/** 업종별 예시 결제 금액(원). 직접 입력한 업종 등 표에 없으면 2만 원 */
+export const typicalAmount = category => examples[category]?.[1] ?? 20000;
+
 const onlineShopping = /온라인\s*(?:몰|쇼핑|장보기)|쿠팡|네이버쇼핑|11번가|g마켓|SSG|롯데ON/i;
 const grocery = /대형마트|할인마트|이마트|롯데마트|하나로마트|홈플러스|코스트코|트레이더스|장보기|(?:^|[^가-힣])마트/;
 
@@ -27,7 +30,7 @@ export function matchesScheduleBenefit(name, category) {
     return /대중\s*교통|지하철|버스/.test(title.replace(/(?:고속|시외)\s*버스/g, ''));
   }
   if (category === 'shopping' && (onlineShopping.test(title) || grocery.test(title))) return true;
-  return CATEGORIES[category]?.words.some(word => (
+  return categoryWords(category).some(word => (
     /^[a-z0-9]+$/i.test(word)
       ? new RegExp('\\b' + word + '\\b', 'i').test(title)
       : word !== '마트' && title.includes(word.toLowerCase())

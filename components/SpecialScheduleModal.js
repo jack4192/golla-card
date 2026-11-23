@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { INDUSTRIES, ROUTINE_TITLE_LIMIT } from '../utils/routineDetails';
-import { CATEGORIES, EVENT_OPTIONS, eventBenefitCategories, confirmToday, dateKey, deleteEvent, eventTimeCaption, eventTitle, eventTypeBenefitLabel, readEvents, saveEvent, shiftDate, validDate } from '../utils/routineData';
+import { CATEGORIES, categoryLabel, isCustomCategory, EVENT_OPTIONS, eventBenefitCategories, confirmToday, dateKey, deleteEvent, eventTimeCaption, eventTitle, eventTypeBenefitLabel, readEvents, saveEvent, shiftDate, validDate } from '../utils/routineData';
 
 // 시간대 빠른 선택
 const TIME_PRESETS = [
@@ -59,7 +59,7 @@ function TypePicker({ types, setTypes, title, setTitle, disabled }) {
       })}
     </View>
     {!!labels.length && <View style={s.benefitHint}>
-        <Text style={s.benefitHintText}>✨ 카드 추천에 반영돼요: {labels.join(', ')} 혜택</Text>
+        <Text style={s.benefitHintText}>✨ 카드 추천에 반영돼요: {labels.join(', ')} {custom ? '관련 혜택을 카드에서 찾아요' : '혜택'}</Text>
       </View>}
   </>;
 }
@@ -107,22 +107,23 @@ function TimePicker({ mode, setMode, start, setStart, end, setEnd, disabled, all
   </>;
 }
 
-// 장소 일정: 직접 입력이 기본, 아래 항목은 빠른 선택(한 개)
-// 직접 입력은 저장 시 category 'other' + title 로 저장됩니다.
+// 장소 일정: 업종 직접 입력이 기본, 아래 항목은 빠른 선택(한 개)
+// 직접 입력은 저장 시 category 'other' + title 로 저장되고, 입력한 업종으로 카드 혜택을 찾습니다.
 function PlacePicker({ category, setCategory, title, setTitle, disabled }) {
   const typed = category === 'other';
   const labels = category
-    ? [...new Set(eventBenefitCategories({ category, title }).map(id => CATEGORIES[id]?.label).filter(Boolean))]
+    ? [...new Set(eventBenefitCategories({ category, title }).map(categoryLabel).filter(Boolean))]
     : [];
+  const custom = typed && eventBenefitCategories({ category, title }).some(isCustomCategory);
   return <>
-    <Text style={s.step}>직접 입력</Text>
-    <TextInput accessibilityLabel="일정 이름 직접 입력" value={typed ? title : ''} editable={!disabled}
+    <Text style={s.step}>업종 직접 입력</Text>
+    <TextInput accessibilityLabel="업종 직접 입력" value={typed ? title : ''} editable={!disabled}
       onChangeText={text => {
         setTitle(text);
         setCategory(text.trim() ? 'other' : '');
       }}
-      style={[s.input, typed && s.inputActive]} placeholder="예: 출근 지하철, 동네 헬스장" maxLength={ROUTINE_TITLE_LIMIT} />
-    <Text style={s.orText}>또는 아래에서 골라주세요</Text>
+      style={[s.input, typed && s.inputActive]} placeholder="예: 헬스장, 영화관, 미용실, 학원" maxLength={ROUTINE_TITLE_LIMIT} />
+    <Text style={s.orText}>찾는 업종이 아래에 없으면 위에 직접 적어주세요</Text>
     <View style={s.options}>
       {INDUSTRIES.filter(([value]) => value !== 'other').map(([value, text]) => {
         const checked = category === value;

@@ -7,6 +7,8 @@ import { recommendPromotion } from '../data/promotions';
 import { CardReveal, officialProduct } from './RoutinePatternRecommendationScreen';
 import { dateKey, eventEndDate, makeSignals, readEvents, readProfile } from '../utils/routineData';
 import { benefitText, emptyPreferences, money, rankRecommendations, readPreferences } from '../utils/cardRecommendation';
+import { recordRecommendation } from '../utils/savingsRecords';
+import { addNotification } from '../utils/notifications';
 export { officialProduct, recentPattern } from './RoutinePatternRecommendationScreen';
 export const RECOMMENDATION_LABELS = ['카드 추천', '프로모션 추천'];
 function CardFallback({ selectedWalletCard }) {
@@ -41,7 +43,10 @@ function buildRecommendations(profile, events, saved, now, useCurrentTime, cardA
   const example = relevantCards.length === 0;
   const ranked = example ? rank({ coffee: 'always' }, []) : relevantCards;
   const card = ranked.find(row => !row.owned) || ranked[0] || null;
-  return { card, example, ...(cardAd ? {} : recommendPromotion(signals, now)) };
+  // 연말 결산용: 같은 일정에서 혜택이 가장 좋은 '내 카드'(카드사 상관없이)
+  const ownedBest = example ? null : rankRecommendations(input, relevant, preferences, now)
+    .find(row => row.owned && row.matches.some(match => match.status !== 'blocked')) || null;
+  return { card, example, ownedBest, ...(cardAd ? {} : recommendPromotion(signals, now)) };
 }
 export default function RoutineRecommendationScreen({
   onNext,
@@ -116,6 +121,25 @@ export default function RoutineRecommendationScreen({
   const matches = selected?.matches.filter(item => item.status !== 'blocked') || [];
   const match = matches.sort((a, b) => b.weight - a.weight)[0];
   const reason = recommendations?.example ? '지금 일정에 딱 맞는 카드가 없어서, 혜택이 좋은 신한카드를 추천드려요' : match?.reasons?.[0];
+  // 추천을 보여주면 연말 결산 기록을 남깁니다(같은 날·같은 카드·같은 업종은 한 번만).
+  const recordedKey = useRef('');
+  useEffect(() => {
+    if (!selected || recommendations?.example || !match?.category) return;
+    const key = `${selected.card.code}:${match.category}`;
+    if (recordedKey.current === key) return;
+    recordedKey.current = key;
+    recordRecommendation({ recommended: selected, ownedBest: recommendations.ownedBest, category: match.category, reason: match.reasons?.[0], now })
+      .then(record => record && addNotification({
+        id: 'card:' + record.id,
+        type: record.missed > 0 ? 'savings' : 'card',
+        title: record.missed > 0 ? `${record.recommended.name} 추천` : `${record.recommended.name}이(가) 이 일정에 딱 맞아요`,
+        body: record.missed > 0
+          ? `${record.categoryLabel} 일정에서 이 카드가 있으면 ${record.missed.toLocaleString('ko-KR')}원 더 아낄 수 있어요 · 연말 결산에 기록했어요`
+          : `${record.categoryLabel} 일정 맞춤 카드 · 연말 결산에 기록했어요`,
+        target: 'yearend',
+      }))
+      .catch(() => {});
+  }, [selected, recommendations, match, now]);
   const run = async action => {
     if (lock.current) return;
     lock.current = true;

@@ -43,9 +43,26 @@ export function isValidBirthDate(value) {
   const todayNumber = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
   return year >= 1000 && date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day && Number(value) <= todayNumber;
 }
+// 직장(직업) 선택지. occupation은 일과 질문('어떤 일을 하고 계신가요?')의 답으로 자동 연결됩니다.
+export const JOB_OPTIONS = [
+  { value: 'office', label: '회사원', occupation: 'worker' },
+  { value: 'student', label: '학생', occupation: 'student' },
+  { value: 'homemaker', label: '주부', occupation: 'other' },
+  { value: 'freelancer', label: '프리랜서', occupation: 'freelancer' },
+  { value: 'self_employed', label: '자영업', occupation: 'freelancer' },
+  { value: 'unemployed', label: '무직', occupation: 'other' },
+  { value: 'other', label: '기타', occupation: 'other' },
+];
+export const JOB_OTHER_LIMIT = 20;
+export const jobLabel = (job, jobOther) => job === 'other'
+  ? (String(jobOther || '').trim() || '기타')
+  : JOB_OPTIONS.find(option => option.value === job)?.label || '';
+
 const emptyForm = () => ({
   name: '',
   birthDate: '',
+  job: '',
+  jobOther: '',
   phone: '',
   email: '',
   password: '',
@@ -62,6 +79,7 @@ export default function SignUpScreen({
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
   const [englishHint, setEnglishHint] = useState(false);
+  const [jobOpen, setJobOpen] = useState(false);
   const busy = useRef(false);
   const mounted = useRef(true);
   const foreground = useRef(true);
@@ -142,6 +160,13 @@ export default function SignUpScreen({
   const resetForm = () => {
     setForm(emptyForm());
     setContactChecks({});
+    setJobOpen(false);
+  };
+  const chooseJob = value => {
+    if (busy.current || !foreground.current) return;
+    setForm(previous => ({ ...previous, job: value, jobOther: value === 'other' ? previous.jobOther : '' }));
+    setJobOpen(false);
+    setMessage('');
   };
   const signUp = () => run(async () => {
     const phone = phoneDigits(form.phone);
@@ -159,6 +184,13 @@ export default function SignUpScreen({
     if (contactChecks.email?.confirmedValue !== email) {
       if (!contactChecks.email) setContactResult('email', '이메일 중복 확인을 진행해주세요.');
       return;
+    }
+    if (!JOB_OPTIONS.some(option => option.value === form.job)) {
+      setJobOpen(true);
+      throw Error('직장을 선택해주세요.');
+    }
+    if (form.job === 'other' && !form.jobOther.trim()) {
+      throw Error('직장을 직접 입력해주세요.');
     }
     if (!isValidPhone(form.phone)) {
       setContactResult('phone', contactFields.phone.formatError);
@@ -190,6 +222,8 @@ export default function SignUpScreen({
       password: form.password,
       name: form.name.trim(),
       birthDate: form.birthDate,
+      job: form.job,
+      jobOther: form.job === 'other' ? form.jobOther.trim().slice(0, JOB_OTHER_LIMIT) : '',
       phone,
       email
     };
@@ -290,6 +324,30 @@ export default function SignUpScreen({
             <Text style={styles.fieldHint}>가입 후 이 이메일로 로그인해요.</Text>
           </>)}
 
+          <View style={styles.field}>
+            <Text style={styles.label}>직장</Text>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="직장 선택"
+              accessibilityState={{ expanded: jobOpen }} disabled={pending}
+              onPress={() => setJobOpen(open => !open)} style={[styles.input, styles.select, jobOpen && styles.selectOpen]}>
+              <Text style={form.job ? styles.selectValue : styles.selectPlaceholder}>
+                {form.job ? JOB_OPTIONS.find(option => option.value === form.job)?.label : '직장을 선택해주세요'}
+              </Text>
+              <Text style={styles.selectArrow}>{jobOpen ? '▲' : '▼'}</Text>
+            </TouchableOpacity>
+            {jobOpen && <View style={styles.options} accessibilityRole="radiogroup">
+              {JOB_OPTIONS.map(option => {
+                const selected = form.job === option.value;
+                return <TouchableOpacity key={option.value} accessibilityRole="radio" accessibilityState={{ selected }}
+                  onPress={() => chooseJob(option.value)} style={[styles.option, selected && styles.optionSelected]}>
+                  <Text style={[styles.optionText, selected && styles.optionTextSelected]}>{option.label}</Text>
+                </TouchableOpacity>;
+              })}
+            </View>}
+            {form.job === 'other' && <TextInput style={styles.input} value={form.jobOther} editable={!pending}
+              onChangeText={value => change('jobOther', value.slice(0, JOB_OTHER_LIMIT))} maxLength={JOB_OTHER_LIMIT}
+              accessibilityLabel="직장 직접 입력" placeholder="직장을 직접 입력해주세요 · 예: 공무원, 군인" placeholderTextColor="#687B97" />}
+          </View>
+
           {field('phone', '전화번호', {
             placeholder: '010-1234-5678',
             keyboardType: 'phone-pad',
@@ -369,6 +427,16 @@ const styles = StyleSheet.create({
     color: '#243D61'
   },
   inputRow: {flexDirection: 'row', gap: 8},
+  select: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
+  selectOpen: {borderColor: '#104FE7'},
+  selectValue: {fontSize: 16, color: '#142D4E'},
+  selectPlaceholder: {fontSize: 16, color: '#687B97'},
+  selectArrow: {fontSize: 12, color: '#5A6E89'},
+  options: {flexDirection: 'row', flexWrap: 'wrap', gap: 8},
+  option: {paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E3EAF4'},
+  optionSelected: {backgroundColor: '#104FE7', borderColor: '#104FE7'},
+  optionText: {fontSize: 14, fontWeight: '600', color: '#243D61'},
+  optionTextSelected: {color: '#FFFFFF'},
   fieldHint: {fontSize: 12, lineHeight: 18, color: '#5A6E89'},
   englishHint: {fontSize: 12, lineHeight: 18, color: '#C53D56'},
   input: {

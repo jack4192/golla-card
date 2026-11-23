@@ -1,6 +1,7 @@
 import { DETAIL_CATEGORIES, INDUSTRIES, ROUTINE_TITLE_LIMIT, detailSignals, normalizeTime, routineLabel, validateDetails } from './routineDetails';
 import { Platform } from 'react-native';
 import * as Store from './demoStore';
+import { SERVER_MODE, api } from './api';
 
 export const ROUTINE_KEY = 'solpay_routine_profile_v1';
 export const EVENTS_KEY = 'solpay_routine_exceptions_v1';
@@ -154,6 +155,59 @@ export const CATEGORIES = {
   },
 };
 
+// ── 직접 입력한 업종 ──
+// 기본 업종에 없는 곳(헬스장, 영화관 등)은 'custom:<입력한 업종>' 으로 추천에 반영합니다.
+// 입력한 말과 아래 비슷한 말로 카드 혜택 이름·조건을 찾아요.
+const CUSTOM_SYNONYMS = [
+  [/헬스|피트니스|필라테스|요가|운동/, ['헬스', '피트니스', '스포츠', '필라테스', '요가']],
+  [/영화|시네마|cgv|메가박스/i, ['영화', 'CGV', '롯데시네마', '메가박스']],
+  [/미용|헤어|네일|뷰티/, ['미용', '헤어', '뷰티', '올리브영']],
+  [/학원|교육|과외|강의|인강/, ['학원', '교육', '강의']],
+  [/서점|책|도서/, ['서점', '도서', '교보', '예스24']],
+  [/놀이공원|테마파크|에버랜드|롯데월드/, ['놀이공원', '테마파크', '에버랜드', '롯데월드']],
+  [/통신|휴대폰|핸드폰|요금/, ['통신', '이동통신', 'SKT', 'KT', 'LG U+']],
+  [/약국|드럭|올리브영/, ['약국', '올리브영', '드럭스토어']],
+  [/독서실|스터디/, ['스터디', '독서실']],
+  [/OTT|넷플릭스|유튜브|구독/i, ['넷플릭스', '유튜브', 'OTT', '디지털콘텐츠', '구독']],
+];
+export const CUSTOM_CATEGORY_PREFIX = 'custom:';
+export const isCustomCategory = id => typeof id === 'string' && id.startsWith(CUSTOM_CATEGORY_PREFIX);
+export const customKeyword = id => (isCustomCategory(id) ? id.slice(CUSTOM_CATEGORY_PREFIX.length) : '');
+
+export function customWords(keyword) {
+  const text = String(keyword || '').trim();
+  if (!text) return [];
+  const extra = CUSTOM_SYNONYMS.filter(([pattern]) => pattern.test(text)).flatMap(([, words]) => words);
+  // 끝의 '장·점·관·실'을 뗀 말도 함께 찾습니다(예: 볼링장 → 볼링).
+  const stem = text.replace(/(장|점|관|실|집|샵)$/, '');
+  return [...new Set([text, stem.length >= 2 ? stem : '', ...extra].filter(Boolean))];
+}
+
+/** 업종 id(기본 또는 custom:...)의 화면 이름 */
+export function categoryLabel(id) {
+  if (isCustomCategory(id)) return `'${customKeyword(id)}'`;
+  return CATEGORIES[id]?.label || '기타';
+}
+
+/** 업종 id(기본 또는 custom:...)로 카드 혜택을 찾을 때 쓰는 말 목록 */
+export function categoryWords(id) {
+  return isCustomCategory(id) ? customWords(customKeyword(id)) : CATEGORIES[id]?.words || [];
+}
+
+/** 직접 입력한 업종 이름을 기본 업종으로 바꿀 수 있으면 바꾸고, 아니면 custom 업종으로 */
+export function typedCategoryIds(title) {
+  const text = String(title || '').trim();
+  if (!text) return [];
+  if (/(?:시외|고속)\s*버스/.test(text)) return ['intercity'];
+  if (/(?:대중\s*교통|지하철|버스)/.test(text)) return ['transport'];
+  if (/택시/.test(text)) return ['taxi'];
+  const lower = text.toLowerCase();
+  const known = Object.entries(CATEGORIES)
+    .filter(([, { label, words }]) => [label, ...words].some(word => word.length >= 2 && lower.includes(word.toLowerCase())))
+    .map(([id]) => id);
+  return known.length ? known.slice(0, 1) : [CUSTOM_CATEGORY_PREFIX + text];
+}
+
 export function dateKey(date = new Date()) {
   return [
     date.getFullYear(),
@@ -301,6 +355,12 @@ export async function saveProfile(profile) {
   return next;
 }
 
+// 회원가입 때 고른 직장으로 일과 질문의 직업 답만 채웁니다(다른 답은 그대로, 완성 여부 검사 없음).
+export async function saveOccupation(occupation, extra = {}) {
+  const profile = await readProfile();
+  await writeJson(ROUTINE_KEY, { ...profile, ...extra, occupation, updatedAt: new Date().toISOString() });
+}
+
 export async function deleteProfile() {
   if (Platform.OS === 'web') {
     window.localStorage.removeItem(PREFIX + ROUTINE_KEY);
@@ -309,7 +369,66 @@ export async function deleteProfile() {
   }
 }
 
+// ── 서버 모드 일정 변환 ──
+// 앱: { id, date, types[], category?(소문자), title?, start?, end?, memo }
+// 서버: { scheduleId, date, kind, types[], category(대문자), categoryName, title, start, end, memo }
+function eventFromServer(item) {
+  const event = {
+    id: String(item.scheduleId),
+    date: String(item.date),
+    types: [],
+    memo: item.memo || '',
+  };
+  if (item.kind === 'PLACE') {
+    const code = String(item.category || '').toLowerCase();
+    const known = INDUSTRIES.some(([id]) => id === code);
+    // 앱에 없는 업종이면 '기타'로 보여주고, 업종 이름을 일정 이름으로 씁니다.
+    event.category = known ? code : 'other';
+    event.title = code === 'other' || !known ? (item.title || item.categoryName || '일정') : '';
+    event.start = item.start;
+    event.end = item.end;
+  } else {
+    event.types = (Array.isArray(item.types) ? item.types : []).map(String);
+    if (item.start && item.end) Object.assign(event, { start: item.start, end: item.end });
+    if (item.title) event.title = item.title;
+  }
+  return event;
+}
+
+function eventToServer(event) {
+  const place = Boolean(event.category);
+  return {
+    date: event.date,
+    types: place ? null : event.types,
+    category: place ? event.category.toUpperCase() : null,
+    // 상황 일정의 '직접 입력' 이름도 같이 보냅니다(서버가 아직 장소 일정에만 저장함).
+    title: event.title || null,
+    start: event.start || null,
+    end: event.end || null,
+    memo: event.memo || null,
+  };
+}
+
+// 서버 모드: 서버 일정을 읽어 기기에도 복사해 둡니다(다른 화면 계산용).
+async function readServerEvents() {
+  const list = await api.schedules();
+  const events = (Array.isArray(list) ? list : []).map(eventFromServer);
+  await writeJson(EVENTS_KEY, events);
+  return events;
+}
+
 export async function readEvents() {
+  if (SERVER_MODE) {
+    try {
+      return await readServerEvents();
+    } catch (error) {
+      throw Error('서버에서 일정을 불러오지 못했어요. ' + (error?.message || ''));
+    }
+  }
+  return readLocalEvents();
+}
+
+async function readLocalEvents() {
   const events = await readJson(EVENTS_KEY, []);
 
   const invalid =
@@ -414,7 +533,8 @@ export const saveEvent = input => writeEventRecord(async () => {
     throw Error('일정 이름을 직접 입력해주세요.');
   }
 
-  const events = await readEvents();
+  // 서버 모드에서도 방금 불러와 기기에 복사해 둔 목록을 기준으로 합니다.
+  const events = await readLocalEvents();
   const old = input.id
     ? events.find(event => event.id === input.id)
     : null;
@@ -445,6 +565,17 @@ export const saveEvent = input => writeEventRecord(async () => {
     if (types.includes('other') && situationTitle) event.title = situationTitle;
   }
 
+  if (SERVER_MODE) {
+    const body = eventToServer(event);
+    if (old) {
+      await api.updateSchedule(old.id, body);
+    } else {
+      const created = await api.createSchedule(body);
+      if (created?.scheduleId == null) throw Error('일정은 저장됐지만 번호를 받지 못했어요. 목록을 다시 불러와주세요.');
+      event.id = String(created.scheduleId);
+    }
+  }
+
   await writeJson(EVENTS_KEY, [
     event,
     ...events.filter(item => item.id !== event.id),
@@ -454,7 +585,15 @@ export const saveEvent = input => writeEventRecord(async () => {
 });
 
 export const deleteEvent = id => writeEventRecord(async () => {
-  const events = await readEvents();
+  if (SERVER_MODE) {
+    try {
+      await api.deleteSchedule(id);
+    } catch (error) {
+      // 이미 서버에서 지워진 일정이면 기기 목록에서만 지웁니다.
+      if (error?.status !== 404) throw error;
+    }
+  }
+  const events = await readLocalEvents();
 
   await writeJson(
     EVENTS_KEY,
@@ -489,15 +628,13 @@ const EVENT_BENEFITS = {
 // 상황 종류가 카드 추천에서 어떤 업종 혜택으로 반영되는지(없으면 null)
 export function eventTypeBenefitLabel(type) {
   const id = EVENT_BENEFITS[type]?.[0];
-  return id ? CATEGORIES[id]?.label || null : null;
+  return id ? categoryLabel(id) : null;
 }
 
 export function eventBenefitCategories(event) {
   if (event.category === 'other') {
-    const title = event.title || '';
-    if (/(?:시외|고속)\s*버스/.test(title)) return ['intercity'];
-    if (/(?:대중\s*교통|지하철|버스)/.test(title)) return ['transport'];
-    return /택시/.test(title) ? ['taxi'] : [];
+    // 직접 입력한 업종: 기본 업종과 맞으면 그 업종으로, 아니면 입력한 말 그대로 혜택을 찾습니다.
+    return typedCategoryIds(event.title);
   }
   if (event.category) return [event.category];
   return event.types.map(type => EVENT_BENEFITS[type]?.[0]).filter(Boolean);

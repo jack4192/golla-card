@@ -15,6 +15,9 @@ import { Alert } from './utils/demoAlert';
 import * as DemoStore from './utils/demoStore';
 import { createPinSalt, hashPin } from './utils/pinCrypto';
 import { SERVER_MODE, api, clearToken, readToken } from './utils/api';
+import { registerServerCard, resetServerCards } from './utils/serverCards';
+import { applySignupJob, rememberSignupJob } from './utils/signupJob';
+import { cancelPhoneNotifications, requestPhonePermission } from './utils/notifications';
 import {
   deleteDemoData,
   hasPendingReset,
@@ -408,6 +411,12 @@ export default function App() {
   const handleRegisterCard = code => runAction(async () => {
     requireAuthentication();
     if (!canRegisterWalletCard(code)) throw Error('등록할 수 없는 카드 상품입니다.');
+    if (SERVER_MODE) {
+      // 서버에 먼저 등록하고, 서버 목록을 다시 읽어 지갑을 맞춥니다.
+      await registerServerCard(code);
+      await reloadWallet();
+      return;
+    }
     const preferences = await readPreferences();
     if (preferences.owned.includes(code)) return;
     const next = await savePreferences({ ...preferences, owned: [...preferences.owned, code] });
@@ -508,6 +517,7 @@ export default function App() {
         setScheduleEditor({});
       }
       await DemoStore.setItemAsync(LOGIN_EMAIL_KEY, address);
+      await applySignupJob(address);
       await afterAuthentication({ firstSignupLogin: switchedAccount });
       return;
     }
@@ -542,6 +552,7 @@ export default function App() {
       setScheduleEditor({});
     }
     await DemoStore.setItemAsync(LOGIN_EMAIL_KEY, customMatches ? 'custom' : DEMO_EMAIL);
+    if (customMatches) await applySignupJob(address);
     await afterAuthentication({ firstSignupLogin });
   });
 
@@ -647,6 +658,8 @@ export default function App() {
 
     setConsent(nextConsent);
     setConsentDraft(nextConsent);
+    // 알림 수신에 동의했으면 폰 알림 권한을 요청합니다(거절해도 가입은 계속).
+    if (nextConsent.morningNotificationAgreed) await requestPhonePermission().catch(() => false);
     await reloadWallet();
 
     const [pin, finished] = await Promise.all([
@@ -748,7 +761,12 @@ export default function App() {
       if (lock) {
         await DemoStore.setItemAsync(SESSION_KEY, 'locked');
       } else {
-        if (SERVER_MODE) await api.logout();
+        if (SERVER_MODE) {
+          await api.logout();
+          resetServerCards();
+        }
+        // 로그아웃하면 예약된 폰 알림을 모두 취소합니다.
+        await cancelPhoneNotifications().catch(() => {});
         await DemoStore.setItemAsync(FULL_LOGOUT_KEY, 'yes');
         await DemoStore.deleteItemAsync(SESSION_KEY);
       }
@@ -792,6 +810,9 @@ export default function App() {
 
     const email = normalizeEmail(account.email);
 
+    // 직장은 그 이메일로 처음 로그인할 때 일과 질문의 직업 답으로 채웁니다.
+    await rememberSignupJob(email, account.job, account.jobOther).catch(() => {});
+
     if (SERVER_MODE) {
       await api.signup({ ...account, email });
       setOnboardingComplete(false);
@@ -811,7 +832,7 @@ export default function App() {
     const salt = await createPinSalt();
     const hash = await hashPin(salt, account.password);
 
-    const record = { version: 1, email, phone: account.phone, salt, hash, firstLogin: true };
+    const record = { version: 1, email, phone: account.phone, job: account.job, jobOther: account.jobOther || '', salt, hash, firstLogin: true };
     await DemoStore.setItemAsync(ACCOUNT_KEY, JSON.stringify(record));
     setDemoAccount(record);
     setOnboardingComplete(false);

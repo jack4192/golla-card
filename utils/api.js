@@ -68,10 +68,11 @@ const toIsoDate = value => {
 };
 
 export const api = {
-  async signup({ name, birthDate, phone, email, password }) {
+  async signup({ name, birthDate, phone, email, password, job, jobOther }) {
     await request('/api/auth/signup', {
       method: 'POST',
-      body: { name, birthDate: toIsoDate(birthDate), phone, email, password },
+      // job·jobOther는 백엔드에 아직 칸이 없어 무시됩니다(백엔드에 추가 요청 필요).
+      body: { name, birthDate: toIsoDate(birthDate), phone, email, password, job, jobOther: jobOther || null },
     });
   },
   async login(email, password) {
@@ -97,4 +98,27 @@ export const api = {
     const data = await request('/api/users/phone-availability?phone=' + encodeURIComponent(phone));
     return data?.available === false;
   },
+
+  // ── 카드 (백엔드 back 브랜치 기준 주소) ──
+  // 내 카드 목록: [{ userCardId, cardCode(숫자 문자열), name, issuer, type, imageUrl, representative, order, cardLast4 }]
+  myCards: () => request('/api/cards/user-cards', { auth: true }),
+  // 카드 등록: cardCode는 서버의 카드 번호(cards.card_id). 이미 있으면 409 ALREADY_REGISTERED_CARD
+  registerCard: cardCode => request('/api/cards/register', { method: 'POST', auth: true, body: { cardCode: String(cardCode) } }),
+  // 결제 카드 순서: 내 카드 전체 userCardId를 빠짐없이 순서대로
+  reorderCards: userCardIds => request('/api/cards/order', { method: 'PUT', auth: true, body: { userCardIds } }),
+  cardBenefits: userCardId => request('/api/cards/' + encodeURIComponent(userCardId) + '/benefits', { auth: true }),
+  // 카드 상품 검색: [{ cardCode, name, issuer, type, annualFee, tags, imageUrl, annualFeeOverseas, description }]
+  cardProducts: (keyword = '') =>
+    request('/api/card-products' + (keyword ? '?keyword=' + encodeURIComponent(keyword) : ''), { auth: true }),
+  cardProduct: cardCode => request('/api/card-products/' + encodeURIComponent(cardCode), { auth: true }),
+
+  // ── 일정 ──
+  // [{ scheduleId, date, kind: SITUATION | PLACE, types[], category, categoryName, title, start, end, memo }]
+  schedules: (from = '') =>
+    request('/api/schedules' + (from ? '?from=' + encodeURIComponent(from) : ''), { auth: true }),
+  createSchedule: body => request('/api/schedules', { method: 'POST', auth: true, body }),
+  updateSchedule: (scheduleId, body) =>
+    request('/api/schedules/' + encodeURIComponent(scheduleId), { method: 'PUT', auth: true, body }),
+  deleteSchedule: scheduleId =>
+    request('/api/schedules/' + encodeURIComponent(scheduleId), { method: 'DELETE', auth: true }),
 };
