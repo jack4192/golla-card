@@ -1,4 +1,4 @@
-# 앱 ↔ AI 연동 (결제 화면·홈 챗봇)
+# 앱 ↔ AI 연동 (결제 화면·챗봇·추천)
 
 서버 모드(`EXPO_PUBLIC_API_URL` 설정)에서만 동작한다. 데모 모드는 전과 똑같다.
 백엔드 쪽 설명은 `backend/docs/AI_연동.md` 에 있다.
@@ -8,6 +8,9 @@
 AI 카드 배치는 **전체 결제 화면**(`screens/PaymentScreen.js`)에 붙어 있다.
 하단 '결제' 탭이나 '이 카드로 결제'로 여는 QR 결제 시트(`components/QuickPaySheet.js`)에는 붙이지 않았다 (2026-11-23 결정).
 시트에서 '혜택 자세히 보기'를 누르면 전체 결제 화면이 열리고, 거기서 AI 추천이 보인다.
+
+그 밖에 AI 를 쓰는 곳은 결제 화면의 '이 거래의 예상 혜택', 일정 맞춤 추천, 가입 직후 일과 맞춤 카드 추천, 홈 '오늘의 일정'의 일정별 카드다.
+자세한 내용은 아래 '카드 데이터를 서버로 옮기기'의 3단계에 있다.
 
 ## 전체 결제 화면을 열면
 
@@ -66,35 +69,45 @@ AI 가 고르지 않는 경우:
 전체 결제 화면의 챗봇은 질문을 AI 챗봇에 보낸다 (`POST /api/ai/chat`, 최근 대화 4개와 추천 번호를 함께). 연결하지 못하면 앱 안의 기본 안내로 답한다.
 챗봇이 규칙 초안을 만들면 '저장'·'취소' 버튼이 나온다 (`/api/ai/rules/drafts/{id}/confirm`, `/cancel`).
 
-화면의 '이 거래의 예상 혜택' 숫자는 앱이 자체 계산한 예시라, AI 답변의 숫자와 다를 수 있다.
+화면의 '이 거래의 예상 혜택' 숫자는 서버 모드에서 AI 계산(`POST /api/ai/payments/evaluate`)을 쓴다.
+AI 가 답하지 못하거나 데모 모드면 앱 자체 계산으로 보여 주므로, 그때는 AI 답변의 숫자와 다를 수 있다.
 
 ## 파일
 
 | 파일 | 내용 |
 |---|---|
-| `utils/api.js` | AI 호출 (`aiRank`, `aiChat`, `aiConfirmRuleDraft`, `aiCancelRuleDraft`) |
+| `utils/api.js` | AI 호출 (`aiRank`, `aiChat`, `aiEvaluate`, `aiMerchants`, `aiRecommendationPage`, `aiConfirmRuleDraft`, `aiCancelRuleDraft`) |
 | `utils/aiPlacementCore.js` | AI 순위를 지갑 순서로 바꾸기, 챗봇에 보낼 이전 대화 (순수 함수) |
 | `utils/aiPlacement.js` | 순서를 묻고 지갑에 맞추는 `loadPlacement` |
-| `utils/serverCards.js` | `serverCardLinks` 한 함수 추가 (지갑 카드 ↔ 서버 카드 번호) |
+| `utils/aiEstimate.js`, `aiEstimateCore.js` | 예상 혜택을 AI 에 묻고 지갑 카드별 값으로 바꾸기 (결제 화면, 홈 '오늘의 일정') |
+| `utils/aiRecommendCore.js` | AI 맞춤 추천 응답 → 카드 추천·프로모션 추천·보일 탭 (순수 함수) |
+| `utils/serverCards.js` | 지갑 카드 ↔ 서버 카드 번호 짝 (`serverCardLinks`). 22장에 없는 카드는 40장 데이터로 짝짓는다 |
+| `utils/serverCatalog.js`, `serverCatalogCore.js` | 카드 탭 상품 목록·상세를 서버에서 읽고 앱 모양으로 바꾸기, 서버 이미지 주소 |
+| `utils/wallet.js` | 지갑 카드 상품: 22장에 없으면 40장 데이터(`walletProduct`) |
 | `utils/scheduleCategory.js` | 앱 업종 ↔ 서버 업종 코드 |
 | `utils/routineData.js` | 일정을 서버 형식으로 바꿀 때 `scheduleCategory.js` 를 쓰도록 수정 |
-| `screens/PaymentScreen.js` | AI 추천 상자, 자동 선택 |
+| `screens/PaymentScreen.js` | AI 추천 상자, 자동 선택, AI 예상 혜택 |
+| `screens/RoutineRecommendationScreen.js` | 일정 맞춤 추천(카드·프로모션 탭)을 AI 맞춤 추천으로 |
+| `screens/RoutinePatternRecommendationScreen.js` | 가입 직후 일과 맞춤 카드 추천: AI 카드를 맨 앞에 |
+| `components/TodaySchedulePanel.js` | 홈 '오늘의 일정'의 일정별 카드를 업종별 AI 계산으로 |
 | `components/PaymentCardOrder.js` | `aiOrder` 로 받은 순서 표시 |
 | `components/PaymentBenefitChat.js` | 결제 화면 챗봇의 AI 연결, 규칙 초안 버튼 |
 | `utils/homeChat.js` | 홈 챗봇 추천 질문(탭별), AI 에 보낼 이전 대화 (순수 함수) |
-| `screens/MainScreen.js` | 홈 챗봇의 AI 연결, 규칙 초안 버튼, 자동 스크롤 |
+| `screens/MainScreen.js` | 홈 챗봇의 AI 연결, 규칙 초안 버튼, 자동 스크롤, 카드 탭 상품을 서버 데이터로 |
 
 ## 테스트
 
+`frontend` 폴더에서 실행한다 (파일 6개, 28개).
+
 ```bash
-node --test utils/__tests__/aiPlacementCore.test.mjs utils/__tests__/scheduleCategory.test.mjs utils/__tests__/homeChat.test.mjs
+node --test utils/__tests__/*.test.mjs
 ```
 
 ## 아직 안 한 것
 
 - QR 결제 시트에는 AI 배치가 없다.
 - 지갑은 혜택 계산용 22장(`data/cardCatalogCsv.js`)에 없는 카드를 서버 DB 와 같은 40장(`data/cardCatalog40.json`)으로 보여 준다 (2026-11-23). 이 18장은 앱 자체의 '예상 혜택' 계산 데이터가 없어 '조건 확인 필요'로 보이고, AI 배치·챗봇은 그대로 계산한다.
-- 맞춤 추천·월간 리포트 화면은 붙이지 않았다. '올해 카드 결산'(`components/YearEndReport.js`)은 앱 자체 계산이고 AI 의 연말정산 API(`/api/ai/missed-benefit`)를 쓰지 않는다.
+- 월간 리포트·연말정산 화면은 AI 에 붙이지 않았다. '올해 카드 결산'(`components/YearEndReport.js`)은 앱 자체 계산이고 AI 의 연말정산 API(`/api/ai/missed-benefit`)를 쓰지 않는다. 맞춤 추천은 붙였다 (아래 3단계).
 - 평소 일과(루틴)는 서버에 올리지 않는다.
 
 ## 카드 데이터를 서버로 옮기기 (2026-11-23 진행 중)
@@ -102,7 +115,7 @@ node --test utils/__tests__/aiPlacementCore.test.mjs utils/__tests__/scheduleCat
 앱 안의 카드 데이터를 없애고 서버 데이터만 쓰기로 했다. 단계: 1) 표시를 서버 데이터로 2) 이미지를 서버로 3) 앱 자체 혜택 계산을 AI 엔진으로 4) 앱 카드 데이터 삭제.
 
 - 1단계(완료): 카드 탭 상품 목록·검색·상세 혜택을 `/api/card-products`(목록)와 `/api/card-products/{번호}`(상세)에서 읽는다 (`utils/serverCatalog.js`, 변환은 `utils/serverCatalogCore.js`).
-  데모 모드이거나 서버에서 못 읽으면 앱 데이터(`data/cardCatalog40.json`)를 쓴다. 이미지는 아직 앱 안의 것을 카드 이름으로 찾아 쓴다.
+  데모 모드이거나 서버에서 못 읽으면 앱 데이터(`data/cardCatalog40.json`)를 쓴다. 이미지는 2단계부터 서버가 준 주소를 쓰고, 없을 때만 앱 안의 것을 카드 이름으로 찾아 쓴다.
 - 2단계(완료): 카드 이미지 40장을 백엔드가 직접 제공한다 (`backend/src/main/resources/static/card-images/{카드번호}.webp`, 주소 `/card-images/{카드번호}.webp`, 로그인 없이 받음).
   카드사 사이트에서 내려받아 둔 앱 안의 이미지를 옮긴 것이라 카드사 주소에 기대지 않는다. DB 의 `image_url` 이 있으면 그것이 먼저다 (지금은 비어 있어 DB 는 고치지 않았다).
   카드 상품 목록·상세·내 카드 응답의 `imageUrl` 에 이 주소가 들어가고, 앱은 서버 주소를 붙여 쓴다.
