@@ -19,7 +19,8 @@ export function applyRank(walletCards, rank, linked) {
   }
   const unranked = cards.map(card => card.id).filter(id => !order.includes(id));
   const first = ranked[0];
-  const firstInWallet = first && walletIdOf.get(String(first.user_card_id)) === order[0];
+  // 지갑에 맞춘 카드가 하나도 없으면 둘 다 undefined 라 같다고 나오지 않게 order 가 있을 때만 비교한다
+  const firstInWallet = Boolean(first) && order.length > 0 && walletIdOf.get(String(first.user_card_id)) === order[0];
   return {
     order: [...order, ...unranked],
     topId: order[0] ?? null,
@@ -28,6 +29,8 @@ export function applyRank(walletCards, rank, linked) {
     recommendationId: rank?.recommendation_id ?? null,
     fallback: rank?.reason_code === 'FALLBACK',
     unranked,
+    // 결제 화면 '이 거래의 예상 혜택'에 보일 거래 (1순위 카드 문구가 가리키는 거래). 문구를 쓸 때만 넘긴다
+    example: firstInWallet && rank?.example ? rank.example : null,
   };
 }
 

@@ -77,3 +77,10 @@ test('챗봇에 보낼 이전 대화: 끝난 문답만, 최근 것부터 정해�
   assert.deepEqual(chatHistory(messages, 1), [{ role: 'user', text: 'q2' }, { role: 'assistant', text: 'a2' }]);
   assert.equal(chatHistory(messages, 5).length, 4);
 });
+
+test('AI 1순위가 지갑에 있으면 예시 거래를 넘기고, 없거나 기본 순서면 null', () => {
+  const rank = { cards: [{ user_card_id: 9, rank: 1, message: 'm' }], reason_code: 'PROMOTION', example: { category_code: 'CAFE', amount: 6000 } };
+  assert.deepEqual(applyRank([{ id: 'a' }], rank, { a: 9 }).example, rank.example);
+  assert.equal(applyRank([{ id: 'a' }], rank, { a: 8 }).example, null);
+  assert.equal(applyRank([{ id: 'a' }], { ...rank, example: undefined, reason_code: 'FALLBACK' }, { a: 9 }).example, null);
+});

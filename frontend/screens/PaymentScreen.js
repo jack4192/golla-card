@@ -18,6 +18,7 @@ import { estimateCatalogBenefit, matchesCatalogPaymentBenefit } from '../utils/c
 import { SERVER_MODE } from '../utils/api';
 import { loadPlacement } from '../utils/aiPlacement';
 import { loadAiEstimates } from '../utils/aiEstimate';
+import { chooseEstimateScenario, exampleBasisLine, exampleNote, exampleScenario } from '../utils/aiEstimateCore';
 const SCENARIOS = [{
   id: 'coffee',
   merchant: '스타벅스',
@@ -320,23 +321,38 @@ export default function PaymentScreen({
   const selected = options.find(item => item.id === selectedId) || options[0];
   const baseline = options.find(item => item.id === baselineId) || options[0];
   const scheduleScenario = useMemo(() => makeSchedulePaymentScenario(schedule), [schedule]);
-  const scenario = scheduleScenario || SCENARIOS.find(item => item.id === scenarioId) || SCENARIOS[0];
+  const fixedScenario = SCENARIOS.find(item => item.id === scenarioId) || SCENARIOS[0];
+  // 서버 모드: 예상 혜택 거래를 AI 배치 문구 속 거래(rank.example)로 바꾼다 (2026-11-23).
+  // 그 거래의 AI 계산이 온 뒤에 바꾸고, 계산이 실패하면 고정 예시를 그대로 둔다. 일정 결제는 늘 일정 거래.
+  const aiExample = placement.status === 'ready' && !scheduleScenario ? placement.result?.example : null;
+  const exampleScen = useMemo(() => exampleScenario(aiExample), [aiExample]);
+  const [exampleRows, setExampleRows] = useState({ key: null, rows: null });
+  useEffect(() => {
+    if (!SERVER_MODE || !exampleScen) return undefined;
+    let stopped = false;
+    loadAiEstimates(exampleScen).then(rows => { if (!stopped) setExampleRows({ key: exampleScen.id, rows }); });
+    return () => { stopped = true; };
+  }, [exampleScen]);
+  const readyExampleRows = exampleScen && exampleRows.key === exampleScen.id ? exampleRows.rows : null;
+  const scenario = chooseEstimateScenario({ scheduleScenario, example: exampleScen, exampleRows: readyExampleRows, fixed: fixedScenario });
   const contextKey = scenario.id + ':' + assume;
   // 서버 모드: AI 엔진 계산(실적·한도·행사 반영). 데모 모드이거나 AI 가 답하지 못하면 앱 계산을 쓴다.
   const [aiEstimates, setAiEstimates] = useState({ key: null, rows: null });
   const scenarioKey = scenario.id + ':' + (scenario.schedule?.id || '') + ':' + scenario.amount;
   useEffect(() => {
-    if (!SERVER_MODE) return undefined;
+    if (!SERVER_MODE || scenario.aiExample) return undefined;   // AI 예시 거래는 위에서 이미 계산했다
     let stopped = false;
     loadAiEstimates(scenario).then(rows => { if (!stopped) setAiEstimates({ key: scenarioKey, rows }); });
     return () => { stopped = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenarioKey]);
+  const aiRows = scenario.aiExample ? readyExampleRows : (aiEstimates.key === scenarioKey ? aiEstimates.rows : null);
   const estimates = useMemo(() => {
     const transactionDate = new Date();
-    const ai = aiEstimates.key === scenarioKey ? aiEstimates.rows : null;
-    return options.map(card => ({ card, benefit: ai?.[card.id] || estimatePayment(card, scenario, assume, transactionDate) }));
-  }, [options, scenario, assume, aiEstimates, scenarioKey]);
+    return options.map(card => ({ card, benefit: aiRows?.[card.id] || estimatePayment(card, scenario, assume, transactionDate) }));
+  }, [options, scenario, assume, aiRows]);
+  // 행사 문구의 '약 N원'과 상자 금액이 왜 다른지 알려 주는 한 줄 (AI 예시 거래일 때만)
+  const exampleLine = scenario.aiExample ? exampleNote(aiExample, placement.result?.message) : '';
   const selectedBenefit = estimates.find(row => row.card.id === selected?.id)?.benefit;
   const baseBenefit = estimates.find(row => row.card.id === baseline?.id)?.benefit;
   const difference = selected?.id === baseline?.id ? null : comparePayment(selectedBenefit, baseBenefit);
@@ -694,9 +710,12 @@ export default function PaymentScreen({
                   </Text>}
               </>}
 
+            {!!exampleLine && <Text style={s.bxNote}>{exampleLine}</Text>}
             <Text style={s.bxFoot}>
-              {aiEstimates.key === scenarioKey && aiEstimates.rows
-                ? (scheduleScenario ? '일정 업종에 맞춘 결제 예시예요. ' : '') + '이번 달 실적·한도와 진행 중인 행사를 반영해 AI가 계산했어요.'
+              {aiRows
+                ? (scheduleScenario ? '일정 업종에 맞춘 결제 예시예요. '
+                  : scenario.aiExample ? exampleBasisLine(scenario.basis) : '')
+                  + '이번 달 실적·한도와 진행 중인 행사를 반영해 AI가 계산했어요.'
                 : scheduleScenario
                 ? '일정 업종에 맞춘 결제 예시예요. 실제 혜택은 가맹점·실적·잔여 한도에 따라 달라요.'
                 : '전월 실적 기록이 없으면 40만 원으로 계산한 예시예요.'}
@@ -1167,6 +1186,12 @@ const s = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     color: '#7486A0'
+  },
+  bxNote: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#435E80',
+    marginBottom: 4
   },
   benefit: {
     fontSize: 25,
