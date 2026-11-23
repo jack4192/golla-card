@@ -6,7 +6,7 @@ import RoutineRecommendationScreen from '../screens/RoutineRecommendationScreen'
 import { hideAdForSevenDays, takeAutomaticAd } from '../utils/recommendationPopup';
 
 export default function RecommendationLaunchPopup({
-  enabled, allowAutomaticAds, selectedWalletCard, openRequest, promotions, onViewPromotions
+  enabled, allowAutomaticAds, selectedWalletCard, openRequest, promotions, onViewPromotions, onClosed
 }) {
   const [ad, setAd] = useState(null);
   const [foreground, setForeground] = useState(!AppState.currentState || AppState.currentState === 'active');
@@ -16,6 +16,13 @@ export default function RecommendationLaunchPopup({
   const lock = useRef(false);
   const hasPromotion = promotions.length > 0;
   const kind = ad?.kind;
+  // 팝업이 닫히면 알린다: 안의 맞춤 추천이 AI 에 그날 일정 행사를 기억시키므로 홈 일정 카드가 다시 묻게 (2026-11-23)
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (kind) wasOpen.current = true;
+    else if (wasOpen.current) { wasOpen.current = false; onClosed?.(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => setForeground(state === 'active'));
     return () => subscription.remove();

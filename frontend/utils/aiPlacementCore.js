@@ -28,6 +28,8 @@ export function applyRank(walletCards, rank, linked) {
     reasonCode: rank?.reason_code ?? null,
     recommendationId: rank?.recommendation_id ?? null,
     fallback: rank?.reason_code === 'FALLBACK',
+    // 배치 방식 ('schedule' 이면 AI 가 지금 일정을 보고 정했다. utils/scheduleAiCore.js 가 본다)
+    version: rank?.version ?? null,
     unranked,
     // 결제 화면 '이 거래의 예상 혜택'에 보일 거래 (1순위 카드 문구가 가리키는 거래). 문구를 쓸 때만 넘긴다
     example: firstInWallet && rank?.example ? rank.example : null,

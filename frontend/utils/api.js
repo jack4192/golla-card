@@ -127,6 +127,8 @@ export const api = {
   // ----- AI (백엔드가 AI 엔진을 대신 부른다. 응답 필드는 user_card_id 처럼 밑줄 형식) -----
   // 결제 화면 카드 순서. AI 가 늦으면 백엔드가 기본 순서(reason_code: 'FALLBACK')를 준다.
   aiRank: () => request('/api/ai/rank', { method: 'POST', auth: true, timeout: AI_RANK_TIMEOUT_MS }),
+  // 홈 일정 카드 미리보기: 같은 계산, 추천 기록은 남기지 않는다 (기록이 '직전 기본 카드'를 바꾸지 않게, 2026-11-23)
+  aiRankPreview: () => request('/api/ai/rank?record=false', { method: 'POST', auth: true, timeout: AI_RANK_TIMEOUT_MS }),
   // 챗봇. body: { message, history: [{ role, text }], screen: { name, recommendation_id } }
   aiChat: body => request('/api/ai/chat', { method: 'POST', auth: true, body, timeout: AI_CHAT_TIMEOUT_MS }),
   // 가정 계산: body { category_code, amount, merchant_id? } → { cards: [{ user_card_id, benefit, promotion, promotion_label }] }

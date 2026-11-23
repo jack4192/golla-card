@@ -9,7 +9,9 @@ import { DAYS, routineLabel } from '../utils/routineDetails';
 import { isScheduleBenefitAt, makeSchedulePaymentScenario, matchesScheduleBenefit } from '../utils/schedulePayment';
 import { SERVER_MODE } from '../utils/api';
 import { loadAiEstimates } from '../utils/aiEstimate';
-import { bestCardOf } from '../utils/aiEstimateCore';
+import { bestCardOf, exampleScenario } from '../utils/aiEstimateCore';
+import { loadPlacementPreview } from '../utils/aiPlacement';
+import { aiWindowKey, inAiWindow, scheduleAiExample, scheduleAiMatch } from '../utils/scheduleAiCore';
 import { SCHEDULE_SAMPLES } from '../data/samplePayment';
 import { resolveWalletProduct } from './WalletProductCard';
 import SpecialScheduleModal from './SpecialScheduleModal';
@@ -142,7 +144,8 @@ export default function TodaySchedulePanel({
   cards = [],
   selectedCard,
   home = false,
-  disabled = false
+  disabled = false,
+  aiRefresh = 0
 }) {
   const [day, setDay] = useState(dateKey);
   const [clock, setClock] = useState(() => new Date());
@@ -156,6 +159,9 @@ export default function TodaySchedulePanel({
   const [loading, setLoading] = useState(true);
   // 서버 모드: 일정 업종별로 AI 가 계산한 '가장 많이 주는 내 카드' { [앱 업종]: { walletId, value } | null }
   const [aiByCategory, setAiByCategory] = useState({});
+  // 서버 모드: 일정 창(시작 30분 전 ~ 끝 30분 후) 안이면 AI 배치 미리보기(기록 없음)와 그 예시 거래의 계산
+  //   { key: 창 열쇠, result: applyRank 결과, estimates: { [지갑 카드 id]: 예상 혜택 } } (2026-11-23 홈 일정 카드 설계서)
+  const [aiPreview, setAiPreview] = useState({ key: '', result: null, estimates: null });
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     if (disabled) return;
@@ -237,7 +243,7 @@ export default function TodaySchedulePanel({
     }
     return findScheduleCard(categories, products, when);
   };
-  const timeline = [
+  const baseTimeline = [
     ...dailyBasicSchedule(profile, day).map(({ label, category, start, end }) => {
       const time = hourLabel(start);
       const endTime = hourLabel(end);
@@ -293,9 +299,31 @@ export default function TodaySchedulePanel({
       };
     }),
   ].sort((a, b) => (a.time || '24:00').localeCompare(b.time || '24:00'));
+  const walletKey = cards.map(card => card.id).join(',');
+  // AI 가 지금 일정을 보고 순서를 정하는 창 안이면 그 판단을 쓴다 (사용자 결정 '일정 중엔 늘 AI').
+  // 창 열쇠가 바뀔 때만 묻고(1분마다 묻지 않는다), 홈 호출은 추천 기록을 남기지 않는다(미리보기).
+  // aiRefresh: 홈이 열린 채로 AI 쪽 상태가 바뀌면(홈 추천 팝업이 일정 행사를 계산함, 챗봇 규칙 확정) 다시 묻는다.
+  //   열쇠는 그대로라 새 답이 올 때까지 지난 미리보기를 계속 보인다 (2026-11-23 리뷰).
+  const windowKey = SERVER_MODE && !disabled ? aiWindowKey(baseTimeline, clock, cards.map(card => card.id)) : '';
+  useEffect(() => {
+    if (!SERVER_MODE || !windowKey) return undefined;
+    let stopped = false;
+    const windowCats = [...new Set(baseTimeline.filter(row => inAiWindow(row, clock)).flatMap(row => row.cats || []))];
+    const keep = (result, estimates) => { if (!stopped) setAiPreview({ key: windowKey, result, estimates }); };
+    loadPlacementPreview(cards).then(async result => {
+      const example = scheduleAiExample(result, windowCats);
+      keep(result, example ? await loadAiEstimates(exampleScenario(example)) : null);
+    }).catch(() => keep(null, null));
+    return () => { stopped = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [windowKey, aiRefresh]);
+  const preview = aiPreview.key === windowKey ? aiPreview : null;
+  const timeline = baseTimeline.map(row => {
+    const ai = scheduleAiMatch({ row, clock, preview, cards });
+    return ai ? { ...row, match: ai } : row;
+  });
   // 타임라인에 나온 업종마다 AI 에 한 번씩 묻는다 (일정 예시 금액으로)
   const categoryKey = [...new Set(timeline.flatMap(row => row.cats || []))].sort().join(',');
-  const walletKey = cards.map(card => card.id).join(',');
   useEffect(() => {
     if (!SERVER_MODE || !categoryKey) return undefined;
     let stopped = false;
@@ -324,6 +352,7 @@ export default function TodaySchedulePanel({
     category: row.match.category,
     benefitName: row.match.benefitName,
     pdfScenario: row.match.pdfScenario,
+    ai: Boolean(row.match.ai),   // AI 판단으로 붙은 카드면 결제 화면도 AI 를 따른다 (scheduleAiPaymentExample)
     title: row.label,
     date: row.inProgress ? day : row.date || day,
     time: row.inProgress ? clockTime : row.time,

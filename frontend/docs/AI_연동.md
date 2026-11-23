@@ -30,7 +30,7 @@ AI 가 고르지 않는 경우:
 
 | 경우 | 동작 |
 |---|---|
-| 일정에서 들어온 결제 | 일정에 맞춘 카드를 유지하고 안내만 보여 준다 (일정 시간이 되기 전에 미리 열어 볼 수 있어서) |
+| 일정에서 들어온 결제인데 AI 가 그 일정을 보고 정하지 않음 (일정 창 밖·업종 다름) | 일정에 맞춘 카드를 유지하고 안내만 보여 준다 (일정 시간이 되기 전에 미리 열어 볼 수 있어서). AI 가 그 일정을 보고 정했으면 AI 1순위를 고른다 (아래 '홈 일정 카드') |
 | AI 가 답하지 못함 (`reason_code: FALLBACK`) | 지갑에서 고른 카드와 순서를 그대로 둔다 |
 | 백엔드에 연결하지 못함 | 지갑 순서 그대로. 'AI 추천을 불러오지 못해…' 안내 |
 | 사용자가 ☰ 로 순서를 끌어 옮김 | 그때부터 저장한 순서를 쓴다 |
@@ -56,6 +56,22 @@ AI 가 고르지 않는 경우:
 - `OTHER` 와 상황 일정(회식·반차 등)은 서버에는 저장되지만 AI 엔진에는 넘어가지 않는다 (업종을 알 수 없다).
 
 **기준 시각 주의**: 백엔드의 `AI_FIXED_AT` 을 켜면 AI 가 그 시각으로 계산하므로, 실제 오늘 날짜로 넣은 일정은 배치에 반영되지 않는다.
+
+## 홈 일정 카드와 일정 결제 화면 = AI 판단 (2026-11-23)
+
+AI 엔진은 지금이 장소 일정의 **시작 30분 전 ~ 끝 30분 후**면 그 일정(업종·내 중앙값 금액, 일정 팝업이 추천한 행사)을 보고 순서를 정한다.
+이 창 안에서는 홈 '지금(다가오는) 일정에 맞는 카드예요', 그 '이 카드로 결제'로 들어간 결제 화면, 'AI 추천' 문구가 같은 카드·같은 거래를 말한다
+(사용자 결정 '일정 중엔 늘 AI': 행사가 있든 없든). 순수 함수는 `utils/scheduleAiCore.js`.
+
+- **AI 가 그 일정을 보고 정함** = 배치 응답이 기본 순서(FALLBACK)가 아니고 `version === 'schedule'`, `example` 이 있고 `example.category_code` 가 일정 업종(서버 코드)과 같고, 1순위 카드가 기기 지갑에 있음.
+- **홈**: 창 안에 AI 업종 일정이 있으면 AI 배치 **미리보기**(`POST /api/ai/rank?record=false`, `api.aiRankPreview`, `loadPlacementPreview`)를 한 번 부른다.
+  미리보기는 같은 계산을 하고 추천 기록을 남기지 않는다 (기록의 기본 카드가 다음 배치의 '직전 기본 카드'가 되어, 홈에서 남기면 결제 화면의 '앞 카드 실적을 채워 …' 안내가 먹힐 수 있어서).
+  창 열쇠(창 안 일정·지갑 카드 목록, 순서 무관)가 바뀔 때만 다시 묻는다 (1분마다 묻지 않는다). 홈을 다시 열면 새로 묻고,
+  홈이 열린 채로 홈 추천 팝업(안의 맞춤 추천이 AI 에 그날 일정 행사를 기억시킴)이 닫히거나 챗봇 규칙을 확정해도 다시 묻는다 (`aiRefresh`).
+  기준에 맞는 일정 줄은 AI 1순위 카드와 문구 `메가MGC커피 · 4,900원 · 500원 예상 혜택 · AI 계산` (1순위 카드 금액이 0 이하면 `… · AI 추천`).
+- **일정에서 들어온 결제 화면**: 홈이 AI 카드로 보낸 일정(`schedule.ai`, `scheduleAiPaymentExample`)이고 같은 기준이면 AI 1순위를 고르고(사용자가 직접 고른 뒤에는 그대로), 상자 거래를 AI 예시로, 카드 선정 이유를 일반 결제와 같은 AI 문구로 보인다. 일정 머리글·'일정으로 돌아가기'는 그대로.
+- 미리보기·계산 실패, FALLBACK, 기준 불일치, 30분보다 먼 일정은 지금처럼 업종 계산(앱 예시 금액)을 쓴다.
+  이때는 결제 화면도 일정 거래를 쓴다 (오늘의 일정 탭에서 21시 카페처럼 창 밖 같은 업종 일정으로 들어가도 AI 로 바뀌지 않는다).
 
 ## 홈 챗봇 (SOL 카드 도우미)
 
@@ -85,7 +101,7 @@ AI 카드 배치 응답의 `example`(업종·가게·금액·가능성)로 계�
 | 경우 | 상자의 거래 |
 |---|---|
 | AI 가 답하고 그 거래의 계산도 옴 | AI 예시 거래 (`example`) |
-| 일정에서 들어온 결제 | 일정 거래 (지금처럼) |
+| 일정에서 들어온 결제 | AI 가 그 일정을 보고 정했으면 AI 예시 거래, 아니면 일정 거래 |
 | AI 가 기본 순서로 답함·꺼짐·데모 모드, 예시 계산 실패, 1순위 카드가 기기 지갑에 없음 | 고정 예시 '스타벅스 · 15,000원' (지금처럼) |
 
 - 행사 문구일 때만 상자 아래에 한 줄을 붙인다: "AI 문구의 '약 480원'은 이 시간대에 결제할 만한 곳의 행사 혜택을 가능성만큼 더한 금액이에요. 현대백화점에서 결제할 가능성은 약 3%예요."
@@ -98,9 +114,10 @@ AI 카드 배치 응답의 `example`(업종·가게·금액·가능성)로 계�
 
 | 파일 | 내용 |
 |---|---|
-| `utils/api.js` | AI 호출 (`aiRank`, `aiChat`, `aiEvaluate`, `aiMerchants`, `aiRecommendationPage`, `aiConfirmRuleDraft`, `aiCancelRuleDraft`) |
+| `utils/api.js` | AI 호출 (`aiRank`, `aiRankPreview`(기록 없음), `aiChat`, `aiEvaluate`, `aiMerchants`, `aiRecommendationPage`, `aiConfirmRuleDraft`, `aiCancelRuleDraft`) |
 | `utils/aiPlacementCore.js` | AI 순위를 지갑 순서로 바꾸기, 1순위 카드의 예시 거래(`example`), 챗봇에 보낼 이전 대화 (순수 함수) |
-| `utils/aiPlacement.js` | 순서를 묻고 지갑에 맞추는 `loadPlacement` |
+| `utils/aiPlacement.js` | 순서를 묻고 지갑에 맞추는 `loadPlacement`, 홈 일정 카드용 미리보기 `loadPlacementPreview` |
+| `utils/scheduleAiCore.js` | 일정 창(시작 30분 전 ~ 끝 30분 후), 'AI 가 그 일정을 보고 정함' 판단, 홈 일정 카드 문구·카드 (순수 함수) |
 | `utils/aiEstimate.js`, `aiEstimateCore.js` | 예상 혜택을 AI 에 묻고 지갑 카드별 값으로 바꾸기 (결제 화면, 홈 '오늘의 일정'). 예시 거래 → 계산 요청(`exampleScenario`), 상자 거래 고르기(`chooseEstimateScenario`), 안내 줄(`exampleNote`) |
 | `utils/aiRecommendCore.js` | AI 맞춤 추천 응답 → 카드 추천·프로모션 추천·보일 탭 (순수 함수) |
 | `utils/serverCards.js` | 지갑 카드 ↔ 서버 카드 번호 짝 (`serverCardLinks`). 22장에 없는 카드는 40장 데이터로 짝짓는다 |
@@ -111,7 +128,7 @@ AI 카드 배치 응답의 `example`(업종·가게·금액·가능성)로 계�
 | `screens/PaymentScreen.js` | AI 추천 상자, 자동 선택, AI 예상 혜택 |
 | `screens/RoutineRecommendationScreen.js` | 일정 맞춤 추천(카드·프로모션 탭)을 AI 맞춤 추천으로 |
 | `screens/RoutinePatternRecommendationScreen.js` | 가입 직후 일과 맞춤 카드 추천: AI 카드를 맨 앞에 |
-| `components/TodaySchedulePanel.js` | 홈 '오늘의 일정'의 일정별 카드를 업종별 AI 계산으로 |
+| `components/TodaySchedulePanel.js` | 홈 '오늘의 일정'의 일정별 카드: 일정 창 안이면 AI 배치 미리보기, 아니면 업종별 AI 계산 |
 | `components/PaymentCardOrder.js` | `aiOrder` 로 받은 순서 표시 |
 | `components/PaymentBenefitChat.js` | 결제 화면 챗봇의 AI 연결, 규칙 초안 버튼 |
 | `utils/homeChat.js` | 홈 챗봇 추천 질문(탭별), AI 에 보낼 이전 대화 (순수 함수) |
@@ -119,7 +136,7 @@ AI 카드 배치 응답의 `example`(업종·가게·금액·가능성)로 계�
 
 ## 테스트
 
-`frontend` 폴더에서 실행한다 (파일 6개, 32개).
+`frontend` 폴더에서 실행한다 (파일 7개, 39개).
 
 ```bash
 node --test utils/__tests__/*.test.mjs
@@ -145,6 +162,6 @@ node --test utils/__tests__/*.test.mjs
   - 결제 화면 '이 거래의 예상 혜택': `/api/ai/payments/evaluate` (실적·한도·행사 반영, `utils/aiEstimate.js`·`aiEstimateCore.js`). 예시 거래 '일반 가맹점'은 음식점 30,000원으로 바꿈.
   - '일정 맞춤 추천'(카드 추천·프로모션 추천): `/api/ai/recommendation-page`. 탭은 AI 규칙(카드날에만 카드 탭, 행사 없으면 카드 탭만)을 따른다 (`utils/aiRecommendCore.js`). AI 추천은 연말 결산 기록에 남기지 않는다.
   - 가입 직후 '일과 맞춤 카드 추천': AI 맞춤 추천에 카드가 있으면 맨 앞에, 없으면(결제 내역 없는 새 가입자) 설문 기반 앱 계산.
-  - 홈 '오늘의 일정'의 일정별 카드(`components/TodaySchedulePanel.js`): 일정 업종마다 AI 계산(예시 금액)으로 가장 많이 주는 내 카드. 직접 입력 업종처럼 AI 업종이 없거나 AI 가 답하지 못하면 앱 계산.
+  - 홈 '오늘의 일정'의 일정별 카드(`components/TodaySchedulePanel.js`): 일정 업종마다 AI 계산(예시 금액)으로 가장 많이 주는 내 카드. 직접 입력 업종처럼 AI 업종이 없거나 AI 가 답하지 못하면 앱 계산. 일정 창 안에서는 AI 배치 미리보기를 따른다 (위 '홈 일정 카드와 일정 결제 화면').
   - 데모 모드와 AI 가 답하지 못할 때의 대체 계산은 아직 앱 데이터를 쓴다 (4단계에서 정리).
 

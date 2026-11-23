@@ -84,3 +84,9 @@ test('AI 1순위가 지갑에 있으면 예시 거래를 넘기고, 없거나 �
   assert.equal(applyRank([{ id: 'a' }], rank, { a: 8 }).example, null);
   assert.equal(applyRank([{ id: 'a' }], { ...rank, example: undefined, reason_code: 'FALLBACK' }, { a: 9 }).example, null);
 });
+
+test('배치 방식(version)을 넘긴다: 일정 모드인지 홈·일정 결제 화면이 판단한다', () => {
+  const rank = { cards: [{ user_card_id: 9, rank: 1, message: 'm' }], reason_code: 'PROMOTION_CARD' };
+  assert.equal(applyRank([{ id: 'a' }], { ...rank, version: 'schedule' }, { a: 9 }).version, 'schedule');
+  assert.equal(applyRank([{ id: 'a' }], rank, { a: 9 }).version, null);
+});
