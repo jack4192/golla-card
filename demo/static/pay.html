@@ -283,7 +283,8 @@ function scheduleRow(item) {
   };
   let timer = null, seq = 0;
   name.oninput = () => {
-    clearTimeout(timer);
+    // 글이 바뀌면 앞의 분류는 무효: 늦게 온 응답이 덮어쓰지 않게 seq 를 올리고, 보이지 않는 브랜드를 비운다
+    clearTimeout(timer); seq++; brand = null;
     const text = name.value.trim();
     if (!text) { chip.replaceChildren(); return; }
     timer = setTimeout(async () => {
@@ -312,7 +313,7 @@ function scheduleRow(item) {
     }, 400);
   };
   cat.onchange = () => {
-    brand = null; amount.value = typical(cat.value); sync();
+    seq++; brand = null; amount.value = typical(cat.value); sync();
     chip.replaceChildren(el("span", "업종을 직접 골랐어요", "muted"));
   };
   amount.oninput = sync; sync();
