@@ -51,7 +51,8 @@ function CardThumb({
 export default function PaymentCardOrder({
   cards = [],
   selectedId,
-  onSelect
+  onSelect,
+  aiOrder = null   // AI 가 정한 순서(카드 id 목록). 사용자가 직접 끌어 옮기기 전까지 이 순서로 보여 준다
 }) {
   const [savedIds, setSavedIds] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -62,7 +63,9 @@ export default function PaymentCardOrder({
   const rowHeight = useRef(84);
   const mounted = useRef(true);
   const revision = useRef(0);
-  const ordered = useMemo(() => orderCards(cards, savedIds), [cards, savedIds]);
+  const [manual, setManual] = useState(false);
+  const usingAi = !manual && Array.isArray(aiOrder) && aiOrder.length > 0;
+  const ordered = useMemo(() => orderCards(cards, usingAi ? aiOrder : savedIds), [cards, savedIds, usingAi, aiOrder]);
   const orderedRef = useRef(ordered);
   orderedRef.current = ordered;
   const load = async () => {
@@ -103,6 +106,7 @@ export default function PaymentCardOrder({
     const ids = orderedRef.current.map(card => String(card.id));
     const [moved] = ids.splice(from, 1);
     ids.splice(to, 0, moved);
+    setManual(true);
     setSavedIds(ids);
     setError('');
     try {
@@ -152,6 +156,10 @@ export default function PaymentCardOrder({
       <Text style={s.hint}>
         카드를 누르면 결제 카드가 바뀌어요. 오른쪽 ☰ 를 눌러 위아래로 끌면 순서를 바꿀 수 있어요.
       </Text>
+
+      {usingAi && <Text style={s.link}>
+          AI가 지금 결제에 맞춰 정한 순서예요.
+        </Text>}
 
       {loading && <ActivityIndicator color="#245DE5" />}
 

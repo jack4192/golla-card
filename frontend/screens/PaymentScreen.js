@@ -1,4 +1,4 @@
-import PaymentCardOrder from '../components/PaymentCardOrder';
+import PaymentCardOrder, { orderCards } from '../components/PaymentCardOrder';
 import PaymentBenefitChat from '../components/PaymentBenefitChat';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -15,6 +15,8 @@ import { benefitText, evaluateBenefit } from '../utils/cardRecommendation';
 import { createPinSalt } from '../utils/pinCrypto';
 import { makeSchedulePaymentScenario } from '../utils/schedulePayment';
 import { estimateCatalogBenefit, matchesCatalogPaymentBenefit } from '../utils/catalogPayment';
+import { SERVER_MODE } from '../utils/api';
+import { loadPlacement } from '../utils/aiPlacement';
 const SCENARIOS = [{
   id: 'coffee',
   merchant: '스타벅스',
@@ -304,6 +306,9 @@ export default function PaymentScreen({
   const [imageError, setImageError] = useState(false);
   const [imageRetry, setImageRetry] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // AI 카드 배치 (서버 모드). status: off(데모 모드) / loading / ready / failed
+  const [placement, setPlacement] = useState({ status: SERVER_MODE ? 'loading' : 'off', result: null });
+  const userPicked = useRef(false);   // 사용자가 직접 카드를 고르면 AI 가 다시 바꾸지 않는다
   const mounted = useRef(true);
   const sequence = useRef(0);
   const current = useRef(null);
@@ -335,6 +340,9 @@ export default function PaymentScreen({
       rows: estimates.filter(({ benefit }) => !Number.isFinite(benefit.value)),
     },
   ];
+  const ai = placement.result;
+  const aiTop = ai?.topId && !ai.fallback ? options.find(item => item.id === ai.topId) : null;
+  const orderedOptions = ai && !ai.fallback ? orderCards(options, ai.order) : options;
   const source = selected?.image;
   const seconds = payment ? Math.max(0, Math.ceil((payment.expiresAt - now) / 1000)) : 0;
   const expired = !payment || seconds === 0 || payment.status !== 'pending' || payment.cardId !== selected?.id || payment.contextKey !== contextKey;
@@ -357,6 +365,24 @@ export default function PaymentScreen({
     setImageError(false);
     setImageRetry(0);
   }, [selected?.id]);
+  useEffect(() => {
+    if (!SERVER_MODE || !options.length) return undefined;
+    let stopped = false;
+    loadPlacement(options).then(result => {
+      if (stopped) return;
+      setPlacement({ status: result ? 'ready' : 'off', result });
+      // 일정에서 들어온 결제는 일정에 맞춘 카드를 유지한다 (앱 일정은 아직 AI 가 모른다)
+      // AI 가 답하지 못해 기본 순서가 온 경우(fallback)에는 지갑에서 고른 카드를 그대로 둔다
+      if (result?.topId && !result.fallback && !scheduleScenario && !userPicked.current) setSelectedId(result.topId);
+    }).catch(() => {
+      if (!stopped) setPlacement({ status: 'failed', result: null });
+    });
+    return () => {
+      stopped = true;
+    };
+    // 화면을 열 때 한 번만 묻는다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     mounted.current = true;
     const timer = setInterval(() => setNow(Date.now()), 250);
@@ -431,6 +457,7 @@ export default function PaymentScreen({
     issue();
   }, [selected?.id, contextKey]);
   const choose = item => {
+    userPicked.current = true;
     if (selected?.id === item.id) return;
     setSelectedId(item.id);
     try {
@@ -594,6 +621,29 @@ export default function PaymentScreen({
             {' · '}실제 상품 이미지
           </Text>
 
+          {placement.status !== 'off' && <View style={s.aiBox} accessibilityLiveRegion="polite">
+              <View style={s.aiHead}>
+                <View style={s.aiBadge}><Text style={s.aiBadgeText}>AI 추천</Text></View>
+                {placement.status === 'loading' && <ActivityIndicator size="small" color="#245DE5" />}
+              </View>
+
+              {placement.status === 'loading' && <Text style={s.aiText}>AI가 카드 순서를 정하고 있어요.</Text>}
+              {placement.status === 'failed' && <Text style={s.aiText}>AI 추천을 불러오지 못해 지갑 순서대로 보여 드려요.</Text>}
+              {placement.status === 'ready' && !!ai?.fallback && <Text style={s.aiText}>AI 응답이 없어 지갑 순서대로 보여 드려요.</Text>}
+              {placement.status === 'ready' && !ai?.fallback && !aiTop && <Text style={s.aiText}>AI가 순서를 정할 수 있는 카드가 아직 없어요.</Text>}
+              {placement.status === 'ready' && !!aiTop && selected.id === aiTop.id && <Text style={s.aiText}>
+                  {ai.message || 'AI가 이 카드를 맨 앞에 뒀어요.'}
+                </Text>}
+              {placement.status === 'ready' && !!aiTop && selected.id !== aiTop.id && <>
+                  <Text style={s.aiText}>
+                    AI가 맨 앞에 둔 카드는 {aiTop.name}예요.
+                  </Text>
+                  <TouchableOpacity accessibilityRole="button" onPress={() => choose(aiTop)} style={s.aiButton}>
+                    <Text style={s.link}>이 카드로 바꾸기</Text>
+                  </TouchableOpacity>
+                </>}
+            </View>}
+
           <View style={s.benefitBox}>
             {/* 머리: 제목 + 거래 예시 */}
             <View style={s.bxHead}>
@@ -675,7 +725,7 @@ export default function PaymentScreen({
           아래에서 카드 선택 이유와 상세 혜택을 확인하세요 ↓
         </Text>
 
-        <PaymentCardOrder cards={options} selectedId={selected.id} onSelect={choose} />
+        <PaymentCardOrder cards={options} selectedId={selected.id} onSelect={choose} aiOrder={ai?.fallback ? null : ai?.order} />
 
         <View style={s.box}>
           <Text style={s.heading}>카드 선정 이유</Text>
@@ -685,7 +735,9 @@ export default function PaymentScreen({
               ? selected.id === schedule.cardId
                 ? '오늘 일정의 업종과 관련된 혜택이 있는 보유 카드예요.'
                 : '결제 카드를 바꿨어요. 바꾸기 전과 같은 일정·금액으로 혜택을 확인할 수 있어요.'
-              : '지갑에서 선택한 카드(' + selected.name + ')로 결제해요.'}
+              : aiTop && selected.id === aiTop.id
+                ? 'AI가 지금 결제에 맞춰 맨 앞에 둔 카드(' + selected.name + ')로 결제해요.' + (ai.message ? ' ' + ai.message : '')
+                : '지갑에서 선택한 카드(' + selected.name + ')로 결제해요.'}
           </Text>
 
           {!!selectedBenefit?.name && <Text style={s.text}>{selectedBenefit.name}</Text>}
@@ -734,7 +786,7 @@ export default function PaymentScreen({
         <TouchableOpacity activeOpacity={1} style={s.sheet}>
           <Text style={s.heading}>결제할 카드 선택</Text>
           <ScrollView style={s.sheetList}>
-            {options.map(item => {
+            {orderedOptions.map(item => {
               const active = item.id === selected.id;
               return <TouchableOpacity key={item.id} accessibilityRole="button" accessibilityState={{ selected: active }}
                 onPress={() => { choose(item); setPickerOpen(false); }} style={[s.sheetRow, active && s.sheetRowActive]}>
@@ -759,6 +811,7 @@ export default function PaymentScreen({
       selected={{ id: selected.id, name: selected.name, benefit: selectedBenefit, reward: reward(selectedBenefit) }}
       baseline={{ id: baseline.id, name: baseline.name, benefit: baseBenefit, reward: reward(baseBenefit) }}
       difference={difference}
+      recommendationId={ai?.recommendationId ?? null}
     />
   </>;
 }
@@ -941,6 +994,42 @@ const s = StyleSheet.create({
   cardImage: {
     width: '100%',
     height: 220
+  },
+  aiBox: {
+    alignSelf: 'stretch',
+    backgroundColor: '#EEF4FF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#C9D9FF',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 6
+  },
+  aiHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  aiBadge: {
+    backgroundColor: '#245DE5',
+    borderRadius: 999,
+    paddingVertical: 3,
+    paddingHorizontal: 9
+  },
+  aiBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800'
+  },
+  aiText: {
+    color: '#213F69',
+    fontSize: 14,
+    lineHeight: 22,
+    fontWeight: '600'
+  },
+  aiButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4
   },
   cardName: {
     color: '#213F69',

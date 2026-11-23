@@ -1,4 +1,5 @@
 import { DETAIL_CATEGORIES, INDUSTRIES, ROUTINE_TITLE_LIMIT, detailSignals, normalizeTime, routineLabel, validateDetails } from './routineDetails';
+import { requestScheduleSync } from './scheduleSync';
 import { Platform } from 'react-native';
 import * as Store from './demoStore';
 
@@ -449,6 +450,7 @@ export const saveEvent = input => writeEventRecord(async () => {
     event,
     ...events.filter(item => item.id !== event.id),
   ]);
+  requestScheduleSync(readEvents, dateKey());   // 서버 모드: 서버 일정에도 반영한다 (기다리지 않는다)
 
   return event;
 });
@@ -460,6 +462,7 @@ export const deleteEvent = id => writeEventRecord(async () => {
     EVENTS_KEY,
     events.filter(event => event.id !== id)
   );
+  requestScheduleSync(readEvents, dateKey());   // 서버 모드: 서버 일정에서도 지운다 (기다리지 않는다)
 });
 
 export async function isTodayConfirmed(day = dateKey()) {

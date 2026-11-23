@@ -1,6 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SERVER_MODE, api } from '../utils/api';
+import { chatHistory } from '../utils/aiPlacementCore';
 
 const avatar = require('../assets/chatbot-avatar.png');
 const prompts = ['왜 이 카드예요?', '혜택 적용 조건', '다른 카드와 비교'];
@@ -37,20 +39,65 @@ function answerQuestion(question, { selected, baseline, difference }) {
   return { text, rows };
 }
 
-export default function PaymentBenefitChat({ transaction, selected, baseline, difference }) {
+export default function PaymentBenefitChat({ transaction, selected, baseline, difference, recommendationId = null }) {
   const [visible, setVisible] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
+  const [busy, setBusy] = useState(false);
   const scroll = useRef(null);
+  const mounted = useRef(true);
+  const counter = useRef(0);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
 
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const update = (id, change) => setMessages(previous => previous.map(message => (message.id === id ? { ...message, ...change } : message)));
+
+  // 서버 모드에서는 AI 챗봇(/api/ai/chat)에 묻고, 실패하면 앱 안의 기본 안내로 답한다.
   const ask = value => {
     const question = value.trim();
-    if (!question) return;
-    setMessages(previous => [...previous, {
-      question,
-      ...answerQuestion(question, { selected, baseline, difference }),
-    }]);
+    if (!question || busy) return;
     setInput('');
+    const local = () => answerQuestion(question, { selected, baseline, difference });
+    const id = ++counter.current;
+    if (!SERVER_MODE) {
+      setMessages(previous => [...previous, { id, question, ...local() }]);
+      return;
+    }
+    const history = chatHistory(messagesRef.current);
+    setBusy(true);
+    setMessages(previous => [...previous, { id, question, pending: true, text: '답변을 준비하고 있어요…' }]);
+    api.aiChat({ message: question, history, screen: { name: 'pay', recommendation_id: recommendationId } })
+      .then(data => {
+        if (!data?.reply) return { ...local(), offline: true };
+        const draft = data.rule_draft?.draft_id != null
+          ? { id: data.rule_draft.draft_id, summary: data.rule_draft.summary || '', state: 'pending' }
+          : null;
+        return { text: data.reply, ai: true, draft };
+      })
+      .catch(() => ({ ...local(), offline: true }))
+      .then(answer => {
+        if (!mounted.current) return;
+        update(id, { pending: false, ...answer });
+        setBusy(false);
+      });
+  };
+
+  // 챗봇이 만든 규칙 초안을 저장하거나 버린다.
+  const decide = (message, action) => {
+    update(message.id, { draft: { ...message.draft, state: 'working' } });
+    (action === 'confirm' ? api.aiConfirmRuleDraft(message.draft.id) : api.aiCancelRuleDraft(message.draft.id))
+      .then(() => action === 'confirm' ? 'saved' : 'cancelled')
+      .catch(() => 'error')
+      .then(state => {
+        if (mounted.current) update(message.id, { draft: { ...message.draft, state } });
+      });
   };
 
   return <>
@@ -79,7 +126,7 @@ export default function PaymentBenefitChat({ transaction, selected, baseline, di
             contentContainerStyle={s.messageContent}
           >
             {!messages.length && <Text style={s.hint}>지금 거래에서 어떤 혜택을 받을 수 있는지 물어보세요.</Text>}
-            {messages.map((message, index) => <View key={index} style={s.exchange}>
+            {messages.map(message => <View key={message.id} style={s.exchange}>
               <Text style={s.question}>{message.question}</Text>
               <View style={s.answer} accessibilityLiveRegion="polite">
                 <Text style={s.answerText}>{message.text}</Text>
@@ -92,6 +139,22 @@ export default function PaymentBenefitChat({ transaction, selected, baseline, di
                   <Text style={[s.amount, s.rowAmount]}>{row.reward}</Text>
                 </View>)}
                 {!!message.rows && <Text style={s.hint}>입력한 결제 조건으로 계산한 예상 혜택이에요.</Text>}
+                {!!message.offline && <Text style={s.hint}>AI 챗봇에 연결하지 못해 기본 안내로 답했어요.</Text>}
+                {!!message.draft && <View style={s.draft}>
+                  {!!message.draft.summary && <Text style={s.answerText}>{message.draft.summary}</Text>}
+                  {(message.draft.state === 'pending' || message.draft.state === 'error') && <View style={s.draftButtons}>
+                    <Pressable accessibilityRole="button" onPress={() => decide(message, 'confirm')} style={s.draftSave}>
+                      <Text style={s.draftSaveText}>저장</Text>
+                    </Pressable>
+                    <Pressable accessibilityRole="button" onPress={() => decide(message, 'cancel')} style={s.prompt}>
+                      <Text style={s.amount}>취소</Text>
+                    </Pressable>
+                  </View>}
+                  {message.draft.state === 'working' && <Text style={s.hint}>처리하고 있어요…</Text>}
+                  {message.draft.state === 'saved' && <Text style={s.hint}>저장했어요. 다음 결제 화면부터 적용돼요.</Text>}
+                  {message.draft.state === 'cancelled' && <Text style={s.hint}>저장하지 않았어요.</Text>}
+                  {message.draft.state === 'error' && <Text style={s.hint}>처리하지 못했어요. 다시 눌러 주세요.</Text>}
+                </View>}
               </View>
             </View>)}
           </ScrollView>
@@ -113,7 +176,7 @@ export default function PaymentBenefitChat({ transaction, selected, baseline, di
               onSubmitEditing={() => ask(input)}
               style={s.input}
             />
-            <Pressable accessibilityRole="button" accessibilityLabel="질문 보내기" onPress={() => ask(input)} disabled={!input.trim()} style={[s.send, !input.trim() && s.sendDisabled]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="질문 보내기" onPress={() => ask(input)} disabled={!input.trim() || busy} style={[s.send, (!input.trim() || busy) && s.sendDisabled]}>
               <Ionicons name="send" size={19} color="#FFF" />
             </Pressable>
           </View>
@@ -150,4 +213,8 @@ const s = StyleSheet.create({
   input: { flex: 1, minWidth: 0, paddingHorizontal: 8, minHeight: 42, color: '#142D4E', fontSize: 15 },
   send: { width: 42, height: 42, backgroundColor: '#1756DF', alignItems: 'center', justifyContent: 'center', borderRadius: 21 },
   sendDisabled: { opacity: 0.5 },
+  draft: { backgroundColor: '#FFF', borderRadius: 10, padding: 10, gap: 8 },
+  draftButtons: { flexDirection: 'row', gap: 6 },
+  draftSave: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 20, backgroundColor: '#1756DF' },
+  draftSaveText: { color: '#FFF', fontSize: 13, fontWeight: '800' },
 });

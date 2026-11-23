@@ -6,6 +6,8 @@ import * as Store from './demoStore';
 
 const TOKEN_KEY = 'solpay_api_token_v1';
 const TIMEOUT_MS = 10000;
+const AI_RANK_TIMEOUT_MS = 4000;    // 카드 순서는 결제 화면을 오래 붙잡지 않는다
+const AI_CHAT_TIMEOUT_MS = 25000;   // 챗봇은 답이 최대 15초쯤 걸린다
 
 export const API_BASE_URL = String(process.env.EXPO_PUBLIC_API_URL || '').trim().replace(/\/+$/, '');
 export const SERVER_MODE = Boolean(API_BASE_URL);
@@ -21,7 +23,7 @@ export class ApiError extends Error {
 export const readToken = () => Store.getItemAsync(TOKEN_KEY);
 export const clearToken = () => Store.deleteItemAsync(TOKEN_KEY);
 
-async function request(path, { method = 'GET', body, auth = false } = {}) {
+async function request(path, { method = 'GET', body, auth = false, timeout = TIMEOUT_MS } = {}) {
   if (!SERVER_MODE) throw new ApiError('서버 주소가 설정되지 않았어요.');
   const headers = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -32,7 +34,7 @@ async function request(path, { method = 'GET', body, auth = false } = {}) {
   }
 
   const controller = typeof AbortController === 'function' ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), TIMEOUT_MS) : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeout) : null;
   let response;
   try {
     response = await fetch(API_BASE_URL + path, {
@@ -97,4 +99,25 @@ export const api = {
     const data = await request('/api/users/phone-availability?phone=' + encodeURIComponent(phone));
     return data?.available === false;
   },
+
+  // ----- 카드 (서버의 내 카드) -----
+  // [{ userCardId, cardCode, name, issuer, type, imageUrl, representative, order }]
+  myCards: () => request('/api/cards/user-cards', { auth: true }),
+  // [{ cardCode, name, issuer, ... }]
+  cardProducts: () => request('/api/card-products', { auth: true }),
+  registerCard: cardCode => request('/api/cards/register', { method: 'POST', auth: true, body: { cardCode: String(cardCode) } }),
+
+  // ----- 일정 (서버의 내 일정. 백엔드가 장소 일정을 AI 엔진에도 넘긴다) -----
+  // body: { date, category, title, start, end, memo } 또는 { date, types, start, end, memo }
+  createSchedule: body => request('/api/schedules', { method: 'POST', auth: true, body }),      // → { scheduleId }
+  updateSchedule: (scheduleId, body) => request('/api/schedules/' + encodeURIComponent(scheduleId), { method: 'PUT', auth: true, body }),
+  deleteSchedule: scheduleId => request('/api/schedules/' + encodeURIComponent(scheduleId), { method: 'DELETE', auth: true }),
+
+  // ----- AI (백엔드가 AI 엔진을 대신 부른다. 응답 필드는 user_card_id 처럼 밑줄 형식) -----
+  // 결제 화면 카드 순서. AI 가 늦으면 백엔드가 기본 순서(reason_code: 'FALLBACK')를 준다.
+  aiRank: () => request('/api/ai/rank', { method: 'POST', auth: true, timeout: AI_RANK_TIMEOUT_MS }),
+  // 챗봇. body: { message, history: [{ role, text }], screen: { name, recommendation_id } }
+  aiChat: body => request('/api/ai/chat', { method: 'POST', auth: true, body, timeout: AI_CHAT_TIMEOUT_MS }),
+  aiConfirmRuleDraft: draftId => request('/api/ai/rules/drafts/' + encodeURIComponent(draftId) + '/confirm', { method: 'POST', auth: true }),
+  aiCancelRuleDraft: draftId => request('/api/ai/rules/drafts/' + encodeURIComponent(draftId) + '/cancel', { method: 'POST', auth: true }),
 };
