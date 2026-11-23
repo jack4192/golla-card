@@ -1,4 +1,4 @@
-"""챗봇: 숫자 검사기, 검색, 도구 8개, 에이전트 흐름(OpenAI 는 가짜), API (2026-11-19).
+"""챗봇: 숫자 검사기, 검색, 도구 9개, 에이전트 흐름(OpenAI 는 가짜), API (2026-11-19, 프로모션 도구 2026-11-23).
 
 도구·에이전트 테스트는 팀 DB 형식 CSV(카드서비스_DB_1년)와 학습 결과(artifacts)가 있어야 한다. 없으면 건너뛴다.
 """
@@ -13,6 +13,7 @@ import pytest
 from engine.chat import guard
 from engine.chat.agent import CHIPS, TABLE_REPLY, ChatAgent, ChatSettings
 from engine.chat.search import find_cards, find_merchants
+from engine.chat import prompts
 from engine.chat.tools import TOOL_SPECS, ToolBox
 from engine.loader import ARTIFACTS
 from engine.team_db import team_db_dir
@@ -67,7 +68,7 @@ def test_said_time_and_day():
 def test_tools_never_take_user_id():
     for spec in TOOL_SPECS:
         assert "user_id" not in spec["function"]["parameters"]["properties"]
-    assert len(TOOL_SPECS) == 8
+    assert len(TOOL_SPECS) == 9      # 2026-11-23 결정: 프로모션 조회(list_promotions)를 더해 9개
 
 
 # ---------- 실제 데이터 ----------
@@ -108,12 +109,12 @@ def test_all_tools_run_without_error(tb):
              ("get_card_benefits", {"card_name": "Discount Plan+"}),
              ("draft_rule", {"rule_type": "force", "card_names": ["KB ALL"], "days": ["weekend"], "source_text": "주말엔 KB"}),
              ("recommend_new_card", {}), ("find_merchant", {"name": "스타벅스"}),
-             ("recommend_for_payment", {"merchant_name": "스타벅스", "amount": 6000})]
+             ("recommend_for_payment", {"merchant_name": "스타벅스", "amount": 6000}), ("list_promotions", {})]
     for name, args in calls:
         result = tb.run(name, args)
         assert "error" not in result, (name, result)
     assert {b["type"] for b in tb.blocks} == {"score_table", "card_compare", "card_status", "benefit_list", "rule_card",
-                                             "new_card_list", "pay_button"}
+                                             "new_card_list", "pay_button", "promotion_list"}
 
 
 def test_simulate_difference_is_precomputed(tb):
@@ -398,3 +399,48 @@ def test_카드가_없는_사용자도_도구가_멈추지_않는다(service, mo
         assert isinstance(out, dict), name
     out = ToolBox(service, DEMO, AT, message="카페 5000원").run("recommend_for_payment", {"amount": 5000, "category_name": "카페"})
     assert "등록한 카드가 없" in out["error"]
+
+
+# ---------- 앱 사용 안내·프로모션 (2026-11-23 결정: 앱 사용법도 AI 가 답한다) ----------
+
+def test_prompt_covers_app_usage_and_promotions():
+    text = prompts.system_prompt(AT, ["KB ALL 카드"], {"name": "home"})
+    for word in ("앱 사용 안내", "오늘의 일정", "일정 추가", "보유 카드로 등록", "다른 카드로 변경", "혜택 자세히 보기",
+                 "list_promotions"):
+        assert word in text, word
+    assert "홈 화면에서 챗봇을 열었다" in text
+    assert "카드 혜택, 결제 카드 선택, 앱 사용법만 도와드릴 수 있어요" in text
+    assert prompts.PROMPT_VERSION >= "2026-11-23"
+
+
+def test_list_promotions_gives_only_active_promotions_my_cards_can_get(service, tb):
+    result = tb.run("list_promotions", {})
+    assert "error" not in result and result["count"] == len(result["promotions"]) > 0
+    my = {(c.issuer, c.card_id) for c in tb.cards}
+    for p in result["promotions"]:
+        assert p["brand"] and p["kind"] in ("이벤트", "마이샵") and p["benefit"]
+        assert p["start"] <= "2026-11-05" <= p["end"]
+        assert p["cards"] and set(p["cards"]) <= set(tb.card_names())
+    ids = [p["promotion_id"] for p in result["promotions"]]
+    assert len(ids) == len(set(ids))                                   # 팀 DB·yml 에 같은 번호가 있어도 한 번만
+    blocked = {p.promotion_id for p in service.popup_promotions if p.needs_check}
+    assert not blocked & set(ids)                                      # 확인 필요(응모·신규 조건) 행사는 빼기
+    assert result["promotions"] == sorted(result["promotions"], key=lambda p: (p["end"], p["brand"]))
+    assert tb.blocks[-1]["type"] == "promotion_list"
+    assert my                                                          # 데모 1번은 카드가 있다
+
+
+def test_list_promotions_filters_by_brand_and_says_when_none(tb):
+    every = tb.run("list_promotions", {})["promotions"]
+    brand = every[0]["brand"]
+    one = tb.run("list_promotions", {"merchant_name": brand})
+    assert one["promotions"] and all(brand in p["brand"] for p in one["promotions"])
+    none = tb.run("list_promotions", {"merchant_name": "없는가맹점이름"})
+    assert none["count"] == 0 and none["promotions"] == [] and none["note"]
+
+
+def test_guard_accepts_numbers_from_promotion_list(tb):
+    result = tb.run("list_promotions", {})
+    p = next(x for x in result["promotions"] if any(ch.isdigit() for ch in x["benefit"]))
+    reply = f"{p['brand']}에서 {p['benefit']} 혜택이 {p['end']}까지 있어요."
+    assert guard.check(reply, guard.collect_facts(result)) == []
