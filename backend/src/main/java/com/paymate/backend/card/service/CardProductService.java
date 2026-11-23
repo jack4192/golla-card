@@ -41,7 +41,7 @@ public class CardProductService {
                 .map(r -> new CardProductSummaryResponse(
                         String.valueOf(r.getCardId()), r.getCardName(), r.getIssuer(), r.getCardType(),
                         r.getAnnualFeeDomestic(), tagsByCard.getOrDefault(r.getCardId(), List.of()),
-                        r.getImageUrl(), r.getAnnualFeeOverseas(), r.getDescription()))
+                        CardImages.urlOf(r.getCardId(), r.getImageUrl()), r.getAnnualFeeOverseas(), r.getDescription()))
                 .toList();
     }
 
@@ -59,7 +59,7 @@ public class CardProductService {
                 card.getAnnualFeeDomestic(), cardBenefitService.getBenefits(card.getId()),
                 null,   // officialUrl: cards 테이블에 컬럼이 없어 아직 제공하지 않음
                 card.getCardType(), card.getAnnualFeeOverseas(), card.getDescription(),
-                card.getImageUrl(), perks);
+                CardImages.urlOf(card.getId(), card.getImageUrl()), perks);
     }
 
     private Map<Long, List<String>> loadTags(List<Long> cardIds) {
