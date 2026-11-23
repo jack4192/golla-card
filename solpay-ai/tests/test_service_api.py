@@ -84,6 +84,14 @@ def test_제외_규칙의_카드는_응답에_없다(svc):
     assert 102 not in [card["user_card_id"] for card in body["cards"]]
 
 
+def test_배치_응답에_예시_거래가_있다(svc):
+    with client(svc) as c:
+        body = c.post("/internal/rank", json={"user_id": 1, "at": "2026-10-07T12:20:00+09:00"}).json()
+    ex = body["example"]
+    assert set(ex) == {"basis", "category_code", "category_name", "merchant_id", "name", "amount", "prob"}
+    assert ex["basis"] in {"promotion", "benefit", "schedule", "likely"} and ex["amount"] > 0 and 0 < ex["prob"] <= 1
+
+
 def test_잘못된_규칙은_422다(svc):
     with client(svc) as c:
         assert c.put("/internal/users/1/rules", json=[{"rule_type": "force"}]).status_code == 422
@@ -330,6 +338,7 @@ def test_카드가_없는_사용자의_배치는_빈_목록이다(svc):
     body = r.json()
     assert body["cards"] == [] and body["display_count"] == 0 and body["reason_code"] == "NO_CARD"
     assert body["recommendation_id"] is None and svc.store.logs == []          # 추천 기록은 남기지 않는다
+    assert body["example"] is None                                             # 예시 거래도 없다
 
 
 def test_카드가_없는_사용자의_리포트와_결제_평가도_200이다(svc):

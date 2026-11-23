@@ -179,3 +179,5 @@ class RankResult:
     # 기본 카드를 정한 단계 (ranker.choose_base: loss_guard·month_end·hold·strategy·nothing, 실적 채울 카드가 없으면 no_fill,
     # 고정 규칙 화면 forced, 프로모션 카드 화면 promotion(기본 카드를 다시 정하지 않고 직전 값). 월간 리포트 전략 문장)
     base_source: str | None = None
+    # 결제 화면 '이 거래의 예상 혜택'에 보일 예시 거래 (engine.example, 2026-11-23). 1순위 카드 문구가 가리키는 거래
+    example: dict | None = None
