@@ -96,6 +96,12 @@ public class AiController {
         return json(scheduleSync.sync(authUser.getId(), day));
     }
 
+    /** 홈 시간 표시줄의 하루 배치: 오늘의 시각 구간마다 AI 1순위 카드 (추천 기록 없음). 날짜는 서버가 정한다. */
+    @GetMapping("/day-placement")
+    public ResponseEntity<String> dayPlacement(@AuthenticationPrincipal AuthUser authUser) {
+        return json(ai.dayPlacement(authUser.getId()));
+    }
+
     /** 일정 저장 뒤 팝업 (카드 추천 또는 프로모션 추천). */
     @PostMapping("/schedule-popup")
     public ResponseEntity<String> schedulePopup(@AuthenticationPrincipal AuthUser authUser) {

@@ -146,6 +146,19 @@ public class AiService {
         return client.postClassify("/internal/places/classify", Map.of("text", text));
     }
 
+    /**
+     * 앱 홈 시간 표시줄의 하루 배치 (2026-11-23). 오늘은 서버가 정하고(기준 시각이 있으면 그날),
+     * 기준 시각이 있으면 now 로 넘겨 AI 가 그 시각 뒤의 결제를 쓰지 않게 한다. AI 는 추천 기록을 남기지 않는다.
+     */
+    public String dayPlacement(Long userId) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("day", today().toString());
+        if (fixedAt != null) {
+            body.put("now", fixedAt);
+        }
+        return client.post(userPath(userId, "/day-placement"), null, body);
+    }
+
     public String schedule(Long userId, LocalDate day) {
         return client.get(userPath(userId, "/schedules/" + day), null);
     }

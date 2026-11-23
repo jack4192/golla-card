@@ -97,6 +97,32 @@ class AiServiceTest {
         assertThat(result.get("reason_code")).isEqualTo("FALLBACK");
     }
 
+    // ---------- 하루 배치 (홈 시간 표시줄) ----------
+
+    @Test
+    @DisplayName("하루 배치: 오늘 날짜를 서버가 정해 보내고, 기준 시각이 없으면 now 는 보내지 않는다")
+    void dayPlacement() {
+        ai.reply("/internal/users/7/day-placement", 200, "{\"day\":\"x\",\"segments\":[]}");
+
+        String result = service.dayPlacement(7L);
+
+        assertThat(result).isEqualTo("{\"day\":\"x\",\"segments\":[]}");
+        assertThat(ai.last().method()).isEqualTo("POST");
+        assertThat(ai.last().path()).isEqualTo("/internal/users/7/day-placement");
+        assertThat(ai.last().body()).contains("\"day\":\"" + LocalDate.now(java.time.ZoneId.of("Asia/Seoul")) + "\"")
+                .doesNotContain("\"now\"");
+    }
+
+    @Test
+    @DisplayName("하루 배치: 기준 시각이 있으면 그날을 day 로, 그 시각을 now 로")
+    void dayPlacementFixedAt() {
+        service = service("2026-11-05T09:30:00");
+
+        service.dayPlacement(7L);
+
+        assertThat(ai.last().body()).contains("\"day\":\"2026-11-05\"").contains("\"now\":\"2026-11-05T09:30:00\"");
+    }
+
     // ---------- 기준 시각 ----------
 
     @Test
