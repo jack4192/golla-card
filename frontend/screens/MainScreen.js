@@ -24,7 +24,7 @@ import { Alert } from '../utils/demoAlert';
 import * as SecureStore from '../utils/demoStore';
 import PaymentScreen, { realProductCard, realWalletCards } from './PaymentScreen';
 import { getActiveWalletCard } from '../data/cards';
-import { canRegisterWalletCard } from '../utils/wallet';
+import { applyUrl } from '../utils/autoPlacementCore';
 import { SERVER_MODE, api } from '../utils/api';
 import { suggestionsFor, toChatHistory } from '../utils/homeChat';
 import { useCardCatalog } from '../utils/serverCatalog';
@@ -268,7 +268,9 @@ export default function MainScreen({
     return new Set(catalogCards.filter(card => codes.has(card.code)).map(card => card.code));
   }, [walletCards, catalogCards]);
   const [selectedCatalog, setSelectedCatalog] = useState(null);
-  const [registeringCard, setRegisteringCard] = useState(false);
+  // 카드 상품 상세: 내 지갑에 있는 카드인지, 미보유면 카드사 신청 페이지 주소 (없으면 '카드 신청'을 숨긴다)
+  const catalogOwned = Boolean(selectedCatalog) && walletCards.some(card => card.catalogCode === selectedCatalog.code);
+  const catalogApply = selectedCatalog && !catalogOwned ? applyUrl(selectedCatalog) : null;
   const currentCard = getActiveWalletCard(walletCards, activeCardId);
   const homeWalletCards = useMemo(() => realWalletCards(null, walletCards), [walletCards]);
   const [filter, setFilter] = useState('전체');
@@ -444,17 +446,6 @@ export default function MainScreen({
   const selectTab = nextTab => {
     setSchedulePayment(null);
     setTab(nextTab);
-  };
-  const registerCard = async code => {
-    if (!onRegisterCard || registeringCard) return;
-    setRegisteringCard(true);
-    try {
-      await onRegisterCard(code);
-    } catch (error) {
-      Alert.alert('카드 등록', error?.message || '카드를 등록하지 못했어요.');
-    } finally {
-      setRegisteringCard(false);
-    }
   };
   // 화면(탭)에 맞춘 추천 질문. AI 챗봇 평가 질문에서 골라 내 카드 이름을 넣는다 (utils/homeChat.js)
   const chatQuick = useMemo(() => suggestionsFor(tab, walletCards), [tab, walletCards]);
@@ -1123,14 +1114,8 @@ export default function MainScreen({
                     {selectedCatalog.description}
                   </Text>
                   {!!selectedCatalog.image && <Image source={selectedCatalog.image} resizeMode="contain" style={styles.catalogPlate} accessibilityLabel={selectedCatalog.name + ' 상품 이미지'}/>}
-                  {onRegisterCard && canRegisterWalletCard(selectedCatalog.code) && (
-                    walletCards.some(card => card.catalogCode === selectedCatalog.code)
-                      ? <Text style={styles.catalogIssuer}>지갑에 등록된 카드</Text>
-                      : <TouchableOpacity accessibilityRole="button" disabled={registeringCard}
-                          style={styles.walletBenefitDetailButton} onPress={() => registerCard(selectedCatalog.code)}>
-                          <Text style={styles.walletBenefitDetailButtonText}>{registeringCard ? '등록 중…' : '보유 카드로 등록'}</Text>
-                        </TouchableOpacity>
-                  )}
+                  {/* '보유 카드로 등록'은 없앴다 (2026-11-24 수정사항). 미보유 카드는 아래 '카드 신청'으로 카드사 신청 페이지를 연다 */}
+                  {catalogOwned && <Text style={styles.catalogIssuer}>지갑에 등록된 카드</Text>}
                   {selectedCatalog.registryCardId != null && <Text style={styles.catalogFee}>
                     국내 연회비 {money(selectedCatalog.annualFeeDomestic)} · 해외 연회비 {money(selectedCatalog.annualFeeOverseas)}
                   </Text>}
@@ -1208,7 +1193,17 @@ export default function MainScreen({
                 </>}
             </ScrollView>
 
-            <TouchableOpacity onPress={() => setSelectedCatalog(null)} style={{
+            {catalogApply ? <View style={styles.catalogActions}>
+                <TouchableOpacity accessibilityRole="button" onPress={() => setSelectedCatalog(null)} style={[styles.catalogAction, styles.catalogClose]}>
+                  <Text style={styles.catalogCloseText}>닫기</Text>
+                </TouchableOpacity>
+                <TouchableOpacity accessibilityRole="link" accessibilityLabel={selectedCatalog.name + ' 카드 신청'}
+                  onPress={() => Linking.openURL(catalogApply).catch(() => Alert.alert('카드 신청', '브라우저에서 카드사 신청 페이지를 열어주세요.'))}
+                  style={[styles.catalogAction, styles.catalogApply]}>
+                  <Text style={styles.catalogApplyText}>카드 신청</Text>
+                </TouchableOpacity>
+              </View>
+              : <TouchableOpacity onPress={() => setSelectedCatalog(null)} style={{
             backgroundColor: "#245DE5",
             padding: 14,
             alignItems: 'center',
@@ -1221,7 +1216,7 @@ export default function MainScreen({
             }}>
                 닫기
               </Text>
-            </TouchableOpacity>
+            </TouchableOpacity>}
           </View>
         </View>
       </Modal>
@@ -1710,6 +1705,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     padding: 25
   },
+  catalogActions: { flexDirection: 'row', gap: 8, margin: 15 },
+  catalogAction: { minHeight: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  catalogClose: { flex: 1, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#BFD3FA' },
+  catalogApply: { flex: 2, backgroundColor: '#245DE5' },
+  catalogCloseText: { color: '#245DE5', fontWeight: '800' },
+  catalogApplyText: { color: '#FFFFFF', fontWeight: '800' },
   aiNotice: { fontSize: 11, lineHeight: 16, color: '#8B95A5', textAlign: 'center', paddingHorizontal: 12, marginTop: 4 },
   disclaimer: {
     fontSize: 12,
