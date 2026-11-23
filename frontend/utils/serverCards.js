@@ -5,6 +5,10 @@
 // 그래서 카드 이름으로 둘을 짝지어 쓰고, 이름이 안 맞으면 내장 데이터의 id(같은 원본 데이터의 번호)로 짝짓습니다.
 import { api, ApiError } from './api';
 import { CSV_CARD_CATALOG } from '../data/cardCatalogCsv';
+import { CARD_CATALOG_40 } from '../data/cardCatalog40';
+
+// 앱 카드 데이터: 22장(혜택 계산용) 다음에 서버 DB 와 같은 40장을 본다. 40장이 있어 서버 카드는 모두 짝지어진다.
+const APP_CARDS = [...CSV_CARD_CATALOG, ...CARD_CATALOG_40.filter(card => !CSV_CARD_CATALOG.some(item => item.code === card.code))];
 
 const walletIdForCode = code => (code === 'SH_SOLMATE_SOL_PLAN_CHECK' ? 'solmate' : code);
 
@@ -21,8 +25,8 @@ function matchAppCode(product) {
   const name = normalizeName(product?.name);
   const short = withoutIssuer(product?.name);
   const byName =
-    CSV_CARD_CATALOG.find(card => normalizeName(card.name) === name) ||
-    (short && CSV_CARD_CATALOG.find(card => withoutIssuer(card.name) === short));
+    APP_CARDS.find(card => normalizeName(card.name) === name) ||
+    (short && APP_CARDS.find(card => withoutIssuer(card.name) === short));
   if (byName) return byName.code;
   const byId = CSV_CARD_CATALOG.find(card => String(card.id) === String(product?.cardCode));
   return byId?.code ?? null;
