@@ -205,7 +205,7 @@ export default function TodaySchedulePanel({
   onPay,
   onOpenCards,
   cardList = null,
-  paymentsList = null,   // 홈 '최근 결제' (서버 모드, MainScreen 이 넣는다)
+  paymentsList = null,   // 홈 '최근 이용내역' (서버 모드, MainScreen 이 넣는다)
   headerRight = null,    // 홈 '내 지갑' 제목 오른쪽 (자동 배치 스위치, 2026-11-24 수정사항)
   onOpenSchedule,
   sampleActive,

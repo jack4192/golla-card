@@ -113,6 +113,36 @@ class PaymentApiTest {
     }
 
     @Test
+    @DisplayName("지난 한 달 이용은 로그인이 필요하다")
+    void monthSummaryNeedsLogin() throws Exception {
+        mvc.perform(get("/api/payments/month-summary")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("지난 한 달 이용: 10-04 ~ 기준 시각, 건수·금액 합이 그 기간 하루 결제를 모두 더한 것과 같다")
+    void monthSummary() throws Exception {
+        String body = mvc.perform(get("/api/payments/month-summary").header("Authorization", token(1)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.from").value("2026-10-04"))
+                .andExpect(jsonPath("$.until").value("2026-11-04T12:00:00"))
+                .andExpect(jsonPath("$.count", greaterThan(0)))
+                .andReturn().getResponse().getContentAsString();
+        JsonNode s = json.readTree(body);
+        int count = 0;
+        long amount = 0;
+        for (java.time.LocalDate day = java.time.LocalDate.of(2026, 10, 4); !day.isAfter(java.time.LocalDate.of(2026, 11, 4)); day = day.plusDays(1)) {
+            JsonNode rows = json.readTree(mvc.perform(get("/api/payments").param("date", day.toString())
+                    .header("Authorization", token(1))).andReturn().getResponse().getContentAsString());
+            for (JsonNode row : rows) {
+                count++;
+                amount += row.get("amount").asLong();
+            }
+        }
+        assert s.get("count").asInt() == count && s.get("amount").asLong() == amount
+                : "합이 다르다: " + s + " / " + count + "건 " + amount + "원";
+    }
+
+    @Test
     @DisplayName("다른 사람의 결제는 보이지 않는다")
     void notOthers() throws Exception {
         mvc.perform(get("/api/payments").param("date", "2026-11-04").header("Authorization", token(2)))
