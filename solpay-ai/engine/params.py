@@ -27,6 +27,8 @@ class Params:
     switch_threshold: int = 150
     switch_ratio: float = 0.0           # > 0 이면 전환 기준 = max(switch_min, 결제액 × switch_ratio). 0 이면 switch_threshold 고정
     switch_min: int = 100
+    # 연말 결산 놓친 혜택: 이 금액(원) 미만인 카드는 보여 주지 않는다 (2026-11-24 사용자 결정 '1만 원 미만 숨기기')
+    missed_min_gain: int = 10000
     evidence_prob: float = 0.3          # 근거 시나리오 확률 합의 최소값
     # 큰 혜택 예외 (2026-11-23 사용자 결정): 점수 차이(즉시 혜택 + 프로모션)가 이 금액 이상이면 기본 카드의 실적 가치
     #   (v4 교체 기준)를 넘지 않아도 바꾼다. 근거 확률 조건은 그대로. 0 이면 끈다 (v4.2).

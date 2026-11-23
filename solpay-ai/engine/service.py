@@ -612,14 +612,26 @@ class PlacementService:
         return {"category": answer["category"], "brand": brand, "brand_name": brands.get(brand), "source": "llm",
                 "candidates": []}, True
 
-    def missed_benefit(self, user_id: int, at, days: int = 365) -> list[dict]:
-        """연말정산 안내: 지난 days 일 동안 각 신한카드가 있었다면 더 받았을 금액 (상위 3장)."""
-        from datetime import timedelta
+    def missed_benefit(self, user_id: int, at, days: int = 365, start=None) -> list[dict]:
+        """연말정산 안내: 지난 days 일 동안 각 신한카드가 있었다면 더 받았을 금액 (상위 3장).
+        start(date, 2026-11-24 연말 결산): 주면 그 달부터 at 까지 센다. 전달 1일부터 start 전 결제는 실적만 쌓는다.
+        params.missed_min_gain 원 미만인 카드는 뺀다 (2026-11-24 사용자 결정)."""
+        from datetime import datetime, timedelta
         from engine.recommend import missed_benefit
         context = self.store.context(user_id, at)
         state = self.build_state(context, at)
-        rows = [p for p in context.payments if at - timedelta(days=days) <= p.paid_at < at]
-        return [m for m in missed_benefit(state, rows, self.engine.params.switch_threshold) if m["gain"] > 0][:3]
+        params = self.engine.params
+        if start is None:
+            rows = [p for p in context.payments if at - timedelta(days=days) <= p.paid_at < at]
+            found = missed_benefit(state, rows, params.switch_threshold)
+        else:
+            y, m = (start.year, start.month - 1) if start.month > 1 else (start.year - 1, 12)
+            warm = datetime(y, m, 1, tzinfo=at.tzinfo)
+            rows = [p for p in context.payments if warm <= p.paid_at < at]
+            months = (at.year * 12 + at.month) - (start.year * 12 + start.month) + 1
+            found = missed_benefit(state, rows, params.switch_threshold,
+                                   count_from=(start.year, start.month), months=months)
+        return [m for m in found if m["gain"] >= params.missed_min_gain][:3]
 
     # ---------- 월간 리포트 (설계서 2026-11-22-monthly-report-design.md) ----------
     def monthly_report(self, user_id: int, at, writer=None) -> dict:
