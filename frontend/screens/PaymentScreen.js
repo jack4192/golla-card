@@ -729,7 +729,10 @@ export default function PaymentScreen({
           아래에서 카드 선택 이유와 상세 혜택을 확인하세요 ↓
         </Text>
 
-        <PaymentCardOrder cards={options} selectedId={selected.id} onSelect={choose} aiOrder={ai?.fallback ? null : ai?.order} />
+        {/* 결제 화면은 AI·일정이 고른 카드를 지켜야 해서 맨 위 카드를 자동으로 고르지 않습니다(syncSelection=false). */}
+        <PaymentCardOrder cards={options} selectedId={selected.id} syncSelection={false}
+          onSelect={id => { const item = options.find(option => option.id === id); if (item) choose(item); }}
+          aiOrder={ai?.fallback ? null : ai?.order} />
 
         <View style={s.box}>
           <Text style={s.heading}>카드 선정 이유</Text>

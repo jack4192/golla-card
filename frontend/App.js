@@ -14,7 +14,7 @@ import {
 import { Alert } from './utils/demoAlert';
 import * as DemoStore from './utils/demoStore';
 import { createRandomHex, hashPassword } from './utils/demoCrypto';
-import { SERVER_MODE, api, clearToken } from './utils/api';
+import { SERVER_MODE, api, clearToken, readToken } from './utils/api';
 import { registerServerCard, resetServerCards } from './utils/serverCards';
 import { applySignupJob, rememberSignupJob } from './utils/signupJob';
 import { cancelPhoneNotifications, requestPhonePermission } from './utils/notifications';
@@ -47,6 +47,8 @@ import PrivacyDataModal from './components/PrivacyDataModal';
 
 import { getActiveWalletCard } from './data/cards';
 
+// 로그인 상태('active'). 로그아웃하면 지우고, 앱을 다시 열 때 있으면 로그인을 이어 갑니다.
+const SESSION_KEY = 'solpay_demo_session_v1';
 // 마지막으로 이메일 로그인한 계정(데모 계정 카드 자동 등록 판단용)
 const LOGIN_EMAIL_KEY = 'solpay_demo_login_email_v1';
 const ACCOUNT_KEY = 'solpay_demo_account_v1';
@@ -186,13 +188,35 @@ export default function App() {
       await Promise.allSettled([
         DemoStore.deleteItemAsync('solpay_demo_pin_v1'),
         DemoStore.deleteItemAsync('solpay_demo_pin_attempts_v1'),
-        DemoStore.deleteItemAsync('solpay_demo_session_v1'),
         DemoStore.deleteItemAsync('solpay_demo_full_logout_v1'),
-        ...(SERVER_MODE ? [clearToken()] : []),
       ]);
 
-      const savedAccount = await readDemoAccount();
-      if (active) setDemoAccount(savedAccount);
+      const [savedAccount, session, savedToken] = await Promise.all([
+        readDemoAccount(),
+        DemoStore.getItemAsync(SESSION_KEY),
+        SERVER_MODE ? readToken() : null,
+      ]);
+      if (!active) return;
+      setDemoAccount(savedAccount);
+
+      // 로그아웃하지 않고 앱을 닫았거나 새로고침했으면 로그인 상태를 이어 갑니다.
+      // 서버 모드에서는 저장된 로그인 정보가 아직 유효한지 서버에 확인합니다.
+      let resume = session === 'active' && !savedAccount?.firstLogin && (!SERVER_MODE || Boolean(savedToken));
+      if (SERVER_MODE && resume) {
+        try {
+          await api.me();
+        } catch {
+          resume = false;
+        }
+        if (!active) return;
+      }
+
+      if (resume) {
+        await afterAuthentication();
+        return;
+      }
+      await DemoStore.deleteItemAsync(SESSION_KEY);
+      if (SERVER_MODE && savedToken) await clearToken();
     };
 
     restore()
@@ -371,6 +395,7 @@ export default function App() {
     ]);
 
     const completed = finished === 'yes' && savedConsent?.termsAgreed === true;
+    await DemoStore.setItemAsync(SESSION_KEY, 'active');
     setAuthenticated(true);
     setAllowAutomaticAds(completed && !firstSignupLogin);
     setConsent(savedConsent);
@@ -536,6 +561,7 @@ export default function App() {
         resetServerCards();
       }
       await cancelPhoneNotifications().catch(() => {});
+      await DemoStore.deleteItemAsync(SESSION_KEY);
       setAuthenticated(false);
       setAllowAutomaticAds(false);
       setConsentDraft(null);
