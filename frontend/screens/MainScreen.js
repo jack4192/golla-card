@@ -11,6 +11,12 @@ import TodaySchedulePanel from '../components/TodaySchedulePanel';
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform, Vibration } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import YearEndReport from '../components/YearEndReport';
+import CardPickerSheet from '../components/CardPickerSheet';
+import QuickPaySheet from '../components/QuickPaySheet';
+import NotificationCenter, { NotificationBell, useInbox } from '../components/NotificationCenter';
+import { PHONE_NOTIFICATIONS_SUPPORTED, addPhoneNotificationOpenListener, refreshDailyNotifications, requestPhonePermission, syncPhoneNotifications } from '../utils/notifications';
+import { eventTitle, readEvents } from '../utils/routineData';
 import { Alert } from '../utils/demoAlert';
 import * as SecureStore from '../utils/demoStore';
 import { createPinSalt, hashPin } from '../utils/pinCrypto';
@@ -270,6 +276,13 @@ export default function MainScreen({
   const [sampleActive, setSampleActive] = useState(null);
   const [adRequest, setAdRequest] = useState(null);
   const [catalogQuery, setCatalogQuery] = useState('');
+  const [catalogFilter, setCatalogFilter] = useState('all');
+  // 지갑에 등록된 카드의 상품 코드 (카드 탭에서 '내 카드' 표시용)
+  const ownedCatalogCodes = useMemo(() => {
+    const codes = new Set(walletCards.map(card => findCatalog40Product(card)?.code || card.catalogCode).filter(Boolean));
+    // 상품 목록(CARD_CATALOG_40)에 있는 카드만 세서 '내 카드 N' 숫자와 목록이 맞게 합니다.
+    return new Set(CARD_CATALOG_40.filter(card => codes.has(card.code)).map(card => card.code));
+  }, [walletCards]);
   const [selectedCatalog, setSelectedCatalog] = useState(null);
   const [registeringCard, setRegisteringCard] = useState(false);
   const currentCard = getActiveWalletCard(walletCards, activeCardId);
@@ -282,6 +295,25 @@ export default function MainScreen({
   const [chatMessages, setChatMessages] = useState([]);
   const [exitOpen, setExitOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [yearEndOpen, setYearEndOpen] = useState(false);
+  // 홈 '다른 카드로 변경' 바텀시트
+  const [cardSheetOpen, setCardSheetOpen] = useState(false);
+  // '이 카드로 결제' QR 결제 바텀시트(열려 있으면 결제 맥락: cardId, 일정 정보 등)
+  const [paySheet, setPaySheet] = useState(null);
+  const openPaySheet = context => {
+    if (context?.cardId) onSelectCard(context.cardId);
+    setPaySheet({ ...context, returnTab: tab });
+  };
+  // 시트에서 '혜택 자세히 보기' → 기존 결제 화면(혜택 비교 포함)으로
+  const openFullPayment = () => {
+    const context = paySheet;
+    setPaySheet(null);
+    setSchedulePayment(context);
+    setTab('payment');
+  };
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [phoneNotifyBusy, setPhoneNotifyBusy] = useState(false);
+  const inbox = useInbox();
   const [pinChangeOpen, setPinChangeOpen] = useState(false);
   const [pinForm, setPinForm] = useState({
     old: '',
@@ -327,6 +359,44 @@ export default function MainScreen({
       active = false;
     };
   }, []);
+  // 앱을 열 때 오늘 알림(일정·혜택)을 알림함에 넣고, 동의한 경우 폰 알림 예약을 맞춥니다.
+  useEffect(() => {
+    let active = true;
+    readEvents().catch(() => []).then(events => {
+      if (!active) return;
+      refreshDailyNotifications({ events, titleOf: eventTitle, promotions: activePromotions() }).catch(() => {});
+      if (savedConsent) {
+        syncPhoneNotifications({ agreed: savedConsent.morningNotificationAgreed === true, events, titleOf: eventTitle }).catch(() => {});
+      }
+    });
+    return () => { active = false; };
+  }, [savedConsent]);
+  // 알림(알림함 또는 폰 알림)을 눌렀을 때 해당 화면으로 이동
+  const openNotificationTarget = target => {
+    setNotificationsOpen(false);
+    setSettingsOpen(false);
+    if (target === 'yearend') setYearEndOpen(true);
+    else if (['home', 'benefits', 'schedule', 'cards', 'payment'].includes(target)) selectTab(target);
+  };
+  useEffect(() => addPhoneNotificationOpenListener(target => openNotificationTarget(target)), []);
+  // 설정 > 폰 알림 받기: 켜면 권한을 요청하고, 동의 기록(알림 수신 동의)도 함께 바꿉니다.
+  const togglePhoneNotifications = async value => {
+    if (phoneNotifyBusy) return;
+    setPhoneNotifyBusy(true);
+    try {
+      if (value && !(await requestPhonePermission())) {
+        Alert.alert('알림 권한 필요', '휴대폰 설정에서 SOL·Pay(또는 Expo Go) 알림을 허용한 뒤 다시 켜주세요.');
+        return;
+      }
+      const next = { ...(savedConsent || {}), morningNotificationAgreed: value, savedAt: new Date().toISOString() };
+      await SecureStore.setItemAsync(CONSENT_KEY, JSON.stringify(next));
+      setSavedConsent(next);
+    } catch {
+      Alert.alert('저장 실패', '알림 설정을 저장하지 못했어요. 다시 시도해주세요.');
+    } finally {
+      setPhoneNotifyBusy(false);
+    }
+  };
   const persistUISettings = async (notice, vibration) => {
     setSettingsBusy(true);
     try {
@@ -590,7 +660,7 @@ export default function MainScreen({
   };
   const renderSchedule = (home = false) => <TodaySchedulePanel
     home={home}
-    onOpenCards={() => selectTab('cards')}
+    onOpenCards={() => walletCards.length ? setCardSheetOpen(true) : selectTab('cards')}
     onOpenSchedule={() => selectTab('schedule')}
     disabled={scheduleDisabled}
     onEditRoutine={onEditRoutine}
@@ -600,12 +670,19 @@ export default function MainScreen({
     sampleActive={sampleActive}
     onStartSample={setSampleActive}
     onEndSample={() => setSampleActive(null)}
-    onPay={context => {
-      onSelectCard(context.cardId);
-      setSchedulePayment({ ...context, returnTab: tab });
-      setTab('payment');
-    }}
+    onPay={openPaySheet}
   />;
+  // 연말 결산 바로가기
+  const renderYearEndTile = () => <TouchableOpacity accessibilityRole="button" accessibilityLabel="올해 카드 결산 보기"
+      style={styles.yearEndTile} onPress={() => setYearEndOpen(true)}>
+      <View style={styles.yearEndIcon}><Ionicons name="stats-chart-outline" size={20} color="#1459F5" /></View>
+      <View style={styles.flexOne}>
+        <Text style={styles.yearEndTitle}>올해 카드 결산</Text>
+        <Text style={styles.yearEndText}>추천 카드로 얼마나 아꼈는지, 놓친 혜택은 얼마인지 확인해요</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={16} color="#647890" />
+    </TouchableOpacity>;
+
   const renderHomeHighlights = () => {
     const [promotion, ...morePromotions] = activePromotions();
     const [benefit, ...moreBenefits] = ALL_BENEFITS.filter(item =>
@@ -692,7 +769,7 @@ export default function MainScreen({
       </Text>
     </>;
   const renderCardsHeader = () => <View style={styles.catalogHeading}>
-      <WalletDeck cards={walletCards} selected={currentCard} onSelect={onSelectCard} canPay={Boolean(realProductCard(currentCard))} onPay={() => selectTab("payment")}
+      <WalletDeck cards={walletCards} selected={currentCard} onSelect={onSelectCard} canPay={Boolean(realProductCard(currentCard))} onPay={() => openPaySheet({ cardId: currentCard?.id })}
         highlight={findCatalog40Product(currentCard)?.benefits[0]?.name || WALLET_CARD_BENEFITS[currentCard?.id]?.highlights[0]?.value}
         status={currentCard?.status} onDetails={() => {
           const product = findCatalog40Product(currentCard);
@@ -700,14 +777,28 @@ export default function MainScreen({
           else if (WALLET_CARD_BENEFITS[currentCard?.id]) setWalletBenefitDetailsOpen(true);
         }} />
 
+      {/* 내 지갑(보유 카드)과 전체 카드 상품을 확실히 나눠서, 상품 목록이 내 카드처럼 보이지 않게 합니다. */}
+      <View style={styles.catalogDivider} />
       <Text style={{
       fontSize: 18,
       fontWeight: "800",
-      color: '#203251',
-      marginBottom: 8
+      color: '#203251'
     }}>
-        카드 상품
+        전체 카드 상품
       </Text>
+      <Text style={styles.catalogIssuer}>
+        내 카드가 아닌 상품도 함께 보여요. 눌러서 혜택을 보고 내 카드로 등록할 수 있어요.
+      </Text>
+
+      <View style={styles.catalogFilterRow} accessibilityRole="tablist">
+        {[['all', '전체'], ['owned', `내 카드 ${ownedCatalogCodes.size}`], ['notOwned', '미보유']].map(([key, label]) => {
+        const active = catalogFilter === key;
+        return <TouchableOpacity key={key} accessibilityRole="tab" accessibilityState={{ selected: active }}
+            onPress={() => setCatalogFilter(key)} style={[styles.catalogFilterChip, active && styles.catalogFilterChipActive]}>
+            <Text style={[styles.catalogFilterText, active && styles.catalogFilterTextActive]}>{label}</Text>
+          </TouchableOpacity>;
+      })}
+      </View>
 
       <TextInput placeholder="카드 이름이나 혜택 검색" value={catalogQuery} onChangeText={setCatalogQuery} style={{
       backgroundColor: "#FFFFFF",
@@ -721,25 +812,35 @@ export default function MainScreen({
     </View>;
   const renderCards = () => {
     const query = catalogQuery.trim().toLowerCase();
-    const results = query ? CARD_CATALOG_40.filter(card =>
+    const byQuery = query ? CARD_CATALOG_40.filter(card =>
       [card.name, card.issuer, card.description, ...card.tags, ...card.benefits.map(benefit => benefit.name)]
         .join(' ').toLowerCase().includes(query)
     ) : CARD_CATALOG_40;
+    const results = catalogFilter === 'all' ? byQuery
+      : byQuery.filter(card => ownedCatalogCodes.has(card.code) === (catalogFilter === 'owned'));
     return <FlatList style={styles.mainScroll} contentContainerStyle={[styles.pageContent, styles.chatClearance]}
       showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"
       data={results} keyExtractor={card => card.code} ListHeaderComponent={renderCardsHeader()}
       initialNumToRender={5} maxToRenderPerBatch={5} windowSize={3}
-      ListEmptyComponent={<Text style={styles.catalogIssuer}>검색 결과가 없어요.</Text>}
-      renderItem={({ item }) => <TouchableOpacity accessibilityRole="button" accessibilityLabel={item.name + ' 상품 상세'}
-          onPress={() => setSelectedCatalog(item)} style={styles.catalogRow}>
+      ListEmptyComponent={<Text style={styles.catalogIssuer}>
+        {catalogFilter === 'owned' && !query ? '아직 등록한 내 카드가 없어요. 전체 상품에서 카드를 눌러 등록해보세요.' : '검색 결과가 없어요.'}
+      </Text>}
+      renderItem={({ item }) => {
+        const owned = ownedCatalogCodes.has(item.code);
+        return <TouchableOpacity accessibilityRole="button" accessibilityLabel={item.name + (owned ? ' 내 카드' : ' 미보유 상품') + ' 상세'}
+          onPress={() => setSelectedCatalog(item)} style={[styles.catalogRow, owned && styles.catalogRowOwned]}>
         {!!item.image && <Image source={item.image} resizeMode="contain" fadeDuration={0}
           style={styles.catalogThumb} accessibilityLabel={item.name + ' 상품 이미지'} />}
         <View style={styles.catalogRowText}>
+          <View style={[styles.catalogBadge, owned ? styles.catalogBadgeOwned : styles.catalogBadgeProduct]}>
+            <Text style={[styles.catalogBadgeText, owned && styles.catalogBadgeTextOwned]}>{owned ? '✓ 내 카드' : '미보유 · 상품'}</Text>
+          </View>
           <Text style={styles.catalogName}>{item.name}</Text>
           <Text style={styles.catalogIssuer}>{item.issuer} · {item.type}</Text>
         </View>
         <Ionicons name="chevron-forward" size={16} color="#647890" />
-      </TouchableOpacity>}
+      </TouchableOpacity>;
+      }}
     />;
   };
 
@@ -768,6 +869,10 @@ export default function MainScreen({
         }} />
         </SettingsGroup>
 
+        <SettingsGroup title="결산">
+          <SettingsItem icon="stats-chart-outline" title="연말 결산" subtitle="올해 아낀 금액·놓친 금액과 월별 추천 기록" onPress={() => setYearEndOpen(true)} />
+        </SettingsGroup>
+
         <SettingsGroup title="알림">
           <SettingsToggle icon="notifications-outline" title="앱 내 혜택 알림" subtitle="혜택 탭에 진행 중인 혜택 안내 표시" value={appNotice} disabled={settingsBusy} onChange={value => persistUISettings(value, vibrationOn)} />
         </SettingsGroup>
@@ -788,7 +893,9 @@ export default function MainScreen({
         </SettingsGroup>
 
         <SettingsGroup title="서비스·이용 동의">
-          <SettingsItem icon="notifications-outline" title="알림 수신 동의" value={savedConsent ? savedConsent.morningNotificationAgreed ? '선택함' : '선택 안 함' : '기록 없음'} />
+          {PHONE_NOTIFICATIONS_SUPPORTED
+            ? <SettingsToggle icon="notifications-outline" title="폰 알림 받기 (알림 수신 동의)" subtitle="매일 아침 8시 안내 · 일정 30분 전 알림" value={savedConsent?.morningNotificationAgreed === true} disabled={phoneNotifyBusy || !savedConsent} onChange={togglePhoneNotifications} />
+            : <SettingsItem icon="notifications-outline" title="알림 수신 동의" value={savedConsent ? savedConsent.morningNotificationAgreed ? '선택함' : '선택 안 함' : '기록 없음'} subtitle="폰 알림은 아이폰·안드로이드 앱에서만 받을 수 있어요" />}
         </SettingsGroup>
 
         <SettingsGroup title="앱 정보">
@@ -814,6 +921,8 @@ export default function MainScreen({
           </View>
 
           <View style={styles.headerActions}>
+            <NotificationBell items={inbox} onPress={() => setNotificationsOpen(true)} />
+
             <TouchableOpacity style={styles.iconCircle} onPress={() => setSettingsOpen(true)}>
               <Ionicons name="settings-outline" size={21} color="#244E9C" />
             </TouchableOpacity>
@@ -834,7 +943,7 @@ export default function MainScreen({
           onClose={() => selectTab(schedulePayment?.returnTab || 'home')}
           onOpenCards={() => selectTab('cards')}
         /> : tab === 'cards' ? renderCards() : <ScrollView key={tab} style={styles.mainScroll} contentContainerStyle={[styles.pageContent, styles.chatClearance]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            {tab === 'home' && <>{renderSchedule(true)}{renderHomeHighlights()}</>}
+            {tab === 'home' && <>{renderSchedule(true)}{renderYearEndTile()}{renderHomeHighlights()}</>}
             {tab === 'benefits' && renderBenefits()}
             {tab === 'schedule' && renderSchedule()}
           </ScrollView>}
@@ -848,7 +957,7 @@ export default function MainScreen({
       {!settingsOpen && <View style={styles.bottomNav}>
           {NAV.map(item => {
         const active = item.id === tab;
-        return <TouchableOpacity key={item.id} accessibilityRole="tab" accessibilityState={{selected:active}} style={[styles.navItem,active && {borderTopWidth:3,borderTopColor:"#175BE3"}]} onPress={() => selectTab(item.id)}>
+        return <TouchableOpacity key={item.id} accessibilityRole="tab" accessibilityState={{selected:active}} style={[styles.navItem,active && {borderTopWidth:3,borderTopColor:"#175BE3"}]} onPress={() => item.id === 'payment' && realProductCard(currentCard) ? openPaySheet({ cardId: currentCard.id }) : selectTab(item.id)}>
                 <Ionicons name={active ? item.active : item.icon} size={23} color={active ? '#245CEA' : '#98A2B4'} />
                 <Text style={[styles.navLabel, active && styles.navLabelActive]}>
                   {item.label}
@@ -858,6 +967,13 @@ export default function MainScreen({
         </View>}
 
       {Platform.OS === 'web' && <View style={styles.devClearance} />}
+
+      <YearEndReport visible={yearEndOpen} onClose={() => setYearEndOpen(false)} />
+      <QuickPaySheet visible={!!paySheet} cards={walletCards} cardId={currentCard?.id} context={paySheet}
+        onSelectCard={onSelectCard} onClose={() => setPaySheet(null)} onOpenDetails={openFullPayment} />
+      <CardPickerSheet visible={cardSheetOpen} cards={walletCards} selectedId={currentCard?.id}
+        onSelect={onSelectCard} onClose={() => setCardSheetOpen(false)} onAddCard={() => selectTab('cards')} />
+      <NotificationCenter visible={notificationsOpen} items={inbox} onClose={() => setNotificationsOpen(false)} onOpenTarget={openNotificationTarget} />
 
       <Modal visible={exitOpen} transparent animationType="fade" onRequestClose={() => setExitOpen(false)}>
         <View style={styles.modalOverlay}>
@@ -1227,6 +1343,23 @@ const styles = StyleSheet.create({
   catalogName:{fontSize:14,fontWeight:'800',color:'#1D304D'},
   catalogIssuer:{fontSize:12,color:'#586E8B'},
   catalogThumb:{width:92,height:62},
+  yearEndTile:{flexDirection:'row',alignItems:'center',gap:12,backgroundColor:'#FFFFFF',borderRadius:16,padding:14,marginTop:14},
+  yearEndIcon:{width:40,height:40,borderRadius:20,backgroundColor:'#E4EDFF',alignItems:'center',justifyContent:'center'},
+  yearEndTitle:{fontSize:15,fontWeight:'800',color:'#1D304D'},
+  yearEndText:{fontSize:12,lineHeight:18,color:'#586E8B',marginTop:2},
+  flexOne:{flex:1},
+  catalogDivider:{height:1,backgroundColor:'#E2E8F2',marginTop:18,marginBottom:6},
+  catalogFilterRow:{flexDirection:'row',gap:8,marginTop:4},
+  catalogFilterChip:{paddingHorizontal:14,paddingVertical:8,borderRadius:999,backgroundColor:'#EEF2F8'},
+  catalogFilterChipActive:{backgroundColor:'#1459F5'},
+  catalogFilterText:{fontSize:13,fontWeight:'700',color:'#4A5D7A'},
+  catalogFilterTextActive:{color:'#FFFFFF'},
+  catalogRowOwned:{borderWidth:1.5,borderColor:'#9DB8F5'},
+  catalogBadge:{alignSelf:'flex-start',paddingHorizontal:8,paddingVertical:2,borderRadius:6},
+  catalogBadgeOwned:{backgroundColor:'#E4EDFF'},
+  catalogBadgeProduct:{backgroundColor:'#F1F3F6'},
+  catalogBadgeText:{fontSize:11,fontWeight:'700',color:'#6A7A91'},
+  catalogBadgeTextOwned:{color:'#1459F5'},
   catalogPlate:{width:'100%',maxWidth:300,height:180,alignSelf:'center'},
   catalogFee:{fontSize:13,lineHeight:20,color:'#526783',marginVertical:8},
   chatClearance:{paddingBottom:90},

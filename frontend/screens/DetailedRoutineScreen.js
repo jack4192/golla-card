@@ -294,11 +294,12 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
             </View>
             <ScrollView style={s.editorScroll} keyboardShouldPersistTaps="handled">
               <View style={s.directEntry}>
-                <Text style={s.directTitle}>직접 입력</Text>
-                <TextInput accessibilityLabel="일정 이름 직접 입력" style={[s.input, form.category === 'other' && s.selected]}
+                <Text style={s.directTitle}>업종 직접 입력</Text>
+                <TextInput accessibilityLabel="업종 직접 입력" style={[s.input, form.category === 'other' && s.selected]}
                   value={form.title} onFocus={() => update('category', 'other')} onChangeText={enterTitle}
-                  maxLength={ROUTINE_TITLE_LIMIT} editable={!disabled} placeholder="예: 출근 지하철"
+                  maxLength={ROUTINE_TITLE_LIMIT} editable={!disabled} placeholder="예: 헬스장, 영화관, 미용실"
                   placeholderTextColor="#697C98" returnKeyType="done" />
+                <Text style={s.directHint}>아래에 없는 업종은 직접 적어주세요. 적은 업종으로 카드 혜택을 찾아 추천해요.</Text>
               </View>
               <View style={s.options}>
                 {activities.map(([id, label]) => (
@@ -361,6 +362,7 @@ const s = StyleSheet.create({
   options: { gap: 6, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   directEntry: { alignSelf: 'center', width: '100%', maxWidth: 340, gap: 8, marginBottom: 12 },
   directTitle: { color: '#1854D8', fontSize: 15, fontWeight: '800', textAlign: 'center' },
+  directHint: { color: '#5A6E89', fontSize: 12, lineHeight: 18, textAlign: 'center' },
   option: { width: '48%', minHeight: 46, flexDirection: 'row', gap: 6, paddingHorizontal: 6, paddingVertical: 8, alignItems: 'center', borderRadius: 16, borderWidth: 1, borderColor: 'transparent' },
   optionLabel: { color: '#152D50', flexShrink: 1, fontSize: 13, fontWeight: '700' },
   selected: { backgroundColor: '#E2EDFF', borderColor: '#8CA8EF' },

@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import * as Store from './demoStore';
 import { CSV_CARD_CATALOG } from '../data/cardCatalogCsv';
-import { CATEGORIES, dateKey, makeSignals } from './routineData';
+import { categoryWords, dateKey, isCustomCategory, makeSignals } from './routineData';
 
 const KEY = 'solpay_recommendation_preferences_v1';
 const PREFIX = 'solpay_demo_';
@@ -485,6 +485,12 @@ function matchesCategory(
 
   if (general) return true;
 
+  // 직접 입력한 업종(custom:...)은 혜택 이름·조건 문구에서 그 말을 찾습니다.
+  if (isCustomCategory(category)) {
+    const text = (name + ' ' + String(benefit.note || '')).toLowerCase().replace(/s+/g, '');
+    return categoryWords(category).some(word => text.includes(word.toLowerCase().replace(/s+/g, '')));
+  }
+
   const special = signal.reasons.some(reason =>
     reason.startsWith('오늘 ')
   );
@@ -547,7 +553,7 @@ function matchesCategory(
     return false;
   }
 
-  return CATEGORIES[category].words.some(word =>
+  return categoryWords(category).some(word =>
     name.includes(word.toLowerCase())
   );
 }
