@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import ScheduleTimeWheel from './ScheduleTimeWheel';
 import { INDUSTRIES, INDUSTRY_ICONS, ROUTINE_TITLE_LIMIT } from '../utils/routineDetails';
-import { CATEGORIES, categoryLabel, isCustomCategory, EVENT_ICONS, EVENT_OPTIONS, eventBenefitCategories, confirmToday, dateKey, deleteEvent, eventTimeCaption, eventTitle, eventTypeBenefitLabel, readEvents, saveEvent, shiftDate, validDate } from '../utils/routineData';
+import { CATEGORIES, categoryLabel, isCustomCategory, EVENT_ICONS, EVENT_OPTIONS, eventBenefitCategories, confirmToday, dateKey, deleteEvent, eventTimeCaption, eventTitle, eventTypeBenefitLabel, readEvents, saveEvent, shiftDate } from '../utils/routineData';
 
 // 시간대 빠른 선택
 const TIME_PRESETS = [
@@ -23,6 +24,16 @@ const formatTime = text => {
 };
 const rangeReadyOf = (mode, start, end) => mode === 'allday' || (isStart(start) && isEnd(end) && start !== end);
 const isOvernight = (mode, start, end) => mode === 'range' && isStart(start) && isEnd(end) && end !== '24:00' && end < start;
+const toMinutes = time => {
+  const [hour, minute] = time.split(':').map(Number);
+  return hour * 60 + minute;
+};
+const clockTime = minutes => String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0');
+const suggestedTime = () => {
+  const now = new Date();
+  const hour = Math.min(23, now.getHours() + (now.getMinutes() ? 1 : 0));
+  return { start: clockTime(hour * 60), end: clockTime((hour + 1) * 60) };
+};
 
 function dateHeading(day) {
   const today = dateKey();
@@ -158,10 +169,11 @@ function MemoInput({ memo, setMemo, types, disabled }) {
 const problemOf = (types, mode, start, end) => !types.length ? '일정을 직접 입력하거나 아래에서 골라주세요.'
   : !rangeReadyOf(mode, start, end) ? '시작·종료 시간을 입력하거나 하루 종일을 선택해주세요.' : '';
 
-// mode: 'manage' = 등록된 일정 목록·수정·삭제, 'add' = 새 일정 추가
+// mode: 'manage' = 등록된 일정 목록, 'add' / 'edit' = 일과 입력 창
 export default function SpecialScheduleModal({
   visible,
   mode = 'manage',
+  editingEvent = null,
   onClose,
   onChanged,
   onConfirmed,
@@ -170,7 +182,8 @@ export default function SpecialScheduleModal({
   readOnly = false
 }) {
   const adding = mode === 'add';
-  const [date, setDate] = useState(dateKey);
+  const editing = mode === 'edit' && editingEvent != null;
+  const compactEditor = adding || editing;
   const [events, setEvents] = useState([]);
   const [types, setTypes] = useState([]);
   const [memo, setMemo] = useState('');
@@ -185,8 +198,7 @@ export default function SpecialScheduleModal({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [message, setMessage] = useState('');
-  // 방금 추가한 일정(추가 완료 안내용). 새로 입력을 시작하면 안내를 숨긴다.
-  const [added, setAdded] = useState(null);
+  const [extraOpen, setExtraOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
   const lock = useRef(false);
@@ -205,7 +217,6 @@ export default function SpecialScheduleModal({
     setLoading(true);
     setLoadError('');
     setMessage('');
-    setAdded(null);
     setSheet(null);
     readEvents().then(value => {
       if (active) setEvents(value);
@@ -228,9 +239,35 @@ export default function SpecialScheduleModal({
     setStart('');
     setEnd('');
   };
-  const dirty = adding && (types.length > 0 || !!memo.trim() || timeMode === 'range');
+  const resetAdd = () => {
+    const time = suggestedTime();
+    setTypes([]);
+    setPlaceTitle('');
+    setMemo('');
+    setTimeMode('range');
+    setStart(time.start);
+    setEnd(time.end);
+    setExtraOpen(false);
+  };
+  useEffect(() => {
+    if (!visible || !compactEditor) return;
+    if (!editing) {
+      resetAdd();
+      return;
+    }
+    const time = suggestedTime();
+    setPlaceTitle(eventTitle(editingEvent));
+    setMemo(editingEvent.memo || '');
+    setTimeMode(editingEvent.start && editingEvent.end ? 'range' : 'allday');
+    setStart(editingEvent.start || time.start);
+    setEnd(editingEvent.end || time.end);
+    setExtraOpen(false);
+  }, [visible, compactEditor, editing, editingEvent]);
   const disabled = busy || loading || !!loadError || readOnly;
-  const formProblem = problemOf(types, timeMode, start, end);
+  const canSaveAdd = !disabled && !!placeTitle.trim() && rangeReadyOf(timeMode, start, end);
+  const duration = timeMode === 'range' && rangeReadyOf(timeMode, start, end)
+    ? (toMinutes(end) - toMinutes(start) + 1440) % 1440 : 0;
+  const durationText = [Math.floor(duration / 60) && Math.floor(duration / 60) + '시간', duration % 60 && duration % 60 + '분'].filter(Boolean).join(' ');
   const today = dateKey();
   const sorted = [...events].sort((a, b) => a.date.localeCompare(b.date) || (a.start || '').localeCompare(b.start || ''));
   const upcoming = sorted.filter(event => event.date >= today);
@@ -245,11 +282,6 @@ export default function SpecialScheduleModal({
     if (!lock.current) {
       onClose?.();
     }
-  };
-  const changeDate = next => {
-    if (lock.current) return;
-    setDate(next);
-    setMessage('');
   };
   const run = async action => {
     if (!visible || readOnly || lock.current || loading || loadError) {
@@ -272,18 +304,28 @@ export default function SpecialScheduleModal({
     }
   };
   const store = saved => setEvents(previous => [saved, ...previous.filter(event => event.id !== saved.id)]);
-  const add = () => run(async () => {
+  const saveEditor = () => run(async () => {
+    if (!canSaveAdd) return;
+    const title = placeTitle.trim();
+    const sameTitle = editing && title === eventTitle(editingEvent);
     const saved = await saveEvent({
-      date,
-      types,
-      title: placeTitle,
+      ...(editing ? { id: editingEvent.id } : {}),
+      date: editing ? editingEvent.date : dateKey(),
+      ...(editingEvent?.category
+        ? { category: sameTitle ? editingEvent.category : 'other' }
+        : { types: sameTitle ? editingEvent.types : ['other'] }),
+      title,
       memo,
       ...(timeMode === 'range' ? { start, end } : {})
     });
     if (!mounted.current) return;
     store(saved);
-    clear();
-    setAdded(saved);
+    if (editing) {
+      onChanged?.();
+      onClose?.();
+      return;
+    }
+    resetAdd();
     scrollRef.current?.scrollTo({ y: 0, animated: true });
     setMessage(`${dateHeading(saved.date)}에 '${eventTitle(saved)}' 일정을 추가했어요.`);
     onChanged?.();
@@ -396,57 +438,84 @@ export default function SpecialScheduleModal({
       {showPast && renderGroups(past)}
     </>;
 
-  const addBody = <>
-      {/* 추가가 끝나면 빈 칸 경고 대신 '추가 완료'를 보여주고, 입력을 시작하면 다시 확인 문구를 보여준다 */}
-      {added && !dirty && <View accessibilityRole="alert" accessibilityLiveRegion="polite" style={s.addedBox}>
-          <Text style={s.addedTitle}>✓ 일정이 추가되었어요</Text>
-          <Text style={s.addedText}>{dateHeading(added.date)} · {eventTitle(added)}{eventTimeCaption(added) ? ' · ' + eventTimeCaption(added) : ' · 하루 종일'}</Text>
-          <Text style={s.addedHint}>다른 일정도 이어서 추가할 수 있어요.</Text>
-        </View>}
-      <Text style={s.title}>어떤 일정이 있나요?</Text>
-      <Text style={s.hint}>평소와 다른 일정을 등록하면 그날에 맞는 카드 혜택을 추천해드려요.</Text>
-      <View style={s.card}>
-        <Text style={s.step}>날짜</Text>
-        <View style={s.dateButtons}>
-          <TouchableOpacity accessibilityRole="button" disabled={busy} style={s.small} onPress={() => changeDate(shiftDate(date, -1))}>
-            <Text style={s.blue}>← 전날</Text>
-          </TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" disabled={busy} style={s.small} onPress={() => changeDate(dateKey())}>
-            <Text style={s.blue}>오늘</Text>
-          </TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" disabled={busy} style={s.small} onPress={() => changeDate(shiftDate(date, 1))}>
-            <Text style={s.blue}>다음 날 →</Text>
-          </TouchableOpacity>
-        </View>
-        <TextInput accessibilityLabel="일정 날짜" value={date} onChangeText={changeDate} editable={!busy} style={s.input} placeholder="YYYY-MM-DD" maxLength={10} autoCapitalize="none" autoCorrect={false} />
-        {validDate(date) ? <Text style={s.hint}>{dateHeading(date)}</Text> : <Text style={s.error}>실제 날짜를 YYYY-MM-DD로 입력해주세요.</Text>}
-
-        <Text style={s.step}>1. 어떤 일정인가요?</Text>
-        <TypePicker types={types} setTypes={setTypes} title={placeTitle} setTitle={setPlaceTitle} disabled={disabled} />
-
-        <Text style={s.step}>2. 언제인가요?</Text>
-        <TimePicker mode={timeMode} setMode={setTimeMode} start={start} setStart={setStart} end={end} setEnd={setEnd} disabled={disabled} />
-
-        <Text style={s.step}>3. 메모 <Text style={s.stepHint}>(선택)</Text></Text>
-        <MemoInput memo={memo} setMemo={setMemo} types={types} disabled={disabled} />
-
-        {!!formProblem && !disabled && dirty && <Text style={s.formProblem}>{formProblem}</Text>}
-        <TouchableOpacity accessibilityRole="button" disabled={disabled || !validDate(date) || !!formProblem} style={[s.primary, (disabled || !validDate(date) || !!formProblem) && s.dim]} onPress={add}>
-          <Text style={s.white}>{busy ? '처리 중…' : '일정 추가'}</Text>
-        </TouchableOpacity>
-        {dirty && <TouchableOpacity accessibilityRole="button" disabled={busy || readOnly} style={s.small} onPress={() => { clear(); setMessage(''); }}>
-            <Text style={s.blue}>입력 초기화</Text>
-          </TouchableOpacity>}
-      </View>
-
-      {!!onEditTimed && <TouchableOpacity accessibilityRole="button" disabled={busy} style={s.placeLink} onPress={() => { onClose?.(); onEditTimed(date); }}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.placeLinkTitle}>카페·편의점처럼 장소로 추가하기</Text>
-            <Text style={s.hint}>시간표에서 시간을 눌러 장소 일정을 넣어요.</Text>
+  if (compactEditor) {
+    return <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
+      <KeyboardAvoidingView style={s.addOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={s.addEditor} accessibilityViewIsModal>
+          <View style={s.addHeader}>
+            <Text accessibilityRole="header" style={s.addTitle}>{editing ? '일정 수정' : '일과 입력'}</Text>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="일과 입력 창 닫기"
+              disabled={busy} onPress={close} style={s.addClose}>
+              <Ionicons name="close" size={26} color="#385988" accessible={false} />
+            </TouchableOpacity>
           </View>
-          <Text style={s.placeLinkArrow}>›</Text>
-        </TouchableOpacity>}
-    </>;
+          <ScrollView ref={scrollRef} style={s.addScroll} contentContainerStyle={s.addFields}
+            keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+            {loading && <ActivityIndicator color="#245DE5" />}
+            {!!loadError && <View style={s.addFields}>
+              <Text accessibilityRole="alert" style={s.error}>{loadError}</Text>
+              <TouchableOpacity accessibilityRole="button" disabled={loading} style={s.small} onPress={() => setReload(value => value + 1)}>
+                <Text style={s.blue}>다시 불러오기</Text>
+              </TouchableOpacity>
+            </View>}
+            {!loading && !loadError && <>
+              <Text style={s.todayLabel}>{dateHeading(editing ? editingEvent.date : today)}</Text>
+              <View style={s.addTimeHeading}>
+                <Text style={s.step}>시간</Text>
+                {!editingEvent?.category && <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel="하루 종일"
+                  accessibilityState={{ checked: timeMode === 'allday' }} disabled={disabled}
+                  onPress={() => setTimeMode(mode => mode === 'range' ? 'allday' : 'range')} style={s.addAllDay}>
+                  <Ionicons name={timeMode === 'allday' ? 'checkbox-outline' : 'square-outline'}
+                    size={17} color="#245DE5" accessible={false} />
+                  <Text style={s.blue}>하루 종일</Text>
+                </TouchableOpacity>}
+              </View>
+              {timeMode === 'range' && <>
+                <View style={s.timeWheels}>
+                  <ScheduleTimeWheel label="시작" value={start} disabled={disabled} setValue={setStart} />
+                  <ScheduleTimeWheel label={isOvernight(timeMode, start, end) ? '종료 (다음 날)' : '종료'}
+                    value={end} disabled={disabled} setValue={setEnd} allowMidnight />
+                </View>
+                {!!durationText && <Text style={s.addHint}>{durationText} 동안</Text>}
+              </>}
+              <View style={s.addEntry}>
+                <Text style={s.addEntryLabel}>일정 직접 입력</Text>
+                <TextInput accessibilityLabel="일정 이름 직접 입력" value={placeTitle} editable={!disabled}
+                  onChangeText={value => { setPlaceTitle(value); setMessage(''); }} style={[s.input, s.addInput]}
+                  placeholder="예: 병원 예약, 친구 생일 파티" maxLength={ROUTINE_TITLE_LIMIT} />
+              </View>
+              <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: extraOpen }}
+                onPress={() => setExtraOpen(value => !value)} style={s.addExtra}>
+                <Text style={s.blue}>{extraOpen ? '추가 옵션 접기' : '추가 옵션'}</Text>
+                <Ionicons name={extraOpen ? 'chevron-up' : 'chevron-down'} size={14} color="#245DE5" accessible={false} />
+              </TouchableOpacity>
+              {extraOpen && <>
+                <Text style={s.step}>메모 <Text style={s.stepHint}>(선택)</Text></Text>
+                <MemoInput memo={memo} setMemo={setMemo} disabled={disabled} />
+                {adding && !!onEditTimed && <TouchableOpacity accessibilityRole="button" disabled={busy}
+                  style={s.placeLink} onPress={() => { close(); onEditTimed(dateKey()); }}>
+                  <Text style={s.placeLinkTitle}>장소 일정으로 추가</Text>
+                  <Text style={s.placeLinkArrow}>›</Text>
+                </TouchableOpacity>}
+              </>}
+              {timeMode === 'range' && !rangeReadyOf(timeMode, start, end) &&
+                <Text style={s.formProblem}>시작과 종료 시간을 확인해주세요.</Text>}
+            </>}
+          </ScrollView>
+          {!!message && <Text accessibilityLiveRegion="polite" style={s.message}>{message}</Text>}
+          <View style={s.addActions}>
+            {adding && <TouchableOpacity accessibilityRole="button" disabled={busy} style={[s.addDelete, busy && s.dim]}
+              onPress={() => { if (!lock.current) { resetAdd(); close(); } }}>
+              <Text style={s.addDeleteText}>삭제</Text>
+            </TouchableOpacity>}
+            <TouchableOpacity accessibilityRole="button" disabled={!canSaveAdd} style={[s.addSave, !canSaveAdd && s.dim]} onPress={saveEditor}>
+              <Text style={s.white}>{busy ? '저장 중…' : editing ? '수정 저장' : '일정 추가'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>;
+  }
 
   return <Modal visible={visible} transparent={false} presentationStyle="fullScreen" animationType="slide" onRequestClose={sheet ? closeSheet : close}>
       <SafeAreaView style={s.screen}>
@@ -455,7 +524,7 @@ export default function SpecialScheduleModal({
             <TouchableOpacity accessibilityRole="button" accessibilityLabel="일정 화면 뒤로 가기" disabled={busy} onPress={close} style={s.back}>
               <Text style={s.backText}>‹</Text>
             </TouchableOpacity>
-            <Text style={s.headerTitle}>{adding ? '일정 추가' : '일정 관리'}</Text>
+            <Text style={s.headerTitle}>일정 관리</Text>
             <View style={s.headerSpace} />
           </View>
 
@@ -467,7 +536,7 @@ export default function SpecialScheduleModal({
                   <Text style={s.blue}>다시 불러오기</Text>
                 </TouchableOpacity>
               </View>}
-            {!loading && !loadError && (adding ? addBody : manageBody)}
+            {!loading && !loadError && manageBody}
           </ScrollView>
 
           <View style={s.footer}>
@@ -476,9 +545,9 @@ export default function SpecialScheduleModal({
               <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={close} style={[s.returnButton, busy && s.dim]}>
                 <Text style={s.blue}>돌아가기</Text>
               </TouchableOpacity>
-              {!adding && <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={confirm} style={[s.confirmButton, disabled && s.dim]}>
+              <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={confirm} style={[s.confirmButton, disabled && s.dim]}>
                   <Text style={s.white}>{busy ? '처리 중…' : '오늘 일정 확인 완료'}</Text>
-                </TouchableOpacity>}
+                </TouchableOpacity>
             </View>
           </View>
 
@@ -518,6 +587,26 @@ export default function SpecialScheduleModal({
     </Modal>;
 }
 const s = StyleSheet.create({
+  addOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16, backgroundColor: '#11234380' },
+  addEditor: { width: '100%', maxWidth: 480, maxHeight: '96%', borderRadius: 24, padding: 16, gap: 10, backgroundColor: '#FFFFFF' },
+  addHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  addTitle: { color: '#152D50', fontSize: 26, fontWeight: '800' },
+  addClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  addScroll: { flexGrow: 0, flexShrink: 1, minHeight: 0 },
+  addFields: { gap: 9, paddingBottom: 4 },
+  todayLabel: { paddingVertical: 8, textAlign: 'center', color: '#385988', fontSize: 15, fontWeight: '700', backgroundColor: '#F1F5FC', borderRadius: 12 },
+  timeWheels: { flexDirection: 'row', gap: 12 },
+  addTimeHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  addAllDay: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 4, minHeight: 36 },
+  addHint: { color: '#5A6E89', fontSize: 12, textAlign: 'center' },
+  addEntry: { alignSelf: 'center', width: '100%', maxWidth: 340, gap: 6 },
+  addEntryLabel: { color: '#1854D8', fontSize: 15, fontWeight: '800', textAlign: 'center' },
+  addInput: { textAlign: 'center' },
+  addExtra: { flexDirection: 'row', alignSelf: 'center', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 36 },
+  addActions: { flexDirection: 'row', alignItems: 'stretch', gap: 6 },
+  addDelete: { backgroundColor: '#FFF0F2', borderRadius: 24, paddingHorizontal: 18, minHeight: 52, justifyContent: 'center' },
+  addDeleteText: { color: '#B4384D', fontSize: 13, fontWeight: '800' },
+  addSave: { flex: 1, minHeight: 52, alignItems: 'center', justifyContent: 'center', borderRadius: 26, backgroundColor: '#104FE7' },
   screen: {
     flex: 1,
     backgroundColor: "#F4F7FB"
@@ -679,11 +768,6 @@ const s = StyleSheet.create({
   pastToggle: {
     alignItems: 'center',
     padding: 12
-  },
-  dateButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 8
   },
   small: {
     padding: 12,
@@ -856,10 +940,6 @@ const s = StyleSheet.create({
   inputError: {
     borderColor: '#C53D56'
   },
-  addedBox: { backgroundColor: '#E6F6EE', borderRadius: 14, padding: 14, gap: 4, borderWidth: 1, borderColor: '#A8DFC2' },
-  addedTitle: { color: '#087D54', fontSize: 15, fontWeight: '800' },
-  addedText: { color: '#1D4A36', fontSize: 14, fontWeight: '600' },
-  addedHint: { color: '#4C7A65', fontSize: 12 },
   formProblem: {
     fontSize: 13,
     color: '#B45309',

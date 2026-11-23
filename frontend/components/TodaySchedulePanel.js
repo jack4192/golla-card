@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AppState, Image, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { findCatalog40Product } from '../data/cardCatalog40';
@@ -15,7 +15,7 @@ import { aiWindowKey, inAiWindow, scheduleAiExample, scheduleAiMatch } from '../
 import { SCHEDULE_SAMPLES } from '../data/samplePayment';
 import { resolveWalletProduct } from './WalletProductCard';
 import SpecialScheduleModal from './SpecialScheduleModal';
-import { CATEGORIES, categoryLabel, dailyBasicSchedule, dateKey, effectiveDetailedRoutine, eventBenefitCategories, eventEndDate, eventTimeCaption, eventTitle, isTodayConfirmed, makeSignals, readEvents, readProfile, shiftDate } from '../utils/routineData';
+import { CATEGORIES, categoryLabel, dailyBasicSchedule, dateKey, deleteEvent, effectiveDetailedRoutine, eventBenefitCategories, eventEndDate, eventTimeCaption, eventTitle, isTodayConfirmed, makeSignals, readEvents, readProfile, shiftDate } from '../utils/routineData';
 
 const categoryIcons = {
   cafe: 'cafe-outline',
@@ -152,8 +152,13 @@ export default function TodaySchedulePanel({
   const [events, setEvents] = useState([]);
   const [profile, setProfile] = useState(null);
   const [confirmed, setConfirmed] = useState(false);
-  // null | 'manage'(일정 관리) | 'add'(일정 추가)
   const [open, setOpen] = useState(null);
+  const [managing, setManaging] = useState(false);
+  const [editingEvent, setEditingEvent] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const deleteLock = useRef(false);
   const [selection, setSelection] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -224,6 +229,23 @@ export default function TodaySchedulePanel({
   ));
   const signals = makeSignals(profile, events, day).map(signal => categoryLabel(signal.id));
   const refresh = () => setRevision(value => value + 1);
+  const remove = async event => {
+    if (disabled || deleteLock.current) return;
+    deleteLock.current = true;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await deleteEvent(event.id);
+      setEvents(previous => previous.filter(item => item.id !== event.id));
+      setConfirmDelete(null);
+      refresh();
+    } catch {
+      setDeleteError('일정을 삭제하지 못했어요. 다시 시도해주세요.');
+    } finally {
+      deleteLock.current = false;
+      setDeleting(false);
+    }
+  };
   const products = cards.map(toScheduleProduct);
   const selectedProduct = resolveWalletProduct(selectedCard);
   const canPayWithSelected = cards.some(card => card.id === selectedCard?.id);
@@ -288,6 +310,7 @@ export default function TodaySchedulePanel({
       return {
         key:'special:'+event.id, icon:categoryIcons[categories[0]] || 'calendar-outline',
         label:eventTitle(event),
+        event,
         date:event.date,
         time:event.start,
         startDate, endDate,
@@ -480,22 +503,56 @@ export default function TodaySchedulePanel({
             {timeline.map(row => {
               const expanded = activeKey === row.key;
               const match = row.match;
+              const rowContent = <>
+                <View style={styles.entryIcon}><Ionicons name={row.icon} size={21} color="#2059C7"/></View>
+                <View style={styles.entryText}>
+                  <Text style={styles.title}>{row.time ? (row.timeCaption || row.time) + '  ' : ''}{row.label}</Text>
+                  <Text numberOfLines={expanded ? undefined : 2} style={styles.hint}>{expanded || managing ? row.description : match?.label || row.description}</Text>
+                </View>
+              </>;
               return <View key={row.key} style={styles.timelineRow}>
                 <View style={[styles.marker, expanded && styles.markerActive]}/>
-                <TouchableOpacity
+                {managing ? <>
+                  <View style={styles.timelineButton}>
+                    {rowContent}
+                    {!!row.event && <View style={styles.rowActions}>
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel={row.label + ' 수정'} disabled={deleting}
+                        style={styles.rowEdit} onPress={() => {
+                          setConfirmDelete(null);
+                          setDeleteError('');
+                          setEditingEvent(row.event);
+                          setOpen('edit');
+                        }}>
+                        <Text style={styles.blue}>수정</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel={row.label + ' 삭제'} disabled={deleting}
+                        style={styles.rowDelete} onPress={() => { setDeleteError(''); setConfirmDelete(row.event.id); }}>
+                        <Text style={styles.deleteText}>삭제</Text>
+                      </TouchableOpacity>
+                    </View>}
+                  </View>
+                  {row.event && confirmDelete === row.event.id && <View style={styles.deleteConfirm}>
+                    <Text style={styles.hint}>이 일정을 삭제할까요?</Text>
+                    {!!deleteError && <Text accessibilityRole="alert" style={styles.deleteText}>{deleteError}</Text>}
+                    <View style={styles.rowActions}>
+                      <TouchableOpacity accessibilityRole="button" disabled={deleting} style={styles.rowEdit} onPress={() => setConfirmDelete(null)}>
+                        <Text style={styles.blue}>취소</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity accessibilityRole="button" disabled={deleting} style={styles.rowDelete} onPress={() => remove(row.event)}>
+                        <Text style={styles.deleteText}>{deleting ? '삭제 중…' : '일정 삭제'}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>}
+                </> : <TouchableOpacity
                   accessibilityRole="button"
                   accessibilityState={{ expanded }}
                   style={styles.timelineButton}
                   onPress={() => setSelection({ scope: day, key: expanded ? null : row.key })}
                 >
-                  <View style={styles.entryIcon}><Ionicons name={row.icon} size={21} color="#2059C7"/></View>
-                  <View style={styles.entryText}>
-                    <Text style={styles.title}>{row.time ? (row.timeCaption || row.time) + '  ' : ''}{row.label}</Text>
-                    <Text numberOfLines={expanded ? undefined : 2} style={styles.hint}>{expanded ? row.description : match?.label || row.description}</Text>
-                  </View>
+                  {rowContent}
                   {!expanded && match && <Image source={match.card.image} resizeMode="contain" style={styles.thumbnail} accessibilityIgnoresInvertColors accessible={false}/>}
                   <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={expanded ? '#1858E8' : '#62738D'}/>
-                </TouchableOpacity>
+                </TouchableOpacity>}
                 {expanded && (match ? <View style={styles.recommendation}>
                   <Text style={styles.blue}>보유 카드 추천</Text>
                   <View style={styles.cardPreview}>
@@ -525,13 +582,17 @@ export default function TodaySchedulePanel({
           </View>}
     {confirmed && <Text style={styles.hint}>오늘 일정 확인 완료</Text>}
     <View style={styles.row}>
-      <TouchableOpacity accessibilityRole="button" disabled={disabled} style={styles.secondary} onPress={() => setOpen('manage')}>
-        <Text style={styles.blue}>일정 관리</Text>
+      <TouchableOpacity accessibilityRole="button" disabled={disabled || deleting} style={[styles.secondary, styles.equalAction]} onPress={() => {
+        setManaging(value => !value);
+        setConfirmDelete(null);
+        setDeleteError('');
+      }}>
+        <Text numberOfLines={1} style={styles.blue}>{managing ? '수정 끝내기' : '일정 관리'}</Text>
       </TouchableOpacity>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="일정 추가" disabled={disabled}
-        style={styles.primary} onPress={() => setOpen('add')}>
+        style={[styles.primary, styles.equalAction]} onPress={() => setOpen('add')}>
         <Ionicons name="add" size={18} color="#FFFFFF"/>
-        <Text style={styles.white}>일정 추가</Text>
+        <Text numberOfLines={1} style={styles.white}>일정 추가</Text>
       </TouchableOpacity>
     </View>
 
@@ -544,10 +605,9 @@ export default function TodaySchedulePanel({
       <Ionicons name="chevron-forward" size={16} color="#365D77"/>
     </TouchableOpacity>
     {!!error && <TouchableOpacity disabled={disabled} onPress={refresh}><Text style={styles.blue}>다시 불러오기</Text></TouchableOpacity>}
-      <SpecialScheduleModal key={day} visible={!!open && !disabled} mode={open || 'manage'} onRequestAdd={() => setOpen('add')} onClose={() => setOpen(null)} onChanged={refresh} onEditTimed={onEditRoutine} onConfirmed={() => {
-      setConfirmed(true);
-      refresh();
-    }} />
+    <SpecialScheduleModal key={day} visible={!!open && !disabled} mode={open || 'add'}
+      editingEvent={open === 'edit' ? editingEvent : null} onClose={() => setOpen(null)}
+      onChanged={refresh} onEditTimed={onEditRoutine} />
     </View>;
 }
 const styles = StyleSheet.create({
@@ -628,6 +688,11 @@ const styles = StyleSheet.create({
   timeline:{marginLeft:7,borderLeftWidth:2,borderLeftColor:'#D6E3F7',gap:10},
   timelineRow:{position:'relative',paddingLeft:16,gap:9},
   timelineButton:{minHeight:60,flexDirection:'row',alignItems:'center',gap:10},
+  rowActions:{flexDirection:'row',gap:5,flexShrink:0},
+  rowEdit:{minHeight:44,paddingHorizontal:9,justifyContent:'center',borderRadius:10,backgroundColor:'#EDF3FF'},
+  rowDelete:{minHeight:44,paddingHorizontal:9,justifyContent:'center',borderRadius:10,backgroundColor:'#FFF0F2'},
+  deleteText:{color:'#A83148',fontSize:13,fontWeight:'700'},
+  deleteConfirm:{gap:6,padding:10,borderRadius:12,backgroundColor:'#FFF7F8'},
   entryText:{flex:1,minWidth:0,gap:3},
   marker:{position:'absolute',left:-7,top:24,width:12,height:12,borderRadius:6,borderWidth:2,borderColor:'#AFC3E5',backgroundColor:'#FFFFFF'},
   markerActive:{borderColor:'#1858E8'},
@@ -668,8 +733,15 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8
+  },
+  equalAction: {
+    flexBasis: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    height: 46,
+    paddingVertical: 0,
   },
   secondary: {
     flexGrow: 1,
