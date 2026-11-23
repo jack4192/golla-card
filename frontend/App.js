@@ -13,8 +13,8 @@ import {
 
 import { Alert } from './utils/demoAlert';
 import * as DemoStore from './utils/demoStore';
-import { createPinSalt, hashPin } from './utils/pinCrypto';
-import { SERVER_MODE, api, clearToken, readToken } from './utils/api';
+import { createRandomHex, hashPassword } from './utils/demoCrypto';
+import { SERVER_MODE, api, clearToken } from './utils/api';
 import { registerServerCard, resetServerCards } from './utils/serverCards';
 import { applySignupJob, rememberSignupJob } from './utils/signupJob';
 import { cancelPhoneNotifications, requestPhonePermission } from './utils/notifications';
@@ -35,8 +35,6 @@ import {
 import { readPreferences, savePreferences } from './utils/cardRecommendation';
 
 import LoginScreen from './screens/LoginScreen';
-import PinLoginScreen from './screens/PinLoginScreen';
-import PinSetupScreen from './screens/PinSetupScreen';
 import { DEMO_EMAIL, isValidEmail, normalizeEmail } from './utils/demoEmail';
 import SignUpScreen, { isValidPhone, isValidSignUpPassword } from './screens/SignUpScreen';
 import AgreementScreen from './screens/AgreementScreen';
@@ -49,15 +47,11 @@ import PrivacyDataModal from './components/PrivacyDataModal';
 
 import { getActiveWalletCard } from './data/cards';
 
-const SESSION_KEY = 'solpay_demo_session_v1';
 // 마지막으로 이메일 로그인한 계정(데모 계정 카드 자동 등록 판단용)
 const LOGIN_EMAIL_KEY = 'solpay_demo_login_email_v1';
 const ACCOUNT_KEY = 'solpay_demo_account_v1';
-const FULL_LOGOUT_KEY = 'solpay_demo_full_logout_v1';
 const FINISHED_KEY = 'solpay_demo_onboarding_v1';
 const CONSENT_KEY = 'solpay_demo_consent_v1';
-const PIN_KEY = 'solpay_demo_pin_v1';
-const ATTEMPTS_KEY = 'solpay_demo_pin_attempts_v1';
 const PREVIEW_CARDS_STORAGE_KEY = 'solpay_public_demo_' + PREVIEW_CARDS_KEY;
 const LEGACY_CONSENT_VERSION = 'solpay-demo-consent-v1';
 const LEGACY_OPTIONS_VERSION = 'solpay-onboarding-options-v2';
@@ -72,20 +66,14 @@ const DEMO_WALLET_CODES = [
   'SH_HI_POINT_PLAN',
 ];
 
-const MAX_ATTEMPTS = 5;
-const LOCK_MS = 60000;
-const PIN_SESSION_STATES = new Set(['active', 'locked']);
-
 const DEV_SCREENS = [
   { key: 'Login', label: '1. 이메일 로그인' },
   { key: 'SignUp', label: '1-1. 회원가입' },
-  { key: 'PinLogin', label: '기존 이용자 · PIN 로그인' },
   { key: 'Agreement', label: '2. 서비스 이용 동의' },
-  { key: 'PinSetup', label: '3. 간편비밀번호 설정' },
-  { key: 'DailyRoutine', label: '4. 오늘의 특별 일정' },
-  { key: 'RoutineRecommendation', label: '5. 일과 맞춤 카드 추천' },
-  { key: 'Main', label: '6. 메인 화면' },
-  { key: 'Payment', label: '7. 결제 화면' },
+  { key: 'DailyRoutine', label: '3. 일정 관리' },
+  { key: 'RoutineRecommendation', label: '4. 일과 맞춤 카드 추천' },
+  { key: 'Main', label: '5. 메인 화면' },
+  { key: 'Payment', label: '6. 결제 화면' },
 ];
 
 async function readConsent() {
@@ -109,25 +97,6 @@ async function readConsent() {
   }
 }
 
-async function readPin() {
-  const raw = await DemoStore.getItemAsync(PIN_KEY);
-  if (!raw) return null;
-
-  try {
-    const value = JSON.parse(raw);
-
-    return value?.version === 1 &&
-      typeof value.salt === 'string' &&
-      typeof value.hash === 'string' &&
-      /^[a-f0-9]{32}$/i.test(value.salt) &&
-      /^[a-f0-9]{64}$/i.test(value.hash)
-      ? value
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 async function readDemoAccount() {
   const raw = await DemoStore.getItemAsync(ACCOUNT_KEY);
   if (!raw) return null;
@@ -140,43 +109,6 @@ async function readDemoAccount() {
       typeof account.firstLogin === 'boolean' ? account : null;
   } catch {
     return null;
-  }
-}
-
-async function readAttempts(now) {
-  const raw = await DemoStore.getItemAsync(ATTEMPTS_KEY);
-  if (!raw) return { count: 0, lockedUntil: 0 };
-
-  try {
-    const value = JSON.parse(raw);
-
-    if (
-      !value ||
-      Array.isArray(value) ||
-      !Number.isInteger(value.count) ||
-      value.count < 0 ||
-      value.count >= MAX_ATTEMPTS ||
-      !Number.isSafeInteger(value.lockedUntil) ||
-      value.lockedUntil < 0
-    ) {
-      throw Error('invalid');
-    }
-
-    return value.lockedUntil && value.lockedUntil <= now
-      ? { count: 0, lockedUntil: 0 }
-      : value;
-  } catch {
-    const locked = {
-      count: 0,
-      lockedUntil: now + LOCK_MS,
-    };
-
-    await DemoStore.setItemAsync(
-      ATTEMPTS_KEY,
-      JSON.stringify(locked)
-    );
-
-    return locked;
   }
 }
 
@@ -214,7 +146,6 @@ export default function App() {
   const [allowAutomaticAds, setAllowAutomaticAds] = useState(false);
   const [consent, setConsent] = useState(null);
   const [consentDraft, setConsentDraft] = useState(null);
-  const [hasSavedPin, setHasSavedPin] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [scheduleEditor, setScheduleEditor] = useState({});
   const [routineMode, setRoutineMode] = useState('onboarding');
@@ -251,36 +182,17 @@ export default function App() {
         return;
       }
 
-      const [savedConsent, savedPin, fullLogout, finished, savedAccount, session, savedToken] = await Promise.all([
-        readConsent(),
-        readPin(),
-        DemoStore.getItemAsync(FULL_LOGOUT_KEY),
-        DemoStore.getItemAsync(FINISHED_KEY),
-        readDemoAccount(),
-        DemoStore.getItemAsync(SESSION_KEY),
-        SERVER_MODE ? readToken() : null,
+      // Remove records left by the retired local unlock flow.
+      await Promise.allSettled([
+        DemoStore.deleteItemAsync('solpay_demo_pin_v1'),
+        DemoStore.deleteItemAsync('solpay_demo_pin_attempts_v1'),
+        DemoStore.deleteItemAsync('solpay_demo_session_v1'),
+        DemoStore.deleteItemAsync('solpay_demo_full_logout_v1'),
+        ...(SERVER_MODE ? [clearToken()] : []),
       ]);
 
-      if (!active) return;
-
-      const completed = !savedAccount?.firstLogin && finished === 'yes' &&
-        savedConsent?.termsAgreed === true && Boolean(savedPin);
-      setDemoAccount(savedAccount);
-      setConsent(savedConsent);
-      setHasSavedPin(Boolean(savedPin) && !savedAccount?.firstLogin);
-      setOnboardingComplete(completed);
-      let canUsePin = !fullLogout && completed && PIN_SESSION_STATES.has(session) && (!SERVER_MODE || Boolean(savedToken));
-      if (SERVER_MODE && canUsePin) {
-        // 서버 모드에서는 이메일·비밀번호로 로그인한 서버 계정이 아직 유효할 때만 PIN 화면을 보여줍니다.
-        try {
-          await api.me();
-        } catch {
-          canUsePin = false;
-          await clearToken();
-        }
-        if (!active) return;
-      }
-      setCurrentScreen(canUsePin ? 'PinLogin' : 'Login');
+      const savedAccount = await readDemoAccount();
+      if (active) setDemoAccount(savedAccount);
     };
 
     restore()
@@ -453,20 +365,15 @@ export default function App() {
   });
 
   const afterAuthentication = async ({ firstSignupLogin = false } = {}) => {
-    const [savedConsent, savedPin, finished] = await Promise.all([
+    const [savedConsent, finished] = await Promise.all([
       readConsent(),
-      readPin(),
       DemoStore.getItemAsync(FINISHED_KEY),
     ]);
 
-    await DemoStore.deleteItemAsync(FULL_LOGOUT_KEY);
-    await DemoStore.setItemAsync(SESSION_KEY, 'active');
-
-    const completed = finished === 'yes' && savedConsent?.termsAgreed === true && Boolean(savedPin);
+    const completed = finished === 'yes' && savedConsent?.termsAgreed === true;
     setAuthenticated(true);
     setAllowAutomaticAds(completed && !firstSignupLogin);
     setConsent(savedConsent);
-    setHasSavedPin(Boolean(savedPin));
     setOnboardingComplete(completed);
     setRoutineMode('onboarding');
 
@@ -488,8 +395,6 @@ export default function App() {
 
     if (savedConsent?.termsAgreed !== true) {
       navigate('Agreement');
-    } else if (!savedPin) {
-      navigate('PinSetup');
     } else {
       navigate(completed ? 'Main' : 'DailyRoutine');
     }
@@ -508,9 +413,9 @@ export default function App() {
       const previousEmail = await DemoStore.getItemAsync(LOGIN_EMAIL_KEY);
       const switchedAccount = previousEmail !== address;
       if (switchedAccount) {
-        // 다른 계정으로 로그인하면 이 기기의 이전 계정 정보(동의·PIN·일정·카드)를 지우고 처음부터 시작합니다.
+        // 다른 계정으로 로그인하면 이 기기의 이전 계정 정보(동의·일정·카드)를 지우고 처음부터 시작합니다.
         await deleteDemoData('personal').catch(() => {});
-        for (const key of [FINISHED_KEY, CONSENT_KEY, PIN_KEY, ATTEMPTS_KEY]) {
+        for (const key of [FINISHED_KEY, CONSENT_KEY]) {
           await DemoStore.deleteItemAsync(key);
         }
         setConsentDraft(null);
@@ -524,7 +429,7 @@ export default function App() {
 
     const customMatches =
       demoAccount?.email === address && typeof password === 'string'
-        ? await hashPin(demoAccount.salt, password) === demoAccount.hash
+        ? await hashPassword(demoAccount.salt, password) === demoAccount.hash
         : false;
 
     const valid =
@@ -542,7 +447,7 @@ export default function App() {
     const firstSignupLogin = customMatches && demoAccount.firstLogin === true;
     if (firstSignupLogin) {
       // A new demo registration starts onboarding even on a previously used device.
-      for (const key of [FINISHED_KEY, CONSENT_KEY, PIN_KEY, ATTEMPTS_KEY]) {
+      for (const key of [FINISHED_KEY, CONSENT_KEY]) {
         await DemoStore.deleteItemAsync(key);
       }
       const account = { ...demoAccount, firstLogin: false };
@@ -554,87 +459,6 @@ export default function App() {
     await DemoStore.setItemAsync(LOGIN_EMAIL_KEY, customMatches ? 'custom' : DEMO_EMAIL);
     if (customMatches) await applySignupJob(address);
     await afterAuthentication({ firstSignupLogin });
-  });
-
-  const handleVerifyPin = pin => runAction(async () => {
-    if (!__DEV__ && Platform.OS !== 'web' && !SERVER_MODE) {
-      throw Error('현재 간편비밀번호로 로그인할 수 없어요.');
-    }
-
-    if (typeof pin !== 'string' || !/^\d{6}$/.test(pin)) {
-      throw Error('6자리 숫자를 입력해주세요.');
-    }
-
-    if (!onboardingComplete || demoAccount?.firstLogin) {
-      throw Error('이메일로 로그인한 뒤 가입 절차를 완료해주세요.');
-    }
-
-    const [fullLogout, session] = await Promise.all([
-      DemoStore.getItemAsync(FULL_LOGOUT_KEY),
-      DemoStore.getItemAsync(SESSION_KEY),
-    ]);
-    if (fullLogout || !PIN_SESSION_STATES.has(session)) {
-      throw Error('로그아웃한 상태입니다. 이메일과 비밀번호로 로그인해주세요.');
-    }
-
-    const record = await readPin();
-
-    if (!record) {
-      throw Error(
-        '등록된 간편비밀번호가 없습니다. 이메일로 로그인해주세요.'
-      );
-    }
-
-    const now = Date.now();
-    const attempts = await readAttempts(now);
-
-    if (attempts.lockedUntil > now) {
-      const seconds = Math.ceil(
-        (attempts.lockedUntil - now) / 1000
-      );
-
-      throw Error(`${seconds}초 뒤에 다시 시도해주세요.`);
-    }
-
-    const candidate = await hashPin(record.salt, pin);
-
-    if (candidate !== record.hash) {
-      const count = attempts.count + 1;
-      const lock = count >= MAX_ATTEMPTS;
-
-      await DemoStore.setItemAsync(
-        ATTEMPTS_KEY,
-        JSON.stringify({
-          count: lock ? 0 : count,
-          lockedUntil: lock ? now + LOCK_MS : 0,
-        })
-      );
-
-      throw Error(
-        lock
-          ? '5회 실패했습니다. 60초 동안 입력이 제한됩니다.'
-          : `비밀번호가 다릅니다. 남은 시도: ${MAX_ATTEMPTS - count}회`
-      );
-    }
-
-    await DemoStore.deleteItemAsync(ATTEMPTS_KEY);
-    if (SERVER_MODE) {
-      try {
-        await api.me();
-      } catch (problem) {
-        // 만료(401)·권한 없음(403)·계정 없음(404)은 서버 메시지를 보여주지 않고 이메일 로그인으로 보냅니다.
-        if ([401, 403, 404].includes(problem?.status)) {
-          await clearToken();
-          await DemoStore.setItemAsync(FULL_LOGOUT_KEY, 'yes');
-          navigate('Login');
-          Alert.alert('다시 로그인해주세요', '로그인 정보가 만료됐거나 바뀌었어요. 이메일과 비밀번호로 다시 로그인해주세요.');
-          return;
-        }
-        throw problem;
-      }
-    }
-
-    await afterAuthentication();
   });
 
   const handleAgreementNext = value => runAction(async () => {
@@ -662,56 +486,10 @@ export default function App() {
     if (nextConsent.morningNotificationAgreed) await requestPhonePermission().catch(() => false);
     await reloadWallet();
 
-    const [pin, finished] = await Promise.all([
-      readPin(),
-      DemoStore.getItemAsync(FINISHED_KEY),
-    ]);
-
-    const completed = Boolean(pin) && finished === 'yes';
-    setHasSavedPin(Boolean(pin));
+    const completed = await DemoStore.getItemAsync(FINISHED_KEY) === 'yes';
     setOnboardingComplete(completed);
-    navigate(!pin ? 'PinSetup' : completed ? 'Main' : 'DailyRoutine');
+    navigate(completed ? 'Main' : 'DailyRoutine');
   });
-
-  const handlePinSetup = pin => runAction(async () => {
-    requireAuthentication();
-
-    if (!__DEV__ && Platform.OS !== 'web' && !SERVER_MODE) {
-      throw Error('현재 간편비밀번호를 등록할 수 없어요.');
-    }
-
-    if (consent?.termsAgreed !== true) {
-      throw Error('필수 이용 약관에 먼저 동의해주세요.');
-    }
-
-    if (typeof pin !== 'string' || !/^\d{6}$/.test(pin)) {
-      throw Error('6자리 숫자를 입력해주세요.');
-    }
-
-    if (await readPin()) {
-      throw Error(
-        'PIN이 이미 등록되어 있습니다. 메인 설정에서 변경해주세요.'
-      );
-    }
-
-    const salt = await createPinSalt();
-    const hash = await hashPin(salt, pin);
-
-    await DemoStore.deleteItemAsync(ATTEMPTS_KEY);
-    await DemoStore.setItemAsync(
-      PIN_KEY,
-      JSON.stringify({ version: 1, salt, hash })
-    );
-
-    setHasSavedPin(true);
-    setRoutineMode('onboarding');
-    navigate('DailyRoutine');
-  });
-
-  const handlePinContinue = () => {
-    if (!authenticated || !hasSavedPin) return;
-    navigate('DailyRoutine');
-  };
 
   const handleRoutineContinue = () => {
     if (!authenticated) return;
@@ -726,9 +504,9 @@ export default function App() {
     try {
       requireAuthentication();
 
-      if ((await readConsent())?.termsAgreed !== true || !(await readPin())) {
+      if ((await readConsent())?.termsAgreed !== true) {
         throw Error(
-          '필수 이용 약관 동의와 간편비밀번호 설정을 먼저 완료해주세요.'
+          '필수 이용 약관에 먼저 동의해주세요.'
         );
       }
 
@@ -748,28 +526,16 @@ export default function App() {
     }
   };
 
-  const handleLogout = async (mode = 'logout') => {
+  const handleLogout = async () => {
     if (actionBusy.current) return;
     actionBusy.current = true;
 
     try {
-      const lock = mode === 'lock';
-      if (lock && !await readPin()) {
-        Alert.alert('간편비밀번호 미설정', '간편비밀번호를 먼저 등록해주세요.');
-        return;
+      if (SERVER_MODE) {
+        await api.logout();
+        resetServerCards();
       }
-      if (lock) {
-        await DemoStore.setItemAsync(SESSION_KEY, 'locked');
-      } else {
-        if (SERVER_MODE) {
-          await api.logout();
-          resetServerCards();
-        }
-        // 로그아웃하면 예약된 폰 알림을 모두 취소합니다.
-        await cancelPhoneNotifications().catch(() => {});
-        await DemoStore.setItemAsync(FULL_LOGOUT_KEY, 'yes');
-        await DemoStore.deleteItemAsync(SESSION_KEY);
-      }
+      await cancelPhoneNotifications().catch(() => {});
       setAuthenticated(false);
       setAllowAutomaticAds(false);
       setConsentDraft(null);
@@ -783,7 +549,7 @@ export default function App() {
       setActiveCardId(null);
       setWalletWarning('');
 
-      navigate(lock ? 'PinLogin' : 'Login');
+      navigate('Login');
     } catch {
       Alert.alert('화면 전환 실패', '다시 시도해주세요.');
     } finally {
@@ -829,8 +595,8 @@ export default function App() {
       throw Error('이미 사용 중인 전화번호입니다.');
     }
 
-    const salt = await createPinSalt();
-    const hash = await hashPin(salt, account.password);
+    const salt = await createRandomHex();
+    const hash = await hashPassword(salt, account.password);
 
     const record = { version: 1, email, phone: account.phone, job: account.job, jobOther: account.jobOther || '', salt, hash, firstLogin: true };
     await DemoStore.setItemAsync(ACCOUNT_KEY, JSON.stringify(record));
@@ -881,7 +647,6 @@ export default function App() {
       setAuthenticated(false);
       setAllowAutomaticAds(false);
       setConsent(null);
-      setHasSavedPin(false);
       setOnboardingComplete(false);
       setRoutineMode('onboarding');
       setCurrentScreen('Login');
@@ -974,20 +739,6 @@ export default function App() {
             />
           );
 
-        case 'PinLogin':
-          return (
-            <PinLoginScreen
-              onVerify={async pin => {
-                if (!/^\d{6}$/.test(pin)) {
-                  throw Error('6자리 숫자를 입력해주세요.');
-                }
-
-                previewGo('Main');
-              }}
-              onUsePassword={() => previewGo('Login')}
-            />
-          );
-
         case 'SignUp':
           return (
             <SignUpScreen
@@ -1004,17 +755,6 @@ export default function App() {
               initialDraft={consentDraft}
               onDraftChange={setConsentDraft}
               onBack={() => previewGo('Login')}
-              onNext={async () => previewGo('PinSetup')}
-            />
-          );
-
-        case 'PinSetup':
-          return (
-            <PinSetupScreen
-              configured={false}
-              readOnly={false}
-              onBack={() => previewGo('Agreement')}
-              onContinue={() => previewGo('DailyRoutine')}
               onNext={async () => previewGo('DailyRoutine')}
             />
           );
@@ -1064,8 +804,7 @@ export default function App() {
                 activeCardId={previewCardId}
                 onSelectCard={previewSelect}
                 onRegisterCard={previewRegister}
-                onLogout={mode => previewGo(mode === 'lock' ? 'PinLogin' : 'Login')}
-                canLock
+                onLogout={() => previewGo('Login')}
                 onEditRoutine={(date, entryId) => {
                   setScheduleEditor({ date, entryId });
                   previewGo('DailyRoutine');
@@ -1097,14 +836,6 @@ export default function App() {
           />
         );
 
-      case 'PinLogin':
-        return (
-          <PinLoginScreen
-            onVerify={handleVerifyPin}
-            onUsePassword={() => navigate('Login')}
-          />
-        );
-
       case 'SignUp':
         return (
           <SignUpScreen
@@ -1126,17 +857,6 @@ export default function App() {
           />
         );
 
-      case 'PinSetup':
-        return (
-          <PinSetupScreen
-            configured={hasSavedPin}
-            readOnly={false}
-            onContinue={handlePinContinue}
-            onBack={() => navigate('Agreement')}
-            onNext={handlePinSetup}
-          />
-        );
-
       case 'DailyRoutine':
         return (
           <DetailedRoutineScreen
@@ -1144,7 +864,7 @@ export default function App() {
             onContinue={handleRoutineContinue}
             onBack={() =>
               navigate(
-                routineMode === 'edit' ? 'Main' : 'PinSetup'
+                routineMode === 'edit' ? 'Main' : 'Agreement'
               )
             }
           />
@@ -1181,7 +901,6 @@ export default function App() {
               onSelectCard={handleSelectCard}
               onRegisterCard={handleRegisterCard}
               onLogout={handleLogout}
-              canLock={onboardingComplete && hasSavedPin}
               allowAutomaticAds={allowAutomaticAds}
               scheduleDisabled={Boolean(previewScreen) || privacyOpen}
               onEditRoutine={openRoutine}
@@ -1226,7 +945,7 @@ export default function App() {
     </TouchableOpacity>
   );
 
-  const showAccountActions = !previewScreen && ['Login', 'PinLogin', 'Main'].includes(currentScreen);
+  const showAccountActions = !previewScreen && ['Login', 'Main'].includes(currentScreen);
 
   return (
     // iPhone 노치·홈 인디케이터에 가려지지 않도록 전체를 안전 영역 안에 둡니다.

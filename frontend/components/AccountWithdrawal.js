@@ -146,7 +146,7 @@ export default function AccountWithdrawal() {
                   </TouchableOpacity>
                 </> : <>
                   <Text style={s.hint}>
-                    {deleted ? '이 기기의 계정 기록을 삭제했어요. 로그인 화면으로 이동합니다.' : '탈퇴하면 이 기기에 저장된 로그인 정보, 간편비밀번호, 동의, 일과·일정, 카드 추천·등록 설정이 삭제됩니다. 삭제한 데이터는 복원할 수 없습니다.'}
+                    {deleted ? '이 기기의 계정 기록을 삭제했어요. 로그인 화면으로 이동합니다.' : '탈퇴하면 이 기기에 저장된 로그인 정보, 동의, 일과·일정, 카드 추천·등록 설정이 삭제됩니다. 삭제한 데이터는 복원할 수 없습니다.'}
                   </Text>
 
                   {!deleted && <Text style={s.hint}>

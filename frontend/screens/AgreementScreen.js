@@ -8,24 +8,23 @@ function CheckRow({
   disabled,
   onPress
 }) {
-  return <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={title} accessibilityState={{
-    checked,
-    disabled
-  }} disabled={disabled} onPress={onPress} style={[styles.checkRow, checked && styles.selected, disabled && styles.disabled]}>
-      <Text style={[styles.square, checked && styles.squareChecked]}>
-        {checked ? '✓' : ''}
-      </Text>
-
-      <View style={styles.flex}>
-        <Text style={styles.checkTitle}>
-          {title}
-        </Text>
-
-        <Text style={styles.hint}>
-          {description}
-        </Text>
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <View style={[styles.checkCard, checked && styles.selected, disabled && styles.disabled]}>
+      <View style={styles.checkRow}>
+        <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={title}
+          accessibilityState={{ checked, disabled }} disabled={disabled} onPress={onPress} style={styles.checkControl}>
+          <Text style={[styles.square, checked && styles.squareChecked]}>{checked ? '✓' : ''}</Text>
+          <Text style={styles.checkTitle}>{title}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={title + ' 상세보기'}
+          accessibilityState={{ expanded }} disabled={disabled} onPress={() => setExpanded(value => !value)} style={styles.detailsButton}>
+          <Text style={styles.link}>{expanded ? '접기' : '상세보기'}</Text>
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>;
+      {expanded && <Text style={[styles.hint, styles.details]}>{description}</Text>}
+    </View>
+  );
 }
 export default function AgreementScreen({
   onNext,
@@ -147,9 +146,6 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     paddingTop: 12
   },
-  flex: {
-    flex: 1
-  },
   back: {
     paddingVertical: 10,
     alignSelf: 'flex-start',
@@ -160,16 +156,34 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: "#5A6E89"
   },
-  checkRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
+  checkCard: {
     borderWidth: 1,
     borderColor: '#E4EAF3',
     borderRadius: 18,
-    padding: 18,
-    backgroundColor: "#FFFFFF",
-    minHeight: 64
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    backgroundColor: "#FFFFFF"
+  },
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  checkControl: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 44
+  },
+  detailsButton: {
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: 6
+  },
+  details: {
+    marginLeft: 36,
+    paddingBottom: 8
   },
   selected: {
     borderColor: "#104FE7",
@@ -191,11 +205,11 @@ const styles = StyleSheet.create({
     borderColor: "#104FE7"
   },
   checkTitle: {
+    flex: 1,
     fontSize: 14,
     fontWeight: '800',
     color: "#142D4E",
-    lineHeight: 22,
-    marginBottom: 5
+    lineHeight: 22
   },
   section: {
     fontSize: 18,
