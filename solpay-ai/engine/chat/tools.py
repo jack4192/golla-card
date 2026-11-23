@@ -1,4 +1,4 @@
-"""챗봇 도구 8개: 정의(JSON 스키마)와 실행 (챗봇 설계서, 2026-11-19 결정으로 8개 유지).
+"""챗봇 도구 9개: 정의(JSON 스키마)와 실행 (챗봇 설계서. 2026-11-19 에 8개로 정했고, 2026-11-23 결정으로 프로모션 조회를 더함).
 
 도구는 엔진 함수를 감싼 얇은 함수다. 사용자 ID 는 인자에 없고 Spring 이 보낸 ID 로만 실행한다.
 결과는 두 갈래로 나간다.
@@ -85,6 +85,10 @@ TOOL_SPECS = [
          "merchant_id": {"type": "integer", "description": "find_merchant 가 돌려준 가맹점 ID"},
          "merchant_name": {"type": "string"}, "category_name": {"type": "string", "description": "가맹점을 모를 때 업종"}},
         ["amount"]),
+    _fn("list_promotions",
+        "지금 진행 중이고 내 카드로 받을 수 있는 카드사 이벤트·마이샵 프로모션을 돌려준다 (가맹점, 혜택, 기간, 받을 수 있는 내 카드). "
+        "'진행 중인 프로모션 알려줘', '스타벅스 이벤트 있어?' 같은 질문에 쓴다. 마이샵은 앱에서 켜야 받는 혜택이다.",
+        {"merchant_name": {"type": "string", "description": "가맹점·브랜드 이름으로 좁힐 때 (예: '스타벅스'). 없으면 전체"}}),
     _fn("find_merchant",
         "가맹점 이름으로 가맹점을 찾는다 (정확히 일치 → 브랜드 일치 → 부분 일치). 없으면 비슷한 업종을 돌려준다.",
         {"name": {"type": "string"}}, ["name"]),
@@ -482,6 +486,41 @@ class ToolBox:
         return out
 
     # ---------- 8. 가맹점 검색 ----------
+    def list_promotions(self, merchant_name: str | None = None) -> dict:
+        """지금 진행 중이고 내 카드 중 하나라도 받을 수 있는 프로모션. 엔진 계산과 같은 목록(팀 DB + promotions.yml)에서
+        '확인 필요'(응모·신규 조건 등) 행사는 빼고, 같은 번호가 두 번 있으면 한 번만 보여 준다. 끝나는 날이 가까운 순."""
+        promotions = self.service._all_promotions(self.context)
+        word = norm(merchant_name) if merchant_name else ""
+        rows, seen = [], set()
+        for p in promotions:
+            if p.needs_check or not p.active(self.at) or p.promotion_id in seen:
+                continue
+            if word and word not in norm(p.brand) and word not in norm(p.title or ""):
+                continue
+            cards = [self.names[c.user_card_id] for c in self.cards
+                     if (p.issuer is None or p.issuer == c.issuer) and (p.card_id is None or p.card_id == c.card_id)]
+            if not cards:
+                continue
+            seen.add(p.promotion_id)
+            benefit = f"{p.amount:,}원" if p.amount is not None else f"{(p.rate or 0) * 100:g}%"
+            if p.max_amount is not None and p.amount is None:
+                benefit += f" (한 번에 최대 {p.max_amount:,}원)"
+            row = {"promotion_id": p.promotion_id, "brand": p.brand, "title": p.title or p.label(),
+                   "kind": "마이샵" if p.kind == "myshop" else "이벤트", "benefit": benefit,
+                   "start": f"{p.starts_at:%Y-%m-%d}", "end": f"{p.ends_at:%Y-%m-%d}", "cards": cards}
+            if p.min_amount:
+                row["min_amount"] = p.min_amount
+            rows.append(row)
+        rows.sort(key=lambda r: (r["end"], r["brand"]))
+        self.blocks.append({"type": "promotion_list", "promotions": rows})
+        out = {"count": len(rows), "promotions": rows}
+        if not rows:
+            out["note"] = (f"'{merchant_name}' 에서 지금 내 카드로 받을 수 있는 프로모션이 없다" if merchant_name
+                           else "지금 내 카드로 받을 수 있는 진행 중인 프로모션이 없다")
+        if any(r["kind"] == "마이샵" for r in rows):
+            out["myshop_note"] = "마이샵은 앱에서 그 가맹점을 켜야 받는 혜택이다"
+        return out
+
     def find_merchant(self, name: str) -> dict:
         category = self._exact_category(name)
         if category:
