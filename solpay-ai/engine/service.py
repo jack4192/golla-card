@@ -8,6 +8,7 @@ from datetime import datetime
 from engine.catalog import Catalog
 from engine.category_model import CategoryModel
 from engine.domain import KnownPayment, Promotion, RankRequest, RankResult, RankedCard, UserWeights, ScheduleItem
+from engine.example import rank_example, schedule_example
 from engine.ml import Models
 from engine.messages import PROMOTION_CARD, RULE, card_message, previous_base_filled, with_object_particle
 from engine.params import BASE_ORDER_FIRST_TIER, Params
@@ -68,7 +69,8 @@ class PlacementEngine:
             others = [c.user_card_id for c in eligible if c.user_card_id != first]
             ranked += [RankedCard(uc, i + 2, 0, "") for i, uc in enumerate(others)]
             return RankResult(ranked, 1, RULE, outcome.forced_rule.rule_id, version, "forced", first,
-                              base_source="forced")
+                              base_source="forced",
+                              example=rank_example(state, decision, scenarios, RULE, promotions, req.at))
 
         if promo_offers and params.engine != "v3":
             promo = self._promotion_card(state, req, eligible, scenarios, params, schedules, promo_offers, last_base)
@@ -98,6 +100,7 @@ class PlacementEngine:
                               "total": round(s.total, 1)}
                          for uc, s in decision.scores.items()},
             hold=decision.hold, base_source=decision.base_source,
+            example=rank_example(state, decision, scenarios, messages[decision.first].code, promotions, req.at),
         )
 
     def _promotion_card(self, state, req, eligible, scenarios, params, schedules, promo_offers,
@@ -122,7 +125,7 @@ class PlacementEngine:
                                   top_category=item.category,
                                   scenarios=[{"category": s.category, "prob": round(s.prob, 3), "amounts": list(s.amounts)}
                                              for s in scenarios.scenarios],
-                                  base_source="promotion")
+                                  base_source="promotion", example=schedule_example(self.catalog, item, brand))
         return None
 
     def _params_for(self, weights: UserWeights | None) -> Params:

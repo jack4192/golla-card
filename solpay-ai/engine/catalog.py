@@ -107,6 +107,13 @@ class Catalog:
         tiers = self.tiers[card_id]
         return tiers[-1] if tiers else None
 
+    def merchant_for(self, category: str, brand_code: str | None) -> int | None:
+        """그 업종·브랜드 코드의 가맹점 중 번호가 가장 작은 것 (결제 화면 예시 거래용). 브랜드가 없으면 None."""
+        if brand_code is None:
+            return None
+        found = [m.merchant_id for m in self.merchants.values() if m.category == category and m.brand_code == brand_code]
+        return min(found) if found else None
+
     def brand_of(self, merchant_id: int | None) -> str | None:
         merchant = self.merchants.get(merchant_id) if merchant_id is not None else None
         return merchant.brand_code if merchant is not None else None
