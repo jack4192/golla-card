@@ -235,7 +235,10 @@ def pick_card(state, payments: list[Payment], items: list[ScheduleItem], history
             continue
         rows = []
         for item in items:
-            brands = [usual[item.category]] if usual[item.category] else (_covered_brands(card, item.category) or [None])
+            if item.brand is not None:                     # 직접 입력으로 받은 브랜드 (2026-11-23)
+                brands = [item.brand]
+            else:
+                brands = [usual[item.category]] if usual[item.category] else (_covered_brands(card, item.category) or [None])
             row = _item_gain(state, card, item, brands, owned)
             if row is not None:
                 rows.append(row)

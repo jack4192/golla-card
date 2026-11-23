@@ -132,6 +132,13 @@
 
   <!-- 3. 카드 추천 -->
   <section class="tab" id="tab-page">
+    <h2>가게 이름 분류 <span class="muted small">(일정 직접 입력: 검색 먼저, 못 찾으면 OpenAI)</span></h2>
+    <div class="row">
+      <input id="placeText" maxlength="40" placeholder="예: 스벅, 올리브영, 헬스장, 친구랑 저녁" style="flex:1">
+      <button class="primary" id="placeBtn">분류</button>
+    </div>
+    <div id="placeErr" class="err"></div>
+    <div id="placeOut"></div>
     <h2>오늘 일정 <span class="muted small">(최대 10줄, 시작·끝·업종·예상 금액)</span></h2>
     <table class="sched"><thead><tr><th>시작</th><th>끝</th><th>업종</th><th class="num">예상 금액(원)</th><th></th></tr></thead>
       <tbody id="schedRows"></tbody></table>
@@ -419,6 +426,19 @@ async function openMissed() {
     <div><h2>응답 <span class="muted small">${ms}ms</span></h2>${pre(list)}</div></div>`;
 }
 $("missedBtn").addEventListener("click", () => busy($("missedBtn"), "missedErr", openMissed));
+async function classifyPlace() {
+  const t = performance.now();
+  const r = await api("POST", "/internal/places/classify", {text: $("placeText").value, user_id: userId(), at: at()});
+  const ms = Math.round(performance.now() - t);
+  const src = {search: "검색", llm: "AI 분류", none: "못 찾음"}[r.source] || r.source;
+  const head = r.category ? `→ ${esc(r.category_name)}${r.brand_name ? " · " + esc(r.brand_name) : ""}` : "업종을 정하지 못했어요";
+  const cands = (r.candidates || []).map((c) => esc(c.brand_name ? `${c.category_name} · ${c.brand_name}` : c.category_name)).join(", ");
+  $("placeOut").innerHTML = `<div class="cardbox"><b>${head}</b> <span class="badge">${esc(src)}</span>
+      ${r.amount_hint ? `<span class="muted small">예상 금액 ${won(r.amount_hint)}</span>` : ""}
+      ${cands ? `<div class="small muted">후보: ${cands}</div>` : ""}</div>
+    <div class="small muted">응답 ${ms}ms</div>${pre(r)}`;
+}
+$("placeBtn").addEventListener("click", () => busy($("placeBtn"), "placeErr", classifyPlace));
 
 // ---------- 5. 월간 리포트 ----------
 const signed = (n) => (n > 0 ? "+" : "") + won(n);

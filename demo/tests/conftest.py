@@ -23,6 +23,22 @@ MERCHANTS = [
 ]
 
 
+CLASSIFY = {"category": "CAFE", "category_name": "카페/커피전문점", "brand": "스타벅스", "brand_name": "스타벅스",
+            "source": "search", "candidates": [], "amount_hint": 6500, "ms": 3}
+PAGE = {"source": "schedule", "card_day": True, "tabs": ["card", "merchant"], "copy_source": "template", "cached": False,
+        "day": "2026-11-05",
+        "card": {"card_id": 7, "card_name": "신한 카페 카드", "gain": 600, "show_amount": True, "keyword": "스타벅스 10% 할인",
+                 "first_month_note": None, "copy": {"title": "스타벅스엔 이 카드", "summary": "오늘 스타벅스 일정에서 600원 더",
+                                                    "amount_label": "오늘 600원 더", "reasons": ["스타벅스 10% 할인"]}},
+        "merchant": {"copy": {"title": "오늘 일정 혜택", "summary": "스타벅스 행사"},
+                     "offers": [{"item_id": 1, "start": "2026-11-05T14:00:00+09:00", "end": "2026-11-05T15:00:00+09:00",
+                                 "category": "CAFE", "category_name": "카페/커피전문점", "amount": 6500, "promotion_id": 3,
+                                 "brand": "스타벅스", "title": "스타벅스 신한 데이", "kind": "event", "user_card_id": 1,
+                                 "card_id": 1, "card_name": "신한 생활 신용", "promo_value": 500, "card_value": 650,
+                                 "total": 1150, "alternatives": [], "window_from": "2026-11-05T13:30:00+09:00",
+                                 "window_to": "2026-11-05T15:30:00+09:00"}]}}
+
+
 class FakeAI:
     def __init__(self):
         self.down = False
@@ -74,6 +90,10 @@ class FakeAI:
                 "user_card_id": 1, "card_id": 1, "card_name": "신한 생활 신용", "promo_value": 500, "card_value": 600,
                 "total": 1100, "alternatives": [], "window_from": "2026-11-05T13:30:00+09:00",
                 "window_to": "2026-11-05T15:30:00+09:00"}]})
+        if path == "/internal/places/classify":
+            return httpx.Response(200, json=CLASSIFY)
+        if path == "/internal/users/1/recommendation-page":
+            return httpx.Response(200, json=PAGE)
         if path == "/internal/users/1/strategy":
             return httpx.Response(200, json={"strategy": "main_top", "status": "ready", "scores": {}})
         if path == "/internal/users/1/missed-benefit":
