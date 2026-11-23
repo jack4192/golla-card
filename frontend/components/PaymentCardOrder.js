@@ -1,7 +1,8 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Image, PanResponder, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Animated, Image, Modal, PanResponder, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as Store from '../utils/demoStore';
 import { CARD_ORDER_KEY, saveWalletCardOrder } from '../utils/wallet';
+import { syncAction } from '../utils/autoPlacementCore';
 
 const ROW_GAP = 12;
 const CARDS_PER_PAGE = 5;
@@ -58,7 +59,11 @@ export default function PaymentCardOrder({
   selectedId,
   onSelect,
   syncSelection = true,
-  aiOrder = null   // AI 가 정한 순서(카드 id 목록). 사용자가 직접 끌어 옮기기 전까지 이 순서로 보여 준다
+  aiOrder = null,  // AI 가 정한 순서(카드 id 목록). 사용자가 직접 끌어 옮기기 전까지 이 순서로 보여 준다
+  // 홈 '내 카드' (2026-11-24 수정사항): 자동 배치 ON/OFF. 주면 '자동 배치 적용' 버튼과 순서 변경 확인 창을 쓴다.
+  //   ON 이면 AI 순서를 따르고, 순서를 직접 바꾸면 확인 뒤 OFF(onAutoChange(false)). 결제 화면은 주지 않는다.
+  autoOn,
+  onAutoChange
 }) {
   const [savedIds, setSavedIds] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -72,8 +77,17 @@ export default function PaymentCardOrder({
   const revision = useRef(0);
   const [manual, setManual] = useState(false);
   const [visibleCount, setVisibleCount] = useState(CARDS_PER_PAGE);
-  const usingAi = !manual && Array.isArray(aiOrder) && aiOrder.length > 0;
+  const homeMode = autoOn !== undefined;
+  const hasAiOrder = Array.isArray(aiOrder) && aiOrder.length > 0;
+  const usingAi = homeMode ? Boolean(autoOn) && hasAiOrder : !manual && hasAiOrder;
   const ordered = useMemo(() => orderCards(cards, usingAi ? aiOrder : savedIds), [cards, savedIds, usingAi, aiOrder]);
+  // 자동 배치 중 직접 순서를 바꾸려 할 때의 확인 창 { cards, from, to }
+  const [pendingMove, setPendingMove] = useState(null);
+  // 스위치로 끌 때 보이던 AI 순서를 내 순서로 저장한다 (끄는 순간 목록이 갑자기 바뀌지 않게). 확인 창으로 끈 경우는 이미 저장했다
+  const lastAiShown = useRef(null);
+  if (usingAi) lastAiShown.current = ordered.map(card => String(card.id));
+  const skipAutoOffSave = useRef(false);
+  const previousAuto = useRef(autoOn);
   const visibleCards = ordered.slice(0, visibleCount);
   const nextPageSize = Math.min(CARDS_PER_PAGE, ordered.length - visibleCards.length);
   const orderedRef = useRef(ordered);
@@ -88,14 +102,25 @@ export default function PaymentCardOrder({
     if (!syncSelection || loading || readError || firstId == null) return;
     const last = lastSynced.current;
     lastSynced.current = { firstId, selectedId };
-    if (firstId === selectedId) return;
     const selectedIndex = ordered.findIndex(card => card.id === selectedId);
-    if (selectedId !== last.selectedId && selectedIndex > 0) {
-      saveMove(ordered, selectedIndex, 0);
-    } else {
-      onSelect?.(firstId);
+    // 자동 배치 중(AI 순서 있음)이면 언제나 AI 1순위가 결제 카드다 (autoPlacementCore.syncAction)
+    const action = syncAction({ autoOn: Boolean(autoOn), usingAi, firstId, selectedId, lastSelectedId: last.selectedId, selectedIndex });
+    if (action === 'moveSelectedToTop') saveMove(ordered, selectedIndex, 0);
+    else if (action === 'selectTop') onSelect?.(firstId);
+  }, [firstId, loading, onSelect, readError, selectedId, syncSelection, usingAi, autoOn]);
+  useEffect(() => {
+    const was = previousAuto.current;
+    previousAuto.current = autoOn;
+    if (!homeMode || was !== true || autoOn !== false) return;
+    if (skipAutoOffSave.current) {
+      skipAutoOffSave.current = false;
+      return;
     }
-  }, [firstId, loading, onSelect, readError, selectedId, syncSelection]);
+    const ids = lastAiShown.current;
+    if (!ids?.length) return;
+    setSavedIds(ids);
+    persistCardOrder(ids).catch(problem => { if (mounted.current) setError(problem.message || '순서를 저장하지 못했습니다.'); });
+  }, [autoOn]);
   const load = async () => {
     const ticket = ++revision.current;
     setLoading(true);
@@ -140,6 +165,24 @@ export default function PaymentCardOrder({
         setError(problem.message || '순서를 저장하지 못했습니다. 다시 시도해주세요.');
       }
     }
+  };
+
+  // 사용자가 순서를 바꿀 때(누르기·끌기·화살표): 자동 배치 중이면 먼저 묻는다 (2026-11-24 수정사항)
+  const requestMove = (cards, from, to) => {
+    if (from === to && !error) return;
+    if (homeMode && autoOn) {
+      setPendingMove({ cards, from, to });
+      return;
+    }
+    saveMove(cards, from, to);
+  };
+  const confirmMove = () => {
+    const move = pendingMove;
+    setPendingMove(null);
+    if (!move) return;
+    skipAutoOffSave.current = true;
+    saveMove(move.cards, move.from, move.to);
+    onAutoChange?.(false);
   };
 
   const rowFor = id => {
@@ -205,7 +248,8 @@ export default function PaymentCardOrder({
       if (!mounted.current || drag.current !== session) return;
       const currentCards = orderedRef.current;
       if (currentCards.length === cards.length && cards.every((card, index) => card.id === currentCards[index].id)) {
-        saveMove(cards, from, to);
+        // 확인 창에서 취소하면 저장하지 않아서, 아래 레이아웃 효과가 위치를 되돌려 원래 순서가 보인다
+        requestMove(cards, from, to);
       }
       setDraggedId(null);
     });
@@ -223,7 +267,7 @@ export default function PaymentCardOrder({
   const moveWithArrow = (index, direction) => {
     const destination = index + direction;
     if (!drag.current && !loading && !readError && destination >= 0 && destination < visibleCards.length) {
-      saveMove(ordered, index, destination);
+      requestMove(ordered, index, destination);
     }
   };
   const handleFor = (id, index) => {
@@ -270,15 +314,23 @@ export default function PaymentCardOrder({
   };
 
   return <View style={s.box}>
-      <Text style={s.heading}>
-        내 카드 · {cards.length}장
-      </Text>
+      <View style={s.headRow}>
+        <Text style={[s.heading, s.flexOne]}>
+          내 카드 · {cards.length}장
+        </Text>
+        {/* 켜짐 = AI 추천 순서로 자동 배치 중, 꺼짐 = 내가 정한 순서. 꺼짐에서 누르면 자동 배치로 돌아간다 */}
+        {homeMode && <TouchableOpacity accessibilityRole="button" accessibilityLabel="자동 배치 적용"
+          accessibilityState={{ selected: Boolean(autoOn) }} disabled={Boolean(autoOn)}
+          onPress={() => onAutoChange?.(true)} style={[s.autoPill, autoOn ? s.autoPillOn : s.autoPillOff]}>
+          <Text style={autoOn ? s.autoPillOnText : s.autoPillOffText}>자동 배치 적용</Text>
+        </TouchableOpacity>}
+      </View>
 
       <Text style={s.hint}>
         카드를 눌러 선택하고, ☰를 끌어 순서를 바꿔요.
       </Text>
 
-      {usingAi && <Text style={s.link}>
+      {!homeMode && usingAi && <Text style={s.link}>
           AI가 지금 결제에 맞춰 정한 순서예요.
         </Text>}
 
@@ -302,7 +354,7 @@ export default function PaymentCardOrder({
             onLayout={event => { row.height = event.nativeEvent.layout.height; }}
             style={[s.item, { transform: [{ translateY: row.y }] }, draggedId === card.id && s.dragging]}>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel={index + 1 + '번 ' + card.name} accessibilityState={{ selected }}
-              disabled={draggedId !== null || loading || Boolean(readError)} onPress={() => syncSelection ? saveMove(ordered, index, 0) : onSelect?.(card.id)} style={s.itemButton}>
+              disabled={draggedId !== null || loading || Boolean(readError)} onPress={() => syncSelection ? requestMove(ordered, index, 0) : onSelect?.(card.id)} style={s.itemButton}>
               <CardThumb card={card} />
 
               <View style={s.copy}>
@@ -331,6 +383,23 @@ export default function PaymentCardOrder({
       {!!error && <Text style={s.error} accessibilityRole="alert">
           {error}
         </Text>}
+
+      <Modal visible={!!pendingMove} transparent animationType="fade" onRequestClose={() => setPendingMove(null)}>
+        <View style={s.dialogBackdrop}>
+          <View style={s.dialog} accessibilityViewIsModal>
+            <Text accessibilityRole="header" style={s.dialogTitle}>정말로 카드 순서를 바꾸시겠습니까?</Text>
+            <Text style={s.dialogText}>바꾸면 AI 자동 배치가 꺼지고 정한 순서대로 써요. '자동 배치 적용'으로 언제든 되돌릴 수 있어요.</Text>
+            <View style={s.dialogActions}>
+              <TouchableOpacity accessibilityRole="button" onPress={() => setPendingMove(null)} style={[s.dialogButton, s.dialogCancel]}>
+                <Text style={s.dialogCancelText}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" onPress={confirmMove} style={[s.dialogButton, s.dialogConfirm]}>
+                <Text style={s.dialogConfirmText}>바꾸기</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>;
 }
 
@@ -347,6 +416,23 @@ function shiftForDrop({ rows, from, to }, index) {
 }
 
 const s = StyleSheet.create({
+  headRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  flexOne: { flex: 1, minWidth: 0 },
+  autoPill: { minHeight: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center', borderWidth: 1 },
+  autoPillOn: { backgroundColor: '#245DE5', borderColor: '#245DE5' },
+  autoPillOff: { backgroundColor: '#FFFFFF', borderColor: '#C9D3E3' },
+  autoPillOnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
+  autoPillOffText: { color: '#62738D', fontSize: 12, fontWeight: '800' },
+  dialogBackdrop: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: 'rgba(12, 22, 44, 0.45)' },
+  dialog: { width: '100%', maxWidth: 360, gap: 12, padding: 20, borderRadius: 20, backgroundColor: '#FFFFFF' },
+  dialogTitle: { color: '#142D4E', fontSize: 17, fontWeight: '800' },
+  dialogText: { color: '#526783', fontSize: 14, lineHeight: 20 },
+  dialogActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  dialogButton: { flex: 1, minHeight: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  dialogCancel: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#BFD3FA' },
+  dialogConfirm: { backgroundColor: '#245DE5' },
+  dialogCancelText: { color: '#245DE5', fontSize: 15, fontWeight: '800' },
+  dialogConfirmText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   moreButton: {
     minHeight: 44,
     borderWidth: 1,
