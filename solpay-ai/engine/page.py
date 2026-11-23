@@ -224,9 +224,10 @@ def pick_card(state, payments: list[Payment], items: list[ScheduleItem], history
     1년 순이득이 가장 큰 카드를 고른다. 같으면 오늘 더 받는 금액이 큰 카드, 그다음 card_id (2026-11-21 사용자 결정).
     결제 이력이 두 달 미만이거나 page_yearly=False 면 1년 계산 없이: 오늘 더 받는 금액 큰 순 → 연회비 낮은 순 → card_id.
     항목은 대표 항목이 맨 앞에 오게 둔다: 일정 업종 혜택 먼저, 그다음 더 받는 금액이 큰 순.
-    2주(recommend_same_card_days) 안에 추천한 카드(오늘 기록 제외)와 자격 제한 카드는 뺀다."""
+    자격 제한 카드는 뺀다. 3일 카드날 규칙(page_card_every_time=False)일 때만 2주(recommend_same_card_days) 안에
+    추천한 카드(오늘 기록 제외)도 뺀다 — 매번 카드 탭이면 같은 카드를 다시 보여 준다 (2026-11-24 사용자 결정)."""
     catalog = state.catalog
-    blocked = recently_recommended(history, at, params)
+    blocked = set() if params.page_card_every_time else recently_recommended(history, at, params)
     owned = [(uc, catalog.cards[uc.card_id]) for uc in state.cards if not uc.excluded]
     usual = {i.category: usual_brand(payments, catalog, i.category, at) for i in items}
     found = []
