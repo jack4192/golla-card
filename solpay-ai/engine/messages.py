@@ -79,20 +79,21 @@ def when_text(b: Benefit) -> str:
 
 
 def _best_benefit(state: UserState, user_card_id: int, card_id: int, scenarios: list[Scenario], at):
-    """이 카드에서 기대 금액이 가장 큰 시나리오의 혜택을 고른다."""
+    """이 카드에서 기대 금액이 가장 큰 시나리오의 혜택을 고른다. (혜택, 시나리오, 브랜드 코드, 금액)
+    브랜드·금액은 결제 화면 예시 거래(engine.example)가 문구와 같은 거래를 보이려고 쓴다."""
     card, st = state.catalog.cards[card_id], state.ledger[user_card_id]
-    best = (0.0, None, None)
+    best = (0.0, None, None, None, None)
     for s in scenarios:
         for brand, weight in s.brands.items():
             for amount in s.amounts:
                 got, benefit = evaluate(card, s.category, amount, st, at, brand, SOLPAY)
                 if got * s.prob * weight > best[0]:
-                    best = (got * s.prob * weight, benefit, s)
-    return best[1], best[2]
+                    best = (got * s.prob * weight, benefit, s, brand, amount)
+    return best[1], best[2], best[3], best[4]
 
 
 def _benefit_message(state: UserState, catalog: Catalog, user_card_id: int, card_id: int, scenarios, at) -> Message | None:
-    benefit, scenario = _best_benefit(state, user_card_id, card_id, scenarios, at)
+    benefit, scenario, _, _ = _best_benefit(state, user_card_id, card_id, scenarios, at)
     if benefit is None:
         return None
     name = catalog.category_name(scenario.category)

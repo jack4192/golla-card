@@ -172,6 +172,8 @@ def test_팝업_뒤_일정_시간에는_프로모션_카드가_1순위(popup_svc
     _, result = popup_svc.rank(RankRequest(1, at(10, 7, 14, 10)))
     assert (result.cards[0].user_card_id, result.display_count, result.reason_code) == (201, 1, PROMOTION_CARD)
     assert "메가MGC커피" in result.cards[0].message and "1,100원" in result.cards[0].message
+    # 결제 화면 예시 거래: 일정에 브랜드가 없어도(백엔드는 brand 를 보내지 않는다) 행사 가게로 계산해야 문구와 맞는다
+    assert (result.example["basis"], result.example["merchant_id"], result.example["name"]) == ("schedule", MEGA, "메가MGC커피")
 
 
 def test_일정_시간_밖에서는_평소_계산(popup_svc):
