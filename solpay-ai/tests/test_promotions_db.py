@@ -67,3 +67,38 @@ def test_팀_DB_저장소는_행사_목록이_완전하다고_알린다():
     from engine.db_store import TeamDbPgStore
     from engine.team_db import TeamDbStore
     assert TeamDbStore.promotions_complete and TeamDbPgStore.promotions_complete
+
+
+# ---------- 서비스: yml 합치기 그만, 챗봇 목록은 실제 기간·화면 이름 ----------
+
+@pytest.fixture(scope="module")
+def svc(tmp_path_factory):
+    import os
+    os.environ["SOLPAY_STORE"] = "teamdb"
+    os.environ["SOLPAY_STRATEGY_DB"] = str(tmp_path_factory.mktemp("promo") / "strategy.sqlite")
+    from engine.api import build_service
+    return build_service()
+
+
+def test_챗봇_행사_목록은_실제_기간과_화면_이름을_말한다(svc):
+    from engine.chat.tools import ToolBox
+    svc.store.reset()
+    rows = ToolBox(svc, 1, kst(11, 23, 19)).list_promotions()["promotions"]
+    ids = {r["promotion_id"] for r in rows}
+    assert rows and 5 not in ids and 6 not in ids
+    assert all(r["start"].startswith("2026-11-") for r in rows)                # 2025-11-01(가상 데이터 기간)이 아니라
+    assert next(r for r in rows if r["promotion_id"] == 2)["brand"] == "온라인 다이소몰"
+    assert all("logo_url" in r for r in rows)
+
+
+def test_챗봇_행사_목록은_시작_전_행사를_뺀다(svc):
+    from engine.chat.tools import ToolBox
+    ids = {r["promotion_id"] for r in ToolBox(svc, 1, kst(11, 10)).list_promotions()["promotions"]}
+    assert 2 in ids and 3 not in ids                                          # 다이소데이는 11-16 시작
+
+
+def test_완전한_저장소에서는_yml_을_합치지_않는다(svc):
+    ctx = svc.store.context(1, kst(11, 23, 19))
+    ids = [p.promotion_id for p in svc._all_promotions(ctx)]
+    assert len(ids) == len(set(ids)) <= 29
+    assert len(svc.popup_promotions) == 29 and svc.popup_promotions[0].logo_url == "/brand-logos/mega.png"
