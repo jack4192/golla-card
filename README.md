@@ -25,7 +25,7 @@ PostgreSQL (5432)
 
 | 폴더 | 내용 | 자세한 설명 |
 |---|---|---|
-| `frontend/` | 앱. 회원가입, 간편비밀번호, 오늘의 일정, 추천, 카드 지갑, 결제 화면 | [frontend/README.md](frontend/README.md) |
+| `frontend/` | 앱. 회원가입, 이메일 로그인, 오늘의 일정, 추천, 카드 지갑, 결제 화면 | [frontend/README.md](frontend/README.md) |
 | `backend/` | Spring Boot 서버. 회원·로그인(JWT), 카드, 카드 상품, 일정 API | 아래 '2. 백엔드' 참고 |
 | `solpay-ai/` | AI 엔진. 결제 화면 카드 배치, 맞춤 추천, 챗봇, 월간 리포트, 연말정산 | [solpay-ai/README.md](solpay-ai/README.md) |
 | `data/` | 가상 소비 데이터 생성기. AI 엔진이 `data/config` 를 읽는다 | [data/README.md](data/README.md) |

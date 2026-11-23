@@ -35,8 +35,8 @@ const ACCOUNT = [
   ['solpay_demo_full_logout_v1', '로그아웃 상태'],
   ['solpay_demo_consent_v1', '서비스 안내 및 알림 선택'],
   ['solpay_demo_onboarding_v1', '가입 진행 상태'],
-  ['solpay_demo_pin_v1', '간편비밀번호'],
-  ['solpay_demo_pin_attempts_v1', 'PIN 시도 기록'],
+  ['solpay_demo_pin_v1', '이전 로그인 정보'],
+  ['solpay_demo_pin_attempts_v1', '이전 로그인 시도 기록'],
   ['solpay_ui_settings_v1', '화면 설정'],
 ];
 

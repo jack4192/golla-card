@@ -1,7 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Image, PanResponder, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as Store from '../utils/demoStore';
 import { CARD_ORDER_KEY, saveWalletCardOrder } from '../utils/wallet';
+
+const ROW_GAP = 12;
+const CARDS_PER_PAGE = 5;
+const IS_WEB = Platform.OS === 'web';
+
 export function validateCardOrder(raw) {
   if (raw === null) return [];
   const value = JSON.parse(raw);
@@ -52,22 +57,45 @@ export default function PaymentCardOrder({
   cards = [],
   selectedId,
   onSelect,
+  syncSelection = true,
   aiOrder = null   // AI 가 정한 순서(카드 id 목록). 사용자가 직접 끌어 옮기기 전까지 이 순서로 보여 준다
 }) {
   const [savedIds, setSavedIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [readError, setReadError] = useState('');
   const [error, setError] = useState('');
-  // 드래그 중인 카드와 이동 거리(px)
-  const [drag, setDrag] = useState(null);
-  const rowHeight = useRef(84);
+  const [draggedId, setDraggedId] = useState(null);
+  const drag = useRef(null);
+  const rows = useRef(new Map());
+  const writeRevision = useRef(0);
   const mounted = useRef(true);
   const revision = useRef(0);
   const [manual, setManual] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(CARDS_PER_PAGE);
   const usingAi = !manual && Array.isArray(aiOrder) && aiOrder.length > 0;
   const ordered = useMemo(() => orderCards(cards, usingAi ? aiOrder : savedIds), [cards, savedIds, usingAi, aiOrder]);
+  const visibleCards = ordered.slice(0, visibleCount);
+  const nextPageSize = Math.min(CARDS_PER_PAGE, ordered.length - visibleCards.length);
   const orderedRef = useRef(ordered);
   orderedRef.current = ordered;
+  const firstId = ordered[0]?.id;
+  // syncSelection 일 때는 '맨 위 카드 = 결제 카드'를 지킵니다.
+  // - 이 목록에서 순서를 바꾸면(누르기·끌기) 맨 위 카드를 결제 카드로 고릅니다.
+  // - 다른 곳(카드 탭·QR 결제 창·결제 화면)에서 결제 카드를 바꾸면 그 카드를 맨 위로 올려 저장합니다.
+  const lastSynced = useRef({ firstId: undefined, selectedId: undefined });
+
+  useEffect(() => {
+    if (!syncSelection || loading || readError || firstId == null) return;
+    const last = lastSynced.current;
+    lastSynced.current = { firstId, selectedId };
+    if (firstId === selectedId) return;
+    const selectedIndex = ordered.findIndex(card => card.id === selectedId);
+    if (selectedId !== last.selectedId && selectedIndex > 0) {
+      saveMove(ordered, selectedIndex, 0);
+    } else {
+      onSelect?.(firstId);
+    }
+  }, [firstId, loading, onSelect, readError, selectedId, syncSelection]);
   const load = async () => {
     const ticket = ++revision.current;
     setLoading(true);
@@ -96,14 +124,10 @@ export default function PaymentCardOrder({
     };
   }, []);
 
-  const targetIndex = (from, dy) => Math.max(0, Math.min(orderedRef.current.length - 1, from + Math.round(dy / rowHeight.current)));
-
-  // 놓으면 바로 새 순서를 저장합니다. 결제 카드는 바뀌지 않습니다.
-  const drop = async (from, dy) => {
-    setDrag(null);
-    const to = targetIndex(from, dy);
-    if (to === from) return;
-    const ids = orderedRef.current.map(card => String(card.id));
+  const saveMove = async (cards, from, to) => {
+    if (from === to && !error) return;
+    const ticket = ++writeRevision.current;
+    const ids = cards.map(card => String(card.id));
     const [moved] = ids.splice(from, 1);
     ids.splice(to, 0, moved);
     setManual(true);
@@ -112,40 +136,137 @@ export default function PaymentCardOrder({
     try {
       await persistCardOrder(ids);
     } catch (problem) {
-      if (mounted.current) setError(problem.message || '순서를 저장하지 못했습니다. 다시 시도해주세요.');
+      if (mounted.current && ticket === writeRevision.current) {
+        setError(problem.message || '순서를 저장하지 못했습니다. 다시 시도해주세요.');
+      }
     }
   };
 
-  const responders = useRef({});
+  const rowFor = id => {
+    if (!rows.current.has(id)) {
+      rows.current.set(id, { y: new Animated.Value(0), height: 88 });
+    }
+    return rows.current.get(id);
+  };
+
+  const animate = (row, toValue) => Animated.timing(row.y, {
+    toValue,
+    duration: 150,
+    useNativeDriver: !IS_WEB,
+    isInteraction: false,
+  });
+
+  const startDrag = (id, pointerId, startY = 0) => {
+    if (drag.current || loading || readError) return false;
+    const cards = orderedRef.current;
+    const from = cards.findIndex(card => card.id === id);
+    if (from < 0) return false;
+
+    const measuredRows = cards.slice(0, visibleCount).map(card => rowFor(card.id));
+    let top = 0;
+    const tops = measuredRows.map(row => {
+      const position = top;
+      top += row.height + ROW_GAP;
+      return position;
+    });
+    drag.current = { id, pointerId, startY, cards, rows: measuredRows, tops, from, to: from, settling: false };
+    setDraggedId(id);
+    return true;
+  };
+
+  const moveDrag = dy => {
+    const session = drag.current;
+    if (!session || session.settling) return;
+    const { rows, tops, from } = session;
+    const last = rows.length - 1;
+    const distance = Math.max(-tops[from], Math.min(topForDrop(session, last), dy));
+    rows[from].y.setValue(distance);
+
+    let to = from;
+    while (to > 0 && distance < (topForDrop(session, to - 1) + topForDrop(session, to)) / 2) to -= 1;
+    while (to < last && distance > (topForDrop(session, to + 1) + topForDrop(session, to)) / 2) to += 1;
+    if (to === session.to) return;
+    session.to = to;
+    rows.forEach((row, index) => {
+      if (index !== from) animate(row, shiftForDrop(session, index)).start();
+    });
+  };
+
+  const finishDrag = (cancel = false) => {
+    const session = drag.current;
+    if (!session || session.settling) return;
+    session.settling = true;
+    const { cards, rows, from } = session;
+    const to = cancel ? from : session.to;
+    session.to = to;
+    Animated.parallel(rows.map((row, index) => animate(row,
+      index === from ? topForDrop(session, to) : shiftForDrop(session, index)
+    ))).start(() => {
+      if (!mounted.current || drag.current !== session) return;
+      const currentCards = orderedRef.current;
+      if (currentCards.length === cards.length && cards.every((card, index) => card.id === currentCards[index].id)) {
+        saveMove(cards, from, to);
+      }
+      setDraggedId(null);
+    });
+  };
+
+  // Clear transforms after React applies the new list order.
+  useLayoutEffect(() => {
+    if (draggedId !== null || !drag.current) return;
+    for (const row of drag.current.rows) row.y.setValue(0);
+    drag.current = null;
+  }, [draggedId]);
+
+  const dragCallbacks = useRef(null);
+  dragCallbacks.current = { startDrag, moveDrag, finishDrag };
+  const moveWithArrow = (index, direction) => {
+    const destination = index + direction;
+    if (!drag.current && !loading && !readError && destination >= 0 && destination < visibleCards.length) {
+      saveMove(ordered, index, destination);
+    }
+  };
   const handleFor = (id, index) => {
-    const key = id + ':' + index;
-    if (!responders.current[key]) {
-      responders.current[key] = PanResponder.create({
+    if (IS_WEB) {
+      return {
+        tabIndex: 0,
+        onKeyDown: event => {
+          if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+          event.preventDefault();
+          moveWithArrow(index, event.key === 'ArrowUp' ? -1 : 1);
+        },
+        onPointerDown: event => {
+          if (event.button !== 0 || !event.isPrimary || !startDrag(id, event.pointerId, event.clientY)) return;
+          event.preventDefault();
+          event.currentTarget.setPointerCapture(event.pointerId);
+        },
+        onPointerMove: event => {
+          const session = drag.current;
+          if (session?.pointerId === event.pointerId) moveDrag(event.clientY - session.startY);
+        },
+        onPointerUp: event => {
+          const session = drag.current;
+          if (session?.pointerId !== event.pointerId) return;
+          moveDrag(event.clientY - session.startY);
+          finishDrag();
+        },
+        onLostPointerCapture: event => {
+          if (drag.current?.pointerId === event.pointerId) finishDrag(true);
+        },
+      };
+    }
+    const row = rowFor(id);
+    if (!row.pan) {
+      row.pan = PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onStartShouldSetPanResponderCapture: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponderCapture: () => true,
         onPanResponderTerminationRequest: () => false,
-        onPanResponderGrant: () => setDrag({ id, index, dy: 0 }),
-        onPanResponderMove: (_, gesture) => setDrag({ id, index, dy: gesture.dy }),
-        onPanResponderRelease: (_, gesture) => drop(index, gesture.dy),
-        onPanResponderTerminate: () => setDrag(null),
+        onPanResponderGrant: () => dragCallbacks.current.startDrag(id),
+        onPanResponderMove: (_, gesture) => dragCallbacks.current.moveDrag(gesture.dy),
+        onPanResponderRelease: () => dragCallbacks.current.finishDrag(),
+        onPanResponderTerminate: () => dragCallbacks.current.finishDrag(true),
       });
     }
-    return responders.current[key].panHandlers;
-  };
-  useEffect(() => {
-    responders.current = {};
-  }, [ordered]);
-
-  // 드래그 중 다른 카드들이 비켜나는 거리
-  const shiftOf = index => {
-    if (!drag) return 0;
-    if (index === drag.index) return drag.dy;
-    const to = targetIndex(drag.index, drag.dy);
-    if (drag.index < to && index > drag.index && index <= to) return -rowHeight.current;
-    if (drag.index > to && index < drag.index && index >= to) return rowHeight.current;
-    return 0;
+    return row.pan.panHandlers;
   };
 
   return <View style={s.box}>
@@ -154,7 +275,7 @@ export default function PaymentCardOrder({
       </Text>
 
       <Text style={s.hint}>
-        카드를 누르면 결제 카드가 바뀌어요. 오른쪽 ☰ 를 눌러 위아래로 끌면 순서를 바꿀 수 있어요.
+        카드를 눌러 선택하고, ☰를 끌어 순서를 바꿔요.
       </Text>
 
       {usingAi && <Text style={s.link}>
@@ -173,40 +294,66 @@ export default function PaymentCardOrder({
           </TouchableOpacity>
         </View>}
 
-      {ordered.map((card, index) => {
-        const dragging = drag?.id === card.id;
-        return <View key={card.id}
-            onLayout={index === 0 ? event => { rowHeight.current = event.nativeEvent.layout.height + 12; } : undefined}
-            style={[s.dragRow, { transform: [{ translateY: shiftOf(index) }] }, dragging && s.dragging]}>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel={index + 1 + '번 ' + card.name + (card.id === selectedId ? ' 선택됨' : '')} accessibilityState={{
-            selected: card.id === selectedId
-          }} disabled={!!drag} onPress={() => onSelect?.(card)} style={[s.item, s.itemFlex, card.id === selectedId && s.selected]}>
+      {visibleCards.map((card, index) => {
+        const row = rowFor(card.id);
+        // 결제 화면(syncSelection=false)은 순서와 결제 카드가 따로라서, 실제로 고른 카드에 표시합니다.
+        const selected = syncSelection ? index === 0 : card.id === selectedId;
+        return <Animated.View key={card.id}
+            onLayout={event => { row.height = event.nativeEvent.layout.height; }}
+            style={[s.item, { transform: [{ translateY: row.y }] }, draggedId === card.id && s.dragging]}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={index + 1 + '번 ' + card.name} accessibilityState={{ selected }}
+              disabled={draggedId !== null || loading || Boolean(readError)} onPress={() => syncSelection ? saveMove(ordered, index, 0) : onSelect?.(card.id)} style={s.itemButton}>
               <CardThumb card={card} />
 
               <View style={s.copy}>
                 <Text style={s.name}>{card.name}</Text>
                 <Text style={s.hint}>{card.issuer}</Text>
 
-                {card.id === selectedId && <Text style={s.link}>
-                    ✓ 현재 결제 카드
-                  </Text>}
-              </View>
-
-              <View {...handleFor(card.id, index)} accessibilityRole="adjustable" accessibilityLabel={card.name + ' 순서 이동 손잡이'} style={s.handle}>
-                <Text style={s.handleText}>☰</Text>
+                <Text style={s.link}>{selected ? '✓ 현재 결제 카드' : '\u00A0'}</Text>
               </View>
             </TouchableOpacity>
-          </View>;
+
+              <View {...handleFor(card.id, index)} accessibilityRole="adjustable" accessibilityLabel={card.name + ' 순서 이동 손잡이'}
+                accessibilityValue={{ min: 1, max: visibleCards.length, now: index + 1 }}
+                accessibilityActions={[{ name: 'decrement' }, { name: 'increment' }]}
+                onAccessibilityAction={event => moveWithArrow(index, event.nativeEvent.actionName === 'decrement' ? -1 : 1)}
+                style={[s.handle, draggedId === card.id && s.grabbing]}>
+                <Text style={s.handleText}>☰</Text>
+              </View>
+          </Animated.View>;
       })}
+
+      {nextPageSize > 0 && <TouchableOpacity accessibilityRole="button" disabled={draggedId !== null}
+        onPress={() => setVisibleCount(count => count + CARDS_PER_PAGE)} style={s.moreButton}>
+        <Text style={s.link}>{nextPageSize}장 더 보기</Text>
+      </TouchableOpacity>}
 
       {!!error && <Text style={s.error} accessibilityRole="alert">
           {error}
         </Text>}
     </View>;
 }
+
+function topForDrop({ rows, tops, from }, to) {
+  const heightDelta = to > from ? rows[to].height - rows[from].height : 0;
+  return tops[to] - tops[from] + heightDelta;
+}
+
+function shiftForDrop({ rows, from, to }, index) {
+  const stride = rows[from].height + ROW_GAP;
+  if (from < index && index <= to) return -stride;
+  if (to <= index && index < from) return stride;
+  return 0;
+}
+
 const s = StyleSheet.create({
-  dragRow: {
-    zIndex: 1
+  moreButton: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: '#E3EAF4',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   dragging: {
     zIndex: 10,
@@ -217,8 +364,11 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 6
   },
-  itemFlex: {
-    alignItems: 'center'
+  itemButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   handle: {
     width: 44,
@@ -235,11 +385,14 @@ const s = StyleSheet.create({
     color: '#8A9BB4',
     userSelect: 'none'
   },
+  grabbing: {
+    cursor: 'grabbing'
+  },
   box: {
     backgroundColor: "#FFFFFF",
     borderRadius: 22,
     padding: 20,
-    gap: 12,
+    gap: ROW_GAP,
     borderWidth: 1,
     borderColor: "#E3EAF4"
   },
@@ -271,17 +424,15 @@ const s = StyleSheet.create({
     color: "#5A6E89"
   },
   item: {
+    zIndex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    backgroundColor: '#FFFFFF',
     padding: 14,
     borderWidth: 1,
     borderColor: "#E3EAF4",
     borderRadius: 16
-  },
-  selected: {
-    borderColor: "#245DE5",
-    backgroundColor: "#EDF3FF"
   },
   number: {
     width: 20,

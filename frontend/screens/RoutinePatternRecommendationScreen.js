@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SERVER_MODE, api } from '../utils/api';
 import { CARD_CATALOG_40 } from '../data/cardCatalog40';
 import { toCardRecommendation } from '../utils/aiRecommendCore';
-import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Image, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Image, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import useRecommendationReveal from '../components/useRecommendationReveal';
 import { CARD_PRODUCTS } from '../data/cardRecommendationProducts';
 import { findCatalog40Product } from '../data/cardCatalog40';
 import { readEvents, readProfile } from '../utils/routineData';
@@ -57,61 +58,18 @@ export function CardReveal({
   reduced,
   replay
 }) {
-  const pop = useRef(new Animated.Value(0)).current;
-  const fade = useRef(new Animated.Value(0)).current;
-  const burst = useRef(new Animated.Value(0)).current;
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
   const image = findCatalog40Product(card)?.image || officialProduct(card.code)?.image;
+  const { burst, motionStyle } = useRecommendationReveal({
+    ready: !loading || failed, reduced: failed ? true : reduced, replay, withBurst: true,
+  });
   useEffect(() => {
     setFailed(false);
     setLoading(true);
     setRetry(0);
   }, [card.code]);
-  useEffect(() => {
-    pop.stopAnimation();
-    fade.stopAnimation();
-    burst.stopAnimation();
-    if (failed) {
-      pop.setValue(1);
-      fade.setValue(1);
-      burst.setValue(1);
-      return undefined;
-    }
-    if (reduced === null || loading) {
-      pop.setValue(0);
-      fade.setValue(0);
-      burst.setValue(1);
-      return undefined;
-    }
-    if (reduced) {
-      pop.setValue(1);
-      fade.setValue(1);
-      burst.setValue(1);
-      return undefined;
-    }
-    pop.setValue(0);
-    fade.setValue(0);
-    burst.setValue(0);
-    const native = Platform.OS !== 'web';
-    const animation = Animated.parallel([Animated.spring(pop, {
-      toValue: 1,
-      friction: 5,
-      tension: 100,
-      useNativeDriver: native
-    }), Animated.timing(fade, {
-      toValue: 1,
-      duration: 220,
-      useNativeDriver: native
-    }), Animated.timing(burst, {
-      toValue: 1,
-      duration: 850,
-      useNativeDriver: native
-    })]);
-    animation.start();
-    return () => animation.stop();
-  }, [card.code, reduced, replay, loading, failed]);
   return <View style={s.reveal}>
       {!reduced && [0, 1, 2, 3, 4, 5].map(index => {
       const angle = index * Math.PI / 3;
@@ -142,25 +100,7 @@ export function CardReveal({
             </Animated.Text>;
     })}
 
-      <Animated.View style={[s.imageArea, {
-      opacity: fade,
-      transform: [{
-        scale: pop.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0.72, 1]
-        })
-      }, {
-        translateY: pop.interpolate({
-          inputRange: [0, 1],
-          outputRange: [32, 0]
-        })
-      }, {
-        rotate: pop.interpolate({
-          inputRange: [0, 1],
-          outputRange: ['-8deg', '0deg']
-        })
-      }]
-    }]}>
+      <Animated.View style={[s.imageArea, motionStyle]}>
         {image && !failed ? <Image key={card.code + ':' + retry} source={image} accessibilityLabel={card.name + ' 실제 상품 이미지'} style={s.image} resizeMode="contain" fadeDuration={0} onLoad={() => setLoading(false)} onError={() => {
         setLoading(false);
         setFailed(true);
