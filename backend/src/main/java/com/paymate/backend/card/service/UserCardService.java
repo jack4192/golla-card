@@ -84,7 +84,7 @@ public class UserCardService {
     private MyCardResponse toResponse(UserCardSummaryRow r, int order) {
         return new MyCardResponse(
                 r.getUserCardId(), String.valueOf(r.getCardId()), r.getCardName(), r.getIssuer(),
-                r.getCardType(), r.getImageUrl(), order == 1, order, r.getCardLast4());
+                r.getCardType(), CardImages.urlOf(r.getCardId(), r.getImageUrl()), order == 1, order, r.getCardLast4());
     }
 
     private Long parseCardCode(String cardCode) {
