@@ -1,11 +1,8 @@
 package com.paymate.backend.ai;
 
 import com.paymate.backend.card.repository.UserCardRepository;
+import com.paymate.backend.common.DemoClock;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,42 +21,28 @@ import org.springframework.stereotype.Service;
 @Service
 public class AiService {
 
-    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final List<String> CHAT_FIELDS = List.of("message", "session_id", "history", "screen");
     private static final List<String> EVALUATE_FIELDS = List.of("category_code", "amount", "user_card_id", "merchant_id");
     private static final String FALLBACK_MESSAGE = "AI 응답이 없어 기본 순서로 보여 드려요";
 
     private final AiClient client;
     private final UserCardRepository userCards;
+    private final DemoClock clock;
     private final String fixedAt;         // 시연용 기준 시각. 없으면 null (= 현재 시각)
-    private final LocalDate fixedDate;
 
     public AiService(AiClient client, UserCardRepository userCards, @Value("${ai.fixed-at:}") String fixedAt) {
         this.client = client;
         this.userCards = userCards;
-        this.fixedAt = fixedAt == null || fixedAt.isBlank() ? null : fixedAt.trim();
-        this.fixedDate = this.fixedAt == null ? null : parseDate(this.fixedAt);
+        this.clock = DemoClock.of(fixedAt);
+        this.fixedAt = clock.fixedAt();
         if (this.fixedAt != null) {
             log.warn("AI 기준 시각을 {} 로 고정했습니다 (ai.fixed-at). 시연용 설정입니다.", this.fixedAt);
         }
     }
 
-    private static LocalDate parseDate(String value) {
-        try {
-            return LocalDateTime.parse(value).toLocalDate();
-        } catch (DateTimeParseException e) {
-            try {
-                return OffsetDateTime.parse(value).atZoneSameInstant(SEOUL).toLocalDate();
-            } catch (DateTimeParseException e2) {
-                throw new IllegalArgumentException(
-                        "ai.fixed-at(AI_FIXED_AT) 형식이 올바르지 않습니다. 예: 2026-11-05T09:30:00 (값: " + value + ")");
-            }
-        }
-    }
-
     /** AI 엔진이 보는 '오늘'. 기준 시각을 고정했으면 그 날짜다. */
     public LocalDate today() {
-        return fixedDate != null ? fixedDate : LocalDate.now(SEOUL);
+        return clock.today();
     }
 
     // ---------- 결제 화면 카드 배치 ----------
@@ -161,6 +144,19 @@ public class AiService {
      */
     public String classifyPlace(String text) {
         return client.postClassify("/internal/places/classify", Map.of("text", text));
+    }
+
+    /**
+     * 앱 홈 시간 표시줄의 하루 배치 (2026-11-23). 오늘은 서버가 정하고(기준 시각이 있으면 그날),
+     * 기준 시각이 있으면 now 로 넘겨 AI 가 그 시각 뒤의 결제를 쓰지 않게 한다. AI 는 추천 기록을 남기지 않는다.
+     */
+    public String dayPlacement(Long userId) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("day", today().toString());
+        if (fixedAt != null) {
+            body.put("now", fixedAt);
+        }
+        return client.post(userPath(userId, "/day-placement"), null, body);
     }
 
     public String schedule(Long userId, LocalDate day) {
