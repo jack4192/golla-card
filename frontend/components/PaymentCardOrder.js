@@ -10,7 +10,7 @@ const IS_WEB = Platform.OS === 'web';
 export function validateCardOrder(raw) {
   if (raw === null) return [];
   const value = JSON.parse(raw);
-  if (value?.version !== 1 || !Array.isArray(value.ids) || value.ids.length > 200 || value.ids.some(id => typeof id !== 'string' || id.length > 100)) {
+  if (value?.version !== 1 || !Array.isArray(value.ids) || value.ids.some(id => typeof id !== 'string' || id.length > 100)) {
     throw Error('저장된 카드 순서 형식을 확인해주세요.');
   }
   return [...new Set(value.ids)];
@@ -79,20 +79,9 @@ export default function PaymentCardOrder({
   const orderedRef = useRef(ordered);
   orderedRef.current = ordered;
   const firstId = ordered[0]?.id;
-  // syncSelection 일 때는 '맨 위 카드 = 결제 카드'를 지킵니다.
-  // - 이 목록에서 순서를 바꾸면(누르기·끌기) 맨 위 카드를 결제 카드로 고릅니다.
-  // - 다른 곳(카드 탭·QR 결제 창·결제 화면)에서 결제 카드를 바꾸면 그 카드를 맨 위로 올려 저장합니다.
-  const lastSynced = useRef({ firstId: undefined, selectedId: undefined });
 
   useEffect(() => {
-    if (!syncSelection || loading || readError || firstId == null) return;
-    const last = lastSynced.current;
-    lastSynced.current = { firstId, selectedId };
-    if (firstId === selectedId) return;
-    const selectedIndex = ordered.findIndex(card => card.id === selectedId);
-    if (selectedId !== last.selectedId && selectedIndex > 0) {
-      saveMove(ordered, selectedIndex, 0);
-    } else {
+    if (syncSelection && !loading && !readError && firstId != null && firstId !== selectedId) {
       onSelect?.(firstId);
     }
   }, [firstId, loading, onSelect, readError, selectedId, syncSelection]);
@@ -296,13 +285,12 @@ export default function PaymentCardOrder({
 
       {visibleCards.map((card, index) => {
         const row = rowFor(card.id);
-        // 결제 화면(syncSelection=false)은 순서와 결제 카드가 따로라서, 실제로 고른 카드에 표시합니다.
-        const selected = syncSelection ? index === 0 : card.id === selectedId;
+        const selected = index === 0;
         return <Animated.View key={card.id}
             onLayout={event => { row.height = event.nativeEvent.layout.height; }}
             style={[s.item, { transform: [{ translateY: row.y }] }, draggedId === card.id && s.dragging]}>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel={index + 1 + '번 ' + card.name} accessibilityState={{ selected }}
-              disabled={draggedId !== null || loading || Boolean(readError)} onPress={() => syncSelection ? saveMove(ordered, index, 0) : onSelect?.(card.id)} style={s.itemButton}>
+              disabled={draggedId !== null || loading || Boolean(readError)} onPress={() => saveMove(ordered, index, 0)} style={s.itemButton}>
               <CardThumb card={card} />
 
               <View style={s.copy}>
