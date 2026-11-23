@@ -53,3 +53,33 @@ test('데모 모드·실패 문구', () => {
   assert.equal(PROMO_TEXT.failed, '행사를 불러오지 못했어요');
   assert.equal(PROMO_TEXT.retry, '다시 시도');
 });
+
+// ---------- 최종 검토 반영: 행사를 못 읽은 상태를 '0건'·'행사 없음'으로 말하지 않기, 로고 파일이 없으면 이름만 ----------
+import { benefitSummary, emptyPromotionText, promotionAnswer, visibleLogo } from '../promotionsCore.js';
+
+test('혜택 요약은 다 읽었을 때만 (데모·읽는 중·실패에는 0건을 보이지 않는다)', () => {
+  const rows = toBenefitRows([MEGA, ELEVEN, { ...MEGA, promotionId: 9, start: '2026-11-01', end: '2026-11-15' }], '');
+  assert.equal(benefitSummary('off', [], '2026-11-23'), null);
+  assert.equal(benefitSummary('loading', [], '2026-11-23'), null);
+  assert.equal(benefitSummary('failed', [], '2026-11-23'), null);
+  assert.deepEqual(benefitSummary('ready', rows, '2026-11-23'), { total: 3, active: 2 });
+});
+
+test('기본 안내 답과 오늘의 프로모션 빈 문구는 상태에 맞게', () => {
+  assert.equal(promotionAnswer('off', []), PROMO_TEXT.demo);
+  assert.equal(promotionAnswer('failed', []), PROMO_TEXT.failed);
+  assert.equal(promotionAnswer('loading', []), PROMO_TEXT.loading);
+  assert.equal(promotionAnswer('ready', []), '지금 진행 중인 프로모션이 없어요.');
+  const active = toBenefitRows([MEGA], '');
+  assert.match(promotionAnswer('ready', active), /^지금 진행 중인 프로모션이 1개 있어요\. 예: 메가MGC커피\./);
+  assert.equal(emptyPromotionText('off'), PROMO_TEXT.demo);
+  assert.equal(emptyPromotionText('failed'), PROMO_TEXT.failed);
+  assert.equal(emptyPromotionText('ready'), '현재 진행 중인 이벤트가 없어요.');
+});
+
+test('로고 파일을 못 받으면 그림 대신 이름 (그 주소만)', () => {
+  const logo = { uri: 'http://x/brand-logos/mega.png' };
+  assert.equal(visibleLogo(logo, new Set()), logo);
+  assert.equal(visibleLogo(logo, new Set(['http://x/brand-logos/mega.png'])), null);
+  assert.equal(visibleLogo(null, new Set()), null);
+});

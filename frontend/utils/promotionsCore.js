@@ -6,6 +6,7 @@ export const PROMO_TEXT = {
   demo: '서버에 연결하면 진행 중인 행사를 볼 수 있어요',
   failed: '행사를 불러오지 못했어요',
   retry: '다시 시도',
+  loading: '행사를 불러오는 중이에요',
 };
 
 const withBase = (path, baseUrl) => (typeof path === 'string' && path.startsWith('/') ? { uri: (baseUrl || '') + path } : null);
@@ -49,4 +50,33 @@ export function selectDailyPromotion(items, now = Date.now()) {
   const firstDay = Date.UTC(2026, 10, 18) / 86400000;
   const index = ((day - firstDay) % items.length + items.length) % items.length;
   return items[index] ?? null;
+}
+
+// 혜택 탭 요약 ('지금 확인할 수 있는 혜택 N건'·'이번 달 혜택 N건'). 다 읽었을 때만 — 데모·읽는 중·실패에 0건을 보이지 않는다
+export function benefitSummary(status, rows, today) {
+  if (status !== 'ready') return null;
+  return { total: rows.length, active: rows.filter(row => benefitStatus(row, today) === '기간 내').length };
+}
+
+// 앱 기본 안내 챗봇의 행사 답 (AI 챗봇에 연결하지 못했을 때). active = 진행 중인 이벤트 행
+export function promotionAnswer(status, active) {
+  if (status === 'off') return PROMO_TEXT.demo;
+  if (status === 'failed') return PROMO_TEXT.failed;
+  if (status === 'loading') return PROMO_TEXT.loading;
+  if (!active.length) return '지금 진행 중인 프로모션이 없어요.';
+  const names = [...new Set(active.map(item => item.merchant))].slice(0, 3).join(', ');
+  return `지금 진행 중인 프로모션이 ${active.length}개 있어요. 예: ${names}. 혜택 탭에서 각 항목을 누르면 결제 조건과 기간을 볼 수 있어요.`;
+}
+
+// 오늘의 프로모션 팝업에 보여 줄 행사가 없을 때의 문구
+export function emptyPromotionText(status) {
+  if (status === 'off') return PROMO_TEXT.demo;
+  if (status === 'failed') return PROMO_TEXT.failed;
+  if (status === 'loading') return PROMO_TEXT.loading;
+  return '현재 진행 중인 이벤트가 없어요.';
+}
+
+// 로고 파일을 못 받은 주소(failed)는 그림 대신 이름을 보이도록 null
+export function visibleLogo(logo, failed) {
+  return logo && !(failed && failed.has(logo.uri)) ? logo : null;
 }

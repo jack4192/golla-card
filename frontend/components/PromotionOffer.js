@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
 export default function PromotionOffer({ offer }) {
-  // 로고는 서버가 준다 (offer.logo = { uri }, 2026-11-23 행사 DB 이전). 없으면 그림 칸 없이 이름만
+  // 로고는 서버가 준다 (offer.logo = { uri }, 2026-11-23 행사 DB 이전). 없거나 받지 못하면 그림 칸 없이 이름만
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [offer.logo?.uri]);
+  const logo = failed ? null : offer.logo;
   return <View style={s.card}>
-    {offer.logo && <View style={s.logoBox}>
-      <Image source={offer.logo} style={s.logo} resizeMode="contain" accessibilityLabel={offer.merchant + ' 로고'} />
+    {logo && <View style={s.logoBox}>
+      <Image source={logo} style={s.logo} resizeMode="contain" accessibilityLabel={offer.merchant + ' 로고'} onError={() => setFailed(true)} />
     </View>}
     <Text style={s.merchant}>{offer.merchant}</Text>
     <Text style={s.offer}>{offer.benefit}</Text>
