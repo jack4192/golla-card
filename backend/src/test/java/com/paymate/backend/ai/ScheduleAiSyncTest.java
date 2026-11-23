@@ -55,6 +55,11 @@ class ScheduleAiSyncTest {
         return new Schedule(7L, DAY, "PLACE", null, "OTHER", title, start, end, null);
     }
 
+    /** 일정 추가 창(팀원 PR #5)의 직접 입력: 상황 일정, 종류 other + 이름 (+ 시간). */
+    private static Schedule typed(String types, String title, String start, String end) {
+        return new Schedule(7L, DAY, "SITUATION", types, null, title, start, end, null);
+    }
+
     // ---------- 맞춤 추천 전에 일정 맞추기 (2026-11-23) ----------
 
     @Test
@@ -133,6 +138,25 @@ class ScheduleAiSyncTest {
         assertThat(items).containsExactly(
                 Map.of("start", "09:00", "end", "10:00", "category", "CAFE", "amount", 5600, "brand", "STARBUCKS"),
                 Map.of("start", "19:00", "end", "20:00", "category", "FITNESS", "amount", 70000));
+    }
+
+    @Test
+    @DisplayName("일정 추가 창의 직접 입력(상황 일정, 종류 other + 이름 + 시간)도 이름을 분류해 넘긴다. 다른 상황 일정·시간 없는 것은 넘기지 않는다")
+    void typedDirectInputIsClassified() {
+        stored(typed("other", "영화관", "12:00", "13:00"), typed("other", "하루 종일 일정", null, null),
+                typed("회식", "팀 회식", "18:00", "20:00"), typed("other", "골프", "16:00", "20:00"));
+        when(ai.classifyPlace("영화관")).thenReturn("{\"category\":\"MOVIE\",\"brand\":null,\"source\":\"llm\"}");
+        when(ai.classifyPlace("골프")).thenReturn("{\"category\":\"GOLF\",\"brand\":null,\"source\":\"search\"}");
+        when(schedules.medianAmountOfUser(7L, "MOVIE")).thenReturn(14000);
+        when(schedules.medianAmountOfUser(7L, "GOLF")).thenReturn(150000);
+
+        List<Map<String, Object>> items = sync.itemsFor(7L, DAY);
+
+        assertThat(items).containsExactly(
+                Map.of("start", "12:00", "end", "13:00", "category", "MOVIE", "amount", 14000),
+                Map.of("start", "16:00", "end", "20:00", "category", "GOLF", "amount", 150000));
+        verify(ai, never()).classifyPlace("팀 회식");
+        verify(ai, never()).classifyPlace("하루 종일 일정");
     }
 
     @Test
