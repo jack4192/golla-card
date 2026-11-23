@@ -4,7 +4,9 @@ import * as Store from './demoStore';
 import { CARD_CATALOG } from '../data/cards';
 import { CSV_CARD_CATALOG } from '../data/cardCatalogCsv';
 import { CARD_PRODUCTS } from '../data/cardRecommendationProducts';
-import { readPreferences } from './cardRecommendation';
+import { readPreferences, savePreferences } from './cardRecommendation';
+import { SERVER_MODE } from './api';
+import { fetchServerWallet, saveServerCardOrder } from './serverCards';
 
 export const WALLET_SELECTION_KEY = 'solpay_wallet_selection_v1';
 export const CARD_ORDER_KEY = 'solpay_payment_card_order_v1';
@@ -65,7 +67,27 @@ export function saveWalletSelection(id) {
 }
 
 export function saveWalletCardOrder(value) {
-  return queueWalletWrite(() => Store.setItemAsync(CARD_ORDER_KEY, JSON.stringify(value)));
+  return queueWalletWrite(async () => {
+    await Store.setItemAsync(CARD_ORDER_KEY, JSON.stringify(value));
+    // 서버 모드: 바뀐 순서를 서버에도 저장합니다. 실패하면 화면에 오류를 보여줄 수 있게 그대로 던집니다.
+    if (SERVER_MODE) await saveServerCardOrder(value.ids);
+  });
+}
+
+// 서버 모드: 서버의 내 카드 목록으로 기기의 보유 카드·결제 카드 순서를 맞춥니다.
+async function syncFromServer(preferences) {
+  const server = await fetchServerWallet();
+  let next = preferences;
+  if (server.owned.join('|') !== preferences.owned.join('|')) {
+    next = await savePreferences({ ...preferences, owned: server.owned });
+  }
+  await Store.setItemAsync(CARD_ORDER_KEY, JSON.stringify({ version: 1, ids: server.orderIds }));
+  return {
+    preferences: next,
+    warning: server.unmatched
+      ? `서버에 등록된 카드 중 ${server.unmatched}장은 앱에서 보여줄 수 없는 상품이라 빠졌어요.`
+      : '',
+  };
 }
 
 export async function waitForWalletWrites() {
@@ -74,7 +96,15 @@ export async function waitForWalletWrites() {
 
 export function readWallet() {
   return queueWalletWrite(async () => {
-    const preferences = await readPreferences();
+    let preferences = await readPreferences();
+    let serverWarning = '';
+    if (SERVER_MODE) {
+      try {
+        ({ preferences, warning: serverWarning } = await syncFromServer(preferences));
+      } catch (error) {
+        serverWarning = '서버에서 내 카드를 불러오지 못해 이 기기에 저장된 카드를 보여드려요. ' + (error?.message || '');
+      }
+    }
     const cards = buildWallet(preferences);
     const registeredIds = new Set(cards.map(card => card.id));
     const isObsoleteSample = id => !registeredIds.has(walletIdForCode(id)) &&
@@ -112,6 +142,6 @@ export function readWallet() {
       // Let the existing card-order screen handle unreadable records.
     }
 
-    return { cards, id, warning, preferences };
+    return { cards, id, warning: warning || serverWarning, preferences };
   });
 }
