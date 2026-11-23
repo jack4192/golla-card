@@ -15,6 +15,8 @@ MEGA, OTHER, STAR, GS = 50, 52, 53, 54
 NOW = at(10, 7, 9)                                   # 2026-10-07(수) 09:00
 # 1년 계산을 끈 값: 오늘 더 받는 금액으로만 고르는 이전 규칙 (이력이 짧을 때도 이 규칙). 1년 이득순은 파일 끝에서 본다
 TODAY = Params(page_yearly=False)
+# 3일 카드날 규칙을 켜면(page_card_every_time=False) 같은 카드 2주 규칙도 함께 켜진다 (2026-11-24)
+RULE_2W = Params(page_yearly=False, page_card_every_time=False)
 
 
 def page_catalog() -> Catalog:
@@ -143,22 +145,31 @@ def test_이력이_없으면_카드가_주는_브랜드_중_더_받는_곳():
 
 def test_더_주는_카드가_없으면_None():
     # 카페 카드 9 는 5일 전에 추천해 빠지고, 남은 후보 8 은 카페 혜택이 없다
-    assert pick_card(state_of(), [], [coffee()], [{"at": NOW - timedelta(days=5), "card_id": 9}], NOW, TODAY) is None
+    assert pick_card(state_of(), [], [coffee()], [{"at": NOW - timedelta(days=5), "card_id": 9}], NOW, RULE_2W) is None
 
 
 def test_2주_안에_추천한_카드는_빼고_오늘_기록은_막지_않는다():
     old = [{"at": NOW - timedelta(days=5), "card_id": 9, "trigger": CYCLE}]
-    assert pick_card(state_of(), habit_payments(), [coffee()], old, NOW, TODAY) is None
+    assert pick_card(state_of(), habit_payments(), [coffee()], old, NOW, RULE_2W) is None
     today = [{"at": NOW - timedelta(hours=1), "card_id": 9, "trigger": CYCLE}]
-    assert pick_card(state_of(), habit_payments(), [coffee()], today, NOW, TODAY).card_id == 9
+    assert pick_card(state_of(), habit_payments(), [coffee()], today, NOW, RULE_2W).card_id == 9
 
 
 def test_같은_카드는_2주가_지나면_다시_추천한다():
     # 2026-11-21 사용자 결정: 같은 카드를 다시 추천하지 않는 기간 30일 → 2주
     assert Params().recommend_same_card_days == 14
     ago = lambda days: [{"at": NOW - timedelta(days=days), "card_id": 9, "trigger": CYCLE}]
-    assert pick_card(state_of(), habit_payments(), [coffee()], ago(13), NOW, TODAY) is None
-    assert pick_card(state_of(), habit_payments(), [coffee()], ago(14), NOW, TODAY).card_id == 9
+    assert pick_card(state_of(), habit_payments(), [coffee()], ago(13), NOW, RULE_2W) is None
+    assert pick_card(state_of(), habit_payments(), [coffee()], ago(14), NOW, RULE_2W).card_id == 9
+
+
+def test_매번_카드_탭이면_2주_안에_추천한_카드도_다시_보여준다():
+    # 2026-11-24 사용자 결정 '다시 보여주기': 오늘 더 주는 카드가 며칠 전에 추천한 카드뿐이어도 카드 탭을 비우지 않는다
+    for days in (1, 5, 13):
+        ago = [{"at": NOW - timedelta(days=days), "card_id": 9, "trigger": CYCLE}]
+        assert pick_card(state_of(), habit_payments(), [coffee()], ago, NOW, TODAY).card_id == 9
+        page = build_page(state_of(), habit_payments(), [coffee()], ago, PROMOS, NOW, TODAY)
+        assert (page.tabs, page.card.card_id) == (["card", "merchant"], 9)
 
 
 def test_삭제한_보유_카드는_비교에서_뺀다():
@@ -201,7 +212,7 @@ def test_프로모션이_없으면_카드_탭만():
 
 def test_둘_다_없으면_빈_탭():
     blocked = YESTERDAY + [{"at": NOW - timedelta(days=2), "card_id": 9, "trigger": FALLBACK}]
-    page = build_page(state_of(), [], [coffee()], blocked, [], NOW, TODAY)
+    page = build_page(state_of(), [], [coffee()], blocked, [], NOW, RULE_2W)      # 2주 규칙은 3일 카드날 규칙일 때만
     assert page.tabs == [] and page.card is None
 
 
@@ -377,6 +388,7 @@ def test_탭이_비면_OpenAI를_부르지_않는다(page_svc):
     page_svc.store.recommended = [{"at": NOW - timedelta(days=1), "card_id": 8, "trigger": CYCLE},
                                   {"at": NOW - timedelta(days=2), "card_id": 9, "trigger": FALLBACK}]
     page_svc.popup_promotions = []
+    page_svc.engine.params = replace(page_svc.engine.params, page_card_every_time=False)   # 2주 규칙으로 카드를 막는다
     _save_coffee(page_svc)
     client = FakeClient([])
     page = page_svc.recommendation_page(1, NOW, PageCopyWriter(client))

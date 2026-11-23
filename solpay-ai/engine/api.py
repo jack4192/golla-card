@@ -350,7 +350,8 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
     def recommendation_page(user_id: int, body: AtBody, request: Request,
                             svc: PlacementService = Depends(current)) -> dict:
         """맞춤 추천 페이지 (일정 저장·건너뛰기 뒤). tabs: card(아직 없는 신한카드) / merchant(프로모션 가맹점).
-        카드날(마지막 카드 추천 3일 뒤)은 두 탭, 그 외 날은 가맹점 탭, 프로모션이 없으면 카드 탭. 비면 페이지를 건너뛴다.
+        더 주는 새 카드가 있으면 매번 카드 탭(2주 안에 추천한 카드도 다시), 행사가 있으면 가맹점 탭 (2026-11-24).
+        Params.page_card_every_time=False 면 예전처럼 카드날(마지막 카드 추천 3일 뒤)에만 카드 탭. 비면 페이지를 건너뛴다.
         카드·금액은 엔진 계산, 문구는 OpenAI (실패하면 정해진 문구 copy_source=template, 탭이 비면 none). 같은 날 다시 부르면 cached=true."""
         try:
             return svc.recommendation_page(user_id, _kst(body.at),
