@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import FlowHeading from '../components/FlowHeading';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, AppState, Image, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -146,7 +147,8 @@ export default function RoutineRecommendationScreen({
   const card = promotionTab ? null : selected?.card;
   const matches = selected?.matches.filter(item => item.status !== 'blocked') || [];
   const match = matches.sort((a, b) => b.weight - a.weight)[0];
-  const reason = recommendations?.example ? '지금 일정에 딱 맞는 카드가 없어서, 혜택이 좋은 신한카드를 추천드려요' : match?.reasons?.[0];
+  // 일정과 딱 맞는 카드가 없을 때(기본 추천)는 짧게 추천 이유만
+  const reason = recommendations?.example ? '어디서나 두루 쓰기 좋은 카드라 추천해요' : match?.reasons?.[0];
   // 추천을 보여주면 연말 결산 기록을 남깁니다(같은 날·같은 카드·같은 업종은 한 번만).
   const recordedKey = useRef('');
   useEffect(() => {
@@ -233,10 +235,10 @@ export default function RoutineRecommendationScreen({
   }
   return <ScrollView style={s.screen} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
       <View style={s.container}>
-        {presentation !== 'popup' && <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => onBack?.()} style={s.small}>
-            <Text style={s.link}>
-              ← 일정 다시 확인
-            </Text>
+        {/* 뒤로가기는 화면 왼쪽 위에 눈에 띄게 */}
+        {presentation !== 'popup' && <TouchableOpacity accessibilityRole="button" accessibilityLabel="일정 다시 확인" disabled={busy} onPress={() => onBack?.()} style={s.backButton}>
+            <Ionicons name="chevron-back" size={20} color="#104FE7" />
+            <Text style={s.backText}>일정 다시 확인</Text>
           </TouchableOpacity>}
 
         <FlowHeading brand icon="sparkles-outline">
@@ -296,29 +298,17 @@ export default function RoutineRecommendationScreen({
               </TouchableOpacity>
 
               {details && <View style={s.details}>
+                  {/* 간결하게: '업종 · 혜택' + (왜 추천했는지 · 전월 실적) 한 줄 */}
                   {matches.slice(0, 3).map((row, i) => <View key={i} style={s.detail}>
                         <Text style={s.strong}>
-                          {row.benefit.name} ·{' '}
-                          {benefitText(row.benefit)}
+                          {String(row.benefit.name || '').split('(')[0].trim()} · {benefitText(row.benefit)}
                         </Text>
 
                         <Text style={s.detailText}>
-                          {row.reasons.join(' · ')}
-                        </Text>
-
-                        <Text style={s.detailText}>
-                          전월 실적:{' '}
-                          {row.benefit.minPrevSpend == null ? '확인 필요' : money(row.benefit.minPrevSpend) + ' 이상'}
-                        </Text>
-
-                        <Text style={s.detailText}>
-                          {row.benefit.note || '카드사 상품 안내에서 상세 조건을 확인해주세요.'}
+                          {[recommendations?.example ? '' : row.reasons[0],
+                            row.benefit.minPrevSpend == null ? '' : Number(row.benefit.minPrevSpend) === 0 ? '실적 조건 없음' : '전월 ' + money(row.benefit.minPrevSpend) + ' 이상'].filter(Boolean).join(' · ')}
                         </Text>
                       </View>)}
-
-                  <Text style={s.detailText}>
-                    적용 조건은 카드사 상품 안내에서 확인하세요.
-                  </Text>
                 </View>}
             </View>
           </> : cardFallback()}
@@ -329,10 +319,6 @@ export default function RoutineRecommendationScreen({
                   카드 신청
                 </Text>}
             </TouchableOpacity>
-
-            <Text style={s.caption}>
-              카드사 상품 안내로 이동해요.
-            </Text>
           </>}
 
         {!!error && recommendations && <Text style={s.error} accessibilityRole="alert">
@@ -416,6 +402,23 @@ const s = StyleSheet.create({
   link: {
     fontSize: 13,
     fontWeight: "700",
+    color: "#104FE7"
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    minHeight: 40,
+    paddingLeft: 8,
+    paddingRight: 14,
+    borderRadius: 20,
+    backgroundColor: '#E6EEFF',
+    marginBottom: 4
+  },
+  backText: {
+    fontSize: 14,
+    fontWeight: "800",
     color: "#104FE7"
   },
   details: {

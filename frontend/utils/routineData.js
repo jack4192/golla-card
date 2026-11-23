@@ -105,20 +105,36 @@ export const ROUTINE_ACTIVITY_TIMES = {
   },
 };
 
+// 상황 일정 이름은 글자만 두고, 화면에서는 EVENT_ICONS 의 선 아이콘(Ionicons)을 함께 보여준다.
 export const EVENT_OPTIONS = [
-  ['hospital', '🏥 병원 예약'],
-  ['half_day', '🕒 반차·조퇴'],
-  ['day_off', '🌿 휴무·휴강'],
-  ['unwell', '🤒 몸 상태가 좋지 않음'],
-  ['overtime', '💻 야근·추가 공부'],
-  ['appointment', '🤝 개인 약속'],
-  ['team_dinner', '🍽️ 회식·모임'],
-  ['night_snack', '🛵 야식·배달'],
-  ['travel', '🚆 외출·여행'],
-  ['shopping', '🛍️ 쇼핑·장보기'],
-  ['refuel', '⛽ 주유·충전'],
-  ['other', '✏️ 기타'],
+  ['hospital', '병원 예약'],
+  ['half_day', '반차·조퇴'],
+  ['day_off', '휴무·휴강'],
+  ['unwell', '몸 상태가 좋지 않음'],
+  ['overtime', '야근·추가 공부'],
+  ['appointment', '개인 약속'],
+  ['team_dinner', '회식·모임'],
+  ['night_snack', '야식·배달'],
+  ['travel', '외출·여행'],
+  ['shopping', '쇼핑·장보기'],
+  ['refuel', '주유·충전'],
+  ['other', '기타'],
 ];
+
+export const EVENT_ICONS = {
+  hospital: 'medkit-outline',
+  half_day: 'time-outline',
+  day_off: 'sunny-outline',
+  unwell: 'thermometer-outline',
+  overtime: 'laptop-outline',
+  appointment: 'people-outline',
+  team_dinner: 'restaurant-outline',
+  night_snack: 'bicycle-outline',
+  travel: 'walk-outline',
+  shopping: 'bag-handle-outline',
+  refuel: 'car-outline',
+  other: 'ellipsis-horizontal-circle-outline',
+};
 
 export const CATEGORIES = {
   ...DETAIL_CATEGORIES,
@@ -403,7 +419,7 @@ function eventToServer(event) {
     date: event.date,
     types: place ? null : event.types,
     category: place ? server.category : null,
-    // 상황 일정의 '직접 입력' 이름도 같이 보냅니다(서버가 아직 장소 일정에만 저장함).
+    // 상황 일정의 '직접 입력' 이름(예: 밥먹기)도 함께 보냅니다. 서버가 상황·장소 일정 모두 저장합니다.
     title: place ? server.title : event.title || null,
     start: event.start || null,
     end: event.end || null,
@@ -490,7 +506,7 @@ export function eventTimeCaption(event) {
 export function eventTitle(event) {
   if (event.category) return routineLabel(event);
   // 직접 입력한 상황 일정은 입력한 이름을 보여줍니다.
-  return event.types.map(type => type === 'other' && event.title ? '✏️ ' + event.title : eventLabel(type)).join(' · ');
+  return event.types.map(type => type === 'other' && event.title ? event.title : eventLabel(type)).join(' · ');
 }
 
 export const saveEvent = input => writeEventRecord(async () => {
