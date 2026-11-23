@@ -194,7 +194,8 @@ export async function makeDemoCode() {
   }
   return value;
 }
-function Codes({
+// QR 결제 바텀시트(components/QuickPaySheet.js)에서도 같은 QR·바코드를 씁니다.
+export function Codes({
   value,
   inactive
 }) {
@@ -248,7 +249,7 @@ function Codes({
       </Text>
     </View>;
 }
-async function protectScreen() {
+export async function protectScreen() {
   if (Platform.OS === 'web') return () => {};
   const Capture = require('expo-screen-capture');
   const Brightness = require('expo-brightness');

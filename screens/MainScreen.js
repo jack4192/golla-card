@@ -12,6 +12,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform, Vibration } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import YearEndReport from '../components/YearEndReport';
+import CardPickerSheet from '../components/CardPickerSheet';
+import QuickPaySheet from '../components/QuickPaySheet';
 import NotificationCenter, { NotificationBell, useInbox } from '../components/NotificationCenter';
 import { PHONE_NOTIFICATIONS_SUPPORTED, addPhoneNotificationOpenListener, refreshDailyNotifications, requestPhonePermission, syncPhoneNotifications } from '../utils/notifications';
 import { eventTitle, readEvents } from '../utils/routineData';
@@ -294,6 +296,21 @@ export default function MainScreen({
   const [exitOpen, setExitOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [yearEndOpen, setYearEndOpen] = useState(false);
+  // 홈 '다른 카드로 변경' 바텀시트
+  const [cardSheetOpen, setCardSheetOpen] = useState(false);
+  // '이 카드로 결제' QR 결제 바텀시트(열려 있으면 결제 맥락: cardId, 일정 정보 등)
+  const [paySheet, setPaySheet] = useState(null);
+  const openPaySheet = context => {
+    if (context?.cardId) onSelectCard(context.cardId);
+    setPaySheet({ ...context, returnTab: tab });
+  };
+  // 시트에서 '혜택 자세히 보기' → 기존 결제 화면(혜택 비교 포함)으로
+  const openFullPayment = () => {
+    const context = paySheet;
+    setPaySheet(null);
+    setSchedulePayment(context);
+    setTab('payment');
+  };
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [phoneNotifyBusy, setPhoneNotifyBusy] = useState(false);
   const inbox = useInbox();
@@ -643,7 +660,7 @@ export default function MainScreen({
   };
   const renderSchedule = (home = false) => <TodaySchedulePanel
     home={home}
-    onOpenCards={() => selectTab('cards')}
+    onOpenCards={() => walletCards.length ? setCardSheetOpen(true) : selectTab('cards')}
     onOpenSchedule={() => selectTab('schedule')}
     disabled={scheduleDisabled}
     onEditRoutine={onEditRoutine}
@@ -653,11 +670,7 @@ export default function MainScreen({
     sampleActive={sampleActive}
     onStartSample={setSampleActive}
     onEndSample={() => setSampleActive(null)}
-    onPay={context => {
-      onSelectCard(context.cardId);
-      setSchedulePayment({ ...context, returnTab: tab });
-      setTab('payment');
-    }}
+    onPay={openPaySheet}
   />;
   // 연말 결산 바로가기
   const renderYearEndTile = () => <TouchableOpacity accessibilityRole="button" accessibilityLabel="올해 카드 결산 보기"
@@ -756,7 +769,7 @@ export default function MainScreen({
       </Text>
     </>;
   const renderCardsHeader = () => <View style={styles.catalogHeading}>
-      <WalletDeck cards={walletCards} selected={currentCard} onSelect={onSelectCard} canPay={Boolean(realProductCard(currentCard))} onPay={() => selectTab("payment")}
+      <WalletDeck cards={walletCards} selected={currentCard} onSelect={onSelectCard} canPay={Boolean(realProductCard(currentCard))} onPay={() => openPaySheet({ cardId: currentCard?.id })}
         highlight={findCatalog40Product(currentCard)?.benefits[0]?.name || WALLET_CARD_BENEFITS[currentCard?.id]?.highlights[0]?.value}
         status={currentCard?.status} onDetails={() => {
           const product = findCatalog40Product(currentCard);
@@ -944,7 +957,7 @@ export default function MainScreen({
       {!settingsOpen && <View style={styles.bottomNav}>
           {NAV.map(item => {
         const active = item.id === tab;
-        return <TouchableOpacity key={item.id} accessibilityRole="tab" accessibilityState={{selected:active}} style={[styles.navItem,active && {borderTopWidth:3,borderTopColor:"#175BE3"}]} onPress={() => selectTab(item.id)}>
+        return <TouchableOpacity key={item.id} accessibilityRole="tab" accessibilityState={{selected:active}} style={[styles.navItem,active && {borderTopWidth:3,borderTopColor:"#175BE3"}]} onPress={() => item.id === 'payment' && realProductCard(currentCard) ? openPaySheet({ cardId: currentCard.id }) : selectTab(item.id)}>
                 <Ionicons name={active ? item.active : item.icon} size={23} color={active ? '#245CEA' : '#98A2B4'} />
                 <Text style={[styles.navLabel, active && styles.navLabelActive]}>
                   {item.label}
@@ -956,6 +969,10 @@ export default function MainScreen({
       {Platform.OS === 'web' && <View style={styles.devClearance} />}
 
       <YearEndReport visible={yearEndOpen} onClose={() => setYearEndOpen(false)} />
+      <QuickPaySheet visible={!!paySheet} cards={walletCards} cardId={currentCard?.id} context={paySheet}
+        onSelectCard={onSelectCard} onClose={() => setPaySheet(null)} onOpenDetails={openFullPayment} />
+      <CardPickerSheet visible={cardSheetOpen} cards={walletCards} selectedId={currentCard?.id}
+        onSelect={onSelectCard} onClose={() => setCardSheetOpen(false)} onAddCard={() => selectTab('cards')} />
       <NotificationCenter visible={notificationsOpen} items={inbox} onClose={() => setNotificationsOpen(false)} onOpenTarget={openNotificationTarget} />
 
       <Modal visible={exitOpen} transparent animationType="fade" onRequestClose={() => setExitOpen(false)}>
