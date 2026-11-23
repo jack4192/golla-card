@@ -36,21 +36,23 @@ export function toCardRecommendation(page, products = []) {
   };
 }
 
-// AI 가맹점 탭의 첫 행사 → PromotionOffer 가 그리는 { merchant, benefit, method, minimum, note, start, end }
-export function toPromotionOffer(page) {
+// AI 가맹점 탭의 첫 행사 → PromotionOffer 가 그리는 { merchant, benefit, method, minimum, note, start, end, logo }
+// merchant 는 화면 이름(display_name, 없으면 brand), logo 는 AI 가 준 logo_url 에 서버 주소를 붙인 것 (2026-11-23)
+export function toPromotionOffer(page, baseUrl = '') {
   const offer = page?.merchant?.offers?.[0];
   if (!offer?.brand) return null;
   const copy = offer.copy || {};
   return {
     offer: {
       id: 'ai:' + offer.promotion_id,
-      merchant: offer.brand,
+      merchant: offer.display_name || offer.brand,
       benefit: copy.amount_label || (offer.total ? offer.total.toLocaleString('ko-KR') + '원 혜택' : offer.title),
       method: offer.kind === 'myshop' ? '마이샵 (앱에서 그 가맹점을 켜야 받아요)' : 'SOL페이 결제',
       minimum: null,
       note: [offer.title, offer.card_name ? offer.card_name + '로 결제' : ''].filter(Boolean).join(' · '),
       start: hhmm(offer.window_from) || hhmm(offer.start),
       end: hhmm(offer.window_to) || hhmm(offer.end),
+      logo: typeof offer.logo_url === 'string' && offer.logo_url.startsWith('/') ? { uri: baseUrl + offer.logo_url } : null,
     },
     reason: copy.reasons?.[0] || '오늘 일정에 맞는 행사예요.',
   };

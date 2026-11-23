@@ -1,12 +1,11 @@
 import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
-import { PROMOTION_BRANDS } from '../data/promotionBrands';
 
 export default function PromotionOffer({ offer }) {
-  const brand = PROMOTION_BRANDS[offer.merchant];
+  // 로고는 서버가 준다 (offer.logo = { uri }, 2026-11-23 행사 DB 이전). 없으면 그림 칸 없이 이름만
   return <View style={s.card}>
-    {brand && <View style={[s.logoBox, { backgroundColor: brand.background }]}>
-      <Image source={brand.image} style={s.logo} resizeMode="contain" accessibilityLabel={offer.merchant + ' 로고'} />
+    {offer.logo && <View style={s.logoBox}>
+      <Image source={offer.logo} style={s.logo} resizeMode="contain" accessibilityLabel={offer.merchant + ' 로고'} />
     </View>}
     <Text style={s.merchant}>{offer.merchant}</Text>
     <Text style={s.offer}>{offer.benefit}</Text>
@@ -18,7 +17,7 @@ export default function PromotionOffer({ offer }) {
 
 const s = StyleSheet.create({
   card: { backgroundColor: '#FFFFFF', padding: 16, borderRadius: 18, gap: 8 },
-  logoBox: { height: 144, alignItems: 'center', justifyContent: 'center', borderRadius: 14 },
+  logoBox: { height: 144, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: '#F4F7FC' },
   logo: { width: '78%', maxWidth: 270, height: 102 },
   merchant: { fontSize: 15, fontWeight: '700', color: '#244874', textAlign: 'center' },
   offer: { fontSize: 20, fontWeight: '800', color: '#154EC7', textAlign: 'center' },

@@ -1,15 +1,14 @@
 import BenefitReport from '../components/BenefitReport';
 import { CARD_CATALOG_40, findCatalog40Product } from '../data/cardCatalog40';
-import { PROMOTION_BRANDS } from '../data/promotionBrands';
-import { PROMOTIONS, activePromotions } from '../data/promotions';
+import { usePromotions } from '../utils/promotions';
+import { PROMO_TEXT, activePromotions, benefitStatus as statusOn } from '../utils/promotionsCore';
 import PinDotsInput from '../components/PinDotsInput';
-import { MYSHOP_LOGOS } from '../data/myshopLogos';
 import WalletDeck from '../components/WalletDeck';
 import RecommendationLaunchPopup from '../components/RecommendationLaunchPopup';
 import AccountWithdrawal from '../components/AccountWithdrawal';
 import TodaySchedulePanel from '../components/TodaySchedulePanel';
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform, Vibration } from 'react-native';
+import { ActivityIndicator, View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform, Vibration } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import YearEndReport from '../components/YearEndReport';
 import PaymentCardOrder from '../components/PaymentCardOrder';
@@ -52,28 +51,10 @@ const NAV = [{
   icon: 'card-outline',
   active: 'card'
 }];
-const MYSHOP_ROWS = [['살롱드마샬', '최대 20% 할인', null, null, '2026-11-20', '2026-11-30', ''], ['11번가', '3,000원 캐시백', 50000, null, '2026-11-01', '2026-11-30', ''], ['CU', '500원 캐시백', null, null, '2026-11-01', '2026-11-15', ''], ['마켓컬리', '20% 캐시백', null, 40000, '2026-11-01', '2026-11-30', ''], ['에이치몰', '5% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['알리익스프레스', '10% 캐시백', 20000, 20000, '2026-11-01', '2026-11-30', ''], ['신라아이파크면세점', '10% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['동원몰', '7% 캐시백', 20000, 20000, '2026-11-01', '2026-11-30', ''], ['할리스', '10% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['신세계면세점', '11% 캐시백', null, 100000, '2026-11-01', '2026-11-30', ''], ['닥터자르트', '12% 캐시백', null, 50000, '2026-11-01', '2026-11-30', ''], ['현대백화점', '15% 캐시백', null, 40000, '2026-11-01', '2026-11-30', ''], ['SSG닷컴', '10% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['이마트몰', '10% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['차앤박(CNP)', '12% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['오설록', '10% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['레드캡투어', '12% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['야놀자', '8% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['교보문고', '10% 캐시백', 30000, 20000, '2026-11-01', '2026-11-30', ''], ['위메프', '20% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['올리브영', '25% 캐시백', null, 20000, '2026-11-01', '2026-11-30', ''], ['파리바게뜨', '12% 캐시백', 20000, 20000, '2026-11-01', '2026-11-30', ''], ['유니클로', '16% 캐시백', null, 40000, '2026-11-01', '2026-11-30', ''], ['미식 브랜드(식별불가)', '16% 캐시백', 30000, 30000, '2026-11-01', '2026-11-30', '가맹점명 원본 확인 필요'], ['종합쇼핑몰(식별불가)', '8,000원 캐시백', 200000, null, '2026-11-01', '2026-11-30', '가맹점명 원본 확인 필요']];
-const ALL_BENEFITS = [...PROMOTIONS, ...MYSHOP_ROWS.map((row, index) => ({
-  id: `myshop-${index + 1}`,
-  type: '마이샵',
-  merchant: row[0],
-  benefit: row[1],
-  minimum: row[2],
-  cap: row[3],
-  start: row[4],
-  end: row[5],
-  payout: '결제일에 따라 다름',
-  method: '마이샵 혜택 ON 설정 후 신한카드 결제',
-  note: row[6]
-}))];
 const money = value => value == null ? '원본에 미기재' : `${Number(value).toLocaleString('ko-KR')}원`;
 const kstToday = () => new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
-const benefitStatus = benefit => {
-  const today = kstToday();
-  if (today < benefit.start) return '진행 예정';
-  if (today > benefit.end) return '기간 종료';
-  return '기간 내';
-};
+// 행사 기간 상태 (진행 예정·기간 내·기간 종료). 행사 목록은 서버(/api/promotions)에서 읽는다 (2026-11-23)
+const benefitStatus = benefit => statusOn(benefit, kstToday());
 
 // 카드별 혜택 요약.
 // 상품 조건은 시연용 데이터로 제공하며
@@ -294,6 +275,10 @@ export default function MainScreen({
   const [filter, setFilter] = useState('전체');
   const [search, setSearch] = useState('');
   const [selectedBenefit, setSelectedBenefit] = useState(null);
+  // 행사(카드사 이벤트·마이샵): 서버 모드에서만 서버 목록, 데모 모드에는 없다 (2026-11-23 결정)
+  const promotions = usePromotions();
+  const allBenefits = promotions.rows;
+  const activeNow = activePromotions(allBenefits, kstToday());
   const [walletBenefitDetailsOpen, setWalletBenefitDetailsOpen] = useState(false);
   const [chatVisible, setChatVisible] = useState(false);
   const [chatInput, setChatInput] = useState('');
@@ -370,13 +355,15 @@ export default function MainScreen({
     let active = true;
     readEvents().catch(() => []).then(events => {
       if (!active) return;
-      refreshDailyNotifications({ events, titleOf: eventTitle, promotions: activePromotions() }).catch(() => {});
+      refreshDailyNotifications({ events, titleOf: eventTitle, promotions: activeNow }).catch(() => {});
       if (savedConsent) {
         syncPhoneNotifications({ agreed: savedConsent.morningNotificationAgreed === true, events, titleOf: eventTitle }).catch(() => {});
       }
     });
     return () => { active = false; };
-  }, [savedConsent]);
+    // 행사 목록을 다 읽으면 한 번 더 (행사 알림)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedConsent, promotions.status]);
   // 알림(알림함 또는 폰 알림)을 눌렀을 때 해당 화면으로 이동
   const openNotificationTarget = target => {
     setNotificationsOpen(false);
@@ -558,13 +545,13 @@ export default function MainScreen({
     setSettingsOpen(false);
     selectTab(nextTab);
   };
-  const visibleBenefits = useMemo(() => ALL_BENEFITS.filter(item => {
+  const visibleBenefits = useMemo(() => allBenefits.filter(item => {
     if (filter !== '전체' && item.type !== filter) {
       return false;
     }
     const keyword = search.trim().toLowerCase();
     return !keyword || `${item.merchant} ${item.benefit}`.toLowerCase().includes(keyword);
-  }), [filter, search]);
+  }), [filter, search, allBenefits]);
   const selectTab = nextTab => {
     setSchedulePayment(null);
     setTab(nextTab);
@@ -604,7 +591,7 @@ export default function MainScreen({
   const localAnswer = q => {
     let answer = '카드 정보, 진행 중인 프로모션, 일정 등록 방법을 안내해드려요. 아래 추천 질문을 눌러보세요.';
     if (/프로모션|이벤트|진행/.test(q)) {
-      const list = activePromotions();
+      const list = activeNow;
       answer = list.length
         ? `지금 진행 중인 프로모션이 ${list.length}개 있어요. 예: ${[...new Set(list.map(item => item.merchant))].slice(0, 3).join(', ')}. 혜택 탭에서 각 항목을 누르면 결제 조건과 기간을 볼 수 있어요.`
         : '지금 진행 중인 프로모션이 없어요.';
@@ -666,7 +653,7 @@ export default function MainScreen({
       .then(state => updateChat(item.id, { draft: { ...item.draft, state } }));
   };
   const benefitTile = item => {
-    const logo = PROMOTION_BRANDS[item.merchant]?.image || MYSHOP_LOGOS[item.merchant];
+    const logo = item.logo;
     return <TouchableOpacity
       key={item.id}
       accessibilityRole="button"
@@ -715,8 +702,8 @@ export default function MainScreen({
     </TouchableOpacity>;
 
   const renderHomeHighlights = () => {
-    const [promotion, ...morePromotions] = activePromotions();
-    const [benefit, ...moreBenefits] = ALL_BENEFITS.filter(item =>
+    const [promotion, ...morePromotions] = activeNow;
+    const [benefit, ...moreBenefits] = allBenefits.filter(item =>
       item.type === '마이샵' && item.merchant !== promotion?.merchant && benefitStatus(item) === '기간 내'
     );
     const highlights = [];
@@ -737,7 +724,7 @@ export default function MainScreen({
       </View>
       <View style={styles.homeHighlightsRow}>
         {highlights.map((item, index) => {
-          const logo = PROMOTION_BRANDS[item.merchant]?.image || MYSHOP_LOGOS[item.merchant];
+          const logo = item.logo;
           return <TouchableOpacity key={item.id} accessibilityRole="button"
             accessibilityLabel={item.merchant + ' ' + item.benefit + ' 상세 조건'}
             style={[styles.homeHighlight, index === 1 && styles.homeHighlightMint, index === 2 && styles.homeHighlightPeach]}
@@ -755,11 +742,11 @@ export default function MainScreen({
   };
   const renderBenefits = () => <>
 
-      <BenefitReport offers={ALL_BENEFITS} date={kstToday()} />
+      <BenefitReport offers={allBenefits} date={kstToday()} />
       <Text accessibilityRole="header" style={styles.sectionTitle}>혜택 둘러보기</Text>
       {appNotice && <View style={styles.noticeStrip}>
         <Ionicons name="notifications-outline" size={16} color="#2C60C2" />
-        <Text style={styles.noticeStripText}>이번 달 혜택 {ALL_BENEFITS.filter(item => benefitStatus(item) === '기간 내').length}건</Text>
+        <Text style={styles.noticeStripText}>이번 달 혜택 {allBenefits.filter(item => benefitStatus(item) === '기간 내').length}건</Text>
       </View>}
       {[['sparkles-outline', '오늘의 카드 추천', 'recommendation'], ['pricetag-outline', '오늘의 프로모션', 'promotion']].map(([icon, label, kind]) =>
         <TouchableOpacity key={kind} accessibilityRole="button" accessibilityLabel={label}
@@ -768,6 +755,14 @@ export default function MainScreen({
           <Text style={styles.homeLinkTitle}>{label}</Text>
           <Ionicons name="chevron-forward" size={17} color="#66768D" />
         </TouchableOpacity>)}
+      {promotions.status !== 'ready' && <View style={styles.promoState} accessibilityLiveRegion="polite">
+          {promotions.status === 'loading' ? <ActivityIndicator color="#245DE5" />
+            : <Text style={styles.promoStateText}>{promotions.status === 'off' ? PROMO_TEXT.demo : PROMO_TEXT.failed}</Text>}
+          {promotions.status === 'failed' && <TouchableOpacity accessibilityRole="button" style={styles.promoRetry} onPress={promotions.reload}>
+              <Text style={styles.promoRetryText}>{PROMO_TEXT.retry}</Text>
+            </TouchableOpacity>}
+        </View>}
+      {promotions.status === 'ready' && <>
       <View style={styles.searchBox}>
         <Ionicons name="search-outline" size={18} color="#8C98AE" />
         <TextInput style={styles.searchInput} placeholder="가맹점 또는 혜택 검색" value={search} onChangeText={setSearch} placeholderTextColor="#99A4B3" />
@@ -794,6 +789,7 @@ export default function MainScreen({
       {visibleBenefits.length === 0 && <Text style={styles.emptyText}>
           검색 결과가 없어요. 검색어를 바꿔주세요.
         </Text>}
+      </>}
 
       <Text style={styles.disclaimer}>
         현재 이용 가능 여부와 카드별 적용 조건은 각 혜택의 상세 안내를 확인해주세요.
@@ -946,7 +942,7 @@ export default function MainScreen({
 
       </ScrollView>
     </>;
-  return <SafeAreaView style={styles.root}><RecommendationLaunchPopup selectedWalletCard={currentCard} allowAutomaticAds={tab === 'home' && allowAutomaticAds} onViewPromotions={() => selectTab('benefits')} promotions={activePromotions()} openRequest={adRequest} enabled={(tab === 'home' || tab === 'benefits') && !settingsOpen && !exitOpen && !pinChangeOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
+  return <SafeAreaView style={styles.root}><RecommendationLaunchPopup selectedWalletCard={currentCard} allowAutomaticAds={tab === 'home' && allowAutomaticAds} onViewPromotions={() => selectTab('benefits')} promotions={activeNow} openRequest={adRequest} enabled={(tab === 'home' || tab === 'benefits') && !settingsOpen && !exitOpen && !pinChangeOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
       {!settingsOpen && tab !== 'payment' && <View style={[styles.topBar, tab === 'cards' && styles.walletTopBar]}>
           <View>
             <Text style={[styles.brand,{color:tab === 'cards' ? "#FFFFFF" : "#134CCA",fontSize:27}]}>SOL·Pay</Text>
@@ -1378,6 +1374,10 @@ export default function MainScreen({
     </SafeAreaView>;
 }
 const styles = StyleSheet.create({
+  promoState: { alignItems: 'center', gap: 10, paddingVertical: 24, paddingHorizontal: 16, borderRadius: 16, backgroundColor: '#F4F7FC' },
+  promoStateText: { color: '#4A5D7A', fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  promoRetry: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: '#E4EDFF' },
+  promoRetryText: { color: '#245DE5', fontSize: 13, fontWeight: '700' },
   exitSheet:{width:'100%',maxWidth:400,alignSelf:'center',backgroundColor:'#FFFFFF',borderRadius:24,padding:20,gap:10},
   exitTitle:{fontSize:21,fontWeight:'800',color:'#142D4E',marginBottom:2},
   exitOption:{minHeight:62,backgroundColor:'#F0F5FE',borderRadius:14,padding:12,justifyContent:'center',gap:4},
