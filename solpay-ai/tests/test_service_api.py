@@ -255,7 +255,7 @@ def test_일정은_시간_업종_금액만_받는다(svc):
               json={"items": [{"start": "12:00", "end": "13:00", "category": "REST", "amount": 1000,
                                "memo": "강남 회식", "place": "OO식당"}]})
         got = c.get("/internal/users/1/schedules/2026-10-07").json()["items"][0]
-    assert set(got) == {"start", "end", "category", "amount"}
+    assert set(got) == {"start", "end", "category", "amount", "brand"} and got["brand"] is None   # 메모·장소는 버린다
 
 
 def test_신규_카드_추천은_이득이_기준보다_작으면_하지_않는다(svc):
