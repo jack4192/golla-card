@@ -1,4 +1,4 @@
-# 앱 ↔ AI 연동 (결제 화면)
+# 앱 ↔ AI 연동 (결제 화면·홈 챗봇)
 
 서버 모드(`EXPO_PUBLIC_API_URL` 설정)에서만 동작한다. 데모 모드는 전과 똑같다.
 백엔드 쪽 설명은 `backend/docs/AI_연동.md` 에 있다.
@@ -48,7 +48,20 @@ AI 가 고르지 않는 경우:
 
 **기준 시각 주의**: 백엔드의 `AI_FIXED_AT` 을 켜면 AI 가 그 시각으로 계산하므로, 실제 오늘 날짜로 넣은 일정은 배치에 반영되지 않는다.
 
-## 카드 도우미 챗봇
+## 홈 챗봇 (SOL 카드 도우미)
+
+홈·혜택·오늘의 일정·카드 탭 오른쪽 아래 캐릭터 버튼으로 여는 챗봇이다 (`screens/MainScreen.js`).
+서버 모드에서는 질문을 AI 챗봇에 보낸다 (`POST /api/ai/chat`, `screen.name` 에 지금 탭 이름, 최근 대화 4쌍).
+데모 모드이거나 연결하지 못하면 앱 안의 기본 안내로 답하고 'AI 챗봇에 연결하지 못해 기본 안내로 답했어요'를 붙인다.
+
+- AI 챗봇은 카드 혜택·결제 카드 선택 외에 **앱 사용법**과 **진행 중인 프로모션**도 답한다 (2026-11-23 결정).
+  앱 사용법은 AI 엔진의 프롬프트(`solpay-ai/engine/chat/prompts.py` 의 `[앱 사용 안내]`)에 적혀 있어서,
+  **앱 화면·버튼 이름을 바꾸면 그 안내도 함께 고쳐야 한다.**
+- 추천 질문은 탭마다 8개 안팎이고, AI 챗봇 평가 질문에서 골라 내 카드 이름을 넣는다 (`utils/homeChat.js`).
+  카드가 한 장이면 '두 번째 카드로 내면 얼마 손해야?' 같은 질문은 빠진다.
+- 규칙 초안이 오면 '저장'·'취소' 버튼이 나온다. 새 답이 오면 자동으로 맨 아래로 내려간다.
+
+## 결제 화면 카드 도우미 챗봇
 
 전체 결제 화면의 챗봇은 질문을 AI 챗봇에 보낸다 (`POST /api/ai/chat`, 최근 대화 4개와 추천 번호를 함께). 연결하지 못하면 앱 안의 기본 안내로 답한다.
 챗봇이 규칙 초안을 만들면 '저장'·'취소' 버튼이 나온다 (`/api/ai/rules/drafts/{id}/confirm`, `/cancel`).
@@ -67,16 +80,19 @@ AI 가 고르지 않는 경우:
 | `utils/routineData.js` | 일정을 서버 형식으로 바꿀 때 `scheduleCategory.js` 를 쓰도록 수정 |
 | `screens/PaymentScreen.js` | AI 추천 상자, 자동 선택 |
 | `components/PaymentCardOrder.js` | `aiOrder` 로 받은 순서 표시 |
-| `components/PaymentBenefitChat.js` | AI 챗봇 연결, 규칙 초안 버튼 |
+| `components/PaymentBenefitChat.js` | 결제 화면 챗봇의 AI 연결, 규칙 초안 버튼 |
+| `utils/homeChat.js` | 홈 챗봇 추천 질문(탭별), AI 에 보낼 이전 대화 (순수 함수) |
+| `screens/MainScreen.js` | 홈 챗봇의 AI 연결, 규칙 초안 버튼, 자동 스크롤 |
 
 ## 테스트
 
 ```bash
-node --test utils/__tests__/aiPlacementCore.test.mjs utils/__tests__/scheduleCategory.test.mjs
+node --test utils/__tests__/aiPlacementCore.test.mjs utils/__tests__/scheduleCategory.test.mjs utils/__tests__/homeChat.test.mjs
 ```
 
 ## 아직 안 한 것
 
 - QR 결제 시트에는 AI 배치가 없다.
+- 앱 카드 데이터(22장)에 없는 서버 카드는 지갑에서 빠지지만, AI 는 서버의 모든 카드를 보고 답한다. 그래서 AI 가 지갑에 안 보이는 카드를 말할 수 있다.
 - 맞춤 추천·월간 리포트 화면은 붙이지 않았다. '올해 카드 결산'(`components/YearEndReport.js`)은 앱 자체 계산이고 AI 의 연말정산 API(`/api/ai/missed-benefit`)를 쓰지 않는다.
 - 평소 일과(루틴)는 서버에 올리지 않는다.
