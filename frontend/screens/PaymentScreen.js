@@ -12,7 +12,7 @@ import { CARD_PRODUCTS } from '../data/cardRecommendationProducts';
 import { CSV_CARD_CATALOG } from '../data/cardCatalogCsv';
 import { evaluatePdfCard } from '../data/paymentBenefits';
 import { benefitText, evaluateBenefit } from '../utils/cardRecommendation';
-import { createPinSalt } from '../utils/pinCrypto';
+import { createRandomHex } from '../utils/demoCrypto';
 import { makeSchedulePaymentScenario } from '../utils/schedulePayment';
 import { estimateCatalogBenefit, matchesCatalogPaymentBenefit } from '../utils/catalogPayment';
 import { SERVER_MODE } from '../utils/api';
@@ -191,7 +191,7 @@ export function comparePayment(selected, baseline) {
 export async function makeDemoCode() {
   let value = '';
   while (value.length < 18) {
-    const salt = await createPinSalt();
+    const salt = await createRandomHex();
     for (const char of salt) {
       const digit = parseInt(char, 16);
       if (digit < 10) value += digit;
