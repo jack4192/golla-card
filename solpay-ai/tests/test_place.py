@@ -96,3 +96,84 @@ def test_amount_hint_순서(service, catalog):
     assert amount_hint(cafe_rows, catalog, "CAFE", "스타벅스", when, priors) == 4_000
     old = [pay(card=1, amount=50_000, category="CAFE", merchant=sb, when=when - timedelta(days=120))]
     assert amount_hint(old, catalog, "CAFE", "스타벅스", when, priors) == round(priors.amount_median("CAFE"), -2)
+
+
+# ---------- Task 2: OpenAI 보조 분류와 서비스 조립 ----------
+
+import json  # noqa: E402
+
+from tests.test_page_copy import FakeClient  # noqa: E402
+
+
+@pytest.fixture
+def svc(service):
+    service.place_cache.clear()
+    return service
+
+
+def _llm(script):
+    from engine.chat.page_copy import CopySettings
+    from engine.chat.place_llm import PlaceLLM
+    client = FakeClient(script)
+    return PlaceLLM(client, CopySettings(timeout_sec=5)), client
+
+
+def _answer(category, brand=None, confidence="high"):
+    return json.dumps({"category": category, "brand": brand, "confidence": confidence}, ensure_ascii=False)
+
+
+def test_검색으로_찾으면_OpenAI_안_부름(svc):
+    llm, client = _llm([])
+    r = svc.classify_place("스타벅스", llm=llm)
+    assert (r["source"], r["category"], r["brand"]) == ("search", "CAFE", "스타벅스") and client.requests == []
+
+
+def test_검색_실패면_OpenAI_분류(svc):
+    llm, client = _llm([_answer("FITNESS")])
+    r = svc.classify_place("헬스장", llm=llm)
+    assert (r["source"], r["category"], r["brand"]) == ("llm", "FITNESS", None)
+    assert r["category_name"] == svc.engine.catalog.category_name("FITNESS") and len(client.requests) == 1
+
+
+def test_OpenAI_오타도_목록_안_브랜드면_받음(svc):
+    llm, _ = _llm([_answer("CAFE", "스타벅스")])
+    r = svc.classify_place("스타벅쓰", llm=llm)
+    assert (r["source"], r["category"], r["brand"], r["brand_name"]) == ("llm", "CAFE", "스타벅스", "스타벅스")
+
+
+def test_OpenAI_목록_밖_값은_버림(svc):
+    llm, _ = _llm([_answer("GYM", "없는브랜드")])
+    r = svc.classify_place("크로스핏 박스", llm=llm)
+    assert (r["source"], r["category"], r["brand"]) == ("none", None, None)
+
+
+def test_확신_낮으면_후보만(svc):
+    llm, _ = _llm([_answer("FITNESS", confidence="low")])
+    r = svc.classify_place("운동하러", llm=llm)
+    assert r["category"] is None and r["brand"] is None and r["source"] == "llm"
+    assert [c["category"] for c in r["candidates"]] == ["FITNESS"]
+
+
+def test_OpenAI_실패나_키_없으면_none(svc):
+    llm, _ = _llm([RuntimeError("boom")])
+    assert svc.classify_place("필라테스", llm=llm)["source"] == "none"
+    assert svc.classify_place("요가 수업", llm=None)["source"] == "none"
+
+
+def test_같은_글자는_캐시(svc):
+    llm, client = _llm([_answer("FITNESS")])
+    first = svc.classify_place("동네 헬스", llm=llm)
+    second = svc.classify_place("동네 헬스", llm=llm)
+    assert first["category"] == second["category"] == "FITNESS" and len(client.requests) == 1
+
+
+def test_OpenAI_로_가는_글은_가려지고_원문은_응답에_없음(svc):
+    llm, client = _llm([_answer("FITNESS")])
+    r = svc.classify_place("헬스 010-1234-5678", llm=llm)
+    sent = json.dumps(client.requests[0]["messages"], ensure_ascii=False)
+    assert "1234-5678" not in sent and "1234-5678" not in json.dumps(r, ensure_ascii=False)
+
+
+def test_사용자가_있으면_그_사람_금액(svc):
+    r = svc.classify_place("스타벅스", user_id=1, at=at(month=11, day=5))
+    assert isinstance(r["amount_hint"], int) and r["amount_hint"] > 0 and isinstance(r["ms"], int)
