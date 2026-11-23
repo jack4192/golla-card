@@ -425,7 +425,7 @@
   "/internal/users/{user_id}/recommendation-page": {
    "post": {
     "summary": "Recommendation Page",
-    "description": "맞춤 추천 페이지 (일정 저장·건너뛰기 뒤). tabs: card(아직 없는 신한카드) / merchant(프로모션 가맹점).\n카드날(마지막 카드 추천 3일 뒤)은 두 탭, 그 외 날은 가맹점 탭, 프로모션이 없으면 카드 탭. 비면 페이지를 건너뛴다.\n카드·금액은 엔진 계산, 문구는 OpenAI (실패하면 정해진 문구 copy_source=template, 탭이 비면 none). 같은 날 다시 부르면 cached=true.",
+    "description": "맞춤 추천 페이지 (일정 저장·건너뛰기 뒤). tabs: card(아직 없는 신한카드) / merchant(프로모션 가맹점).\n더 주는 새 카드가 있으면 매번 카드 탭(2주 안에 추천한 카드도 다시), 행사가 있으면 가맹점 탭 (2026-11-24).\nParams.page_card_every_time=False 면 예전처럼 카드날(마지막 카드 추천 3일 뒤)에만 카드 탭. 비면 페이지를 건너뛴다.\n카드·금액은 엔진 계산, 문구는 OpenAI (실패하면 정해진 문구 copy_source=template, 탭이 비면 none). 같은 날 다시 부르면 cached=true.",
     "operationId": "recommendation_page_internal_users__user_id__recommendation_page_post",
     "parameters": [
      {
@@ -701,6 +701,74 @@
     }
    }
   },
+  "/internal/users/{user_id}/day-placement": {
+   "post": {
+    "summary": "Day Placement",
+    "description": "앱 홈 시간 표시줄용 하루 배치 (2026-11-23). 매시 정각·일정 창 경계에서 계산해 1순위가 같은 점을 구간으로\n합친다: {day, segments:[{start, end, user_card_id, message, reason_code, cards}]}. 추천 기록은 남기지 않는다.",
+    "operationId": "day_placement_internal_users__user_id__day_placement_post",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "User Id"
+      }
+     },
+     {
+      "name": "x-internal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Internal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DayBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Day Placement Internal Users  User Id  Day Placement Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/internal/users/{user_id}/strategy": {
    "get": {
     "summary": "Strategy",
@@ -779,7 +847,7 @@
   "/internal/users/{user_id}/missed-benefit": {
    "get": {
     "summary": "Missed",
-    "description": "연말정산 안내: 지난 기간에 각 신한카드가 있었다면 더 받았을 금액 (상위 3장).",
+    "description": "연말정산 안내: 지난 기간에 각 신한카드가 있었다면 더 받았을 금액 (상위 3장).\nstart 를 주면 그 달부터 센다 (연말 결산은 올해 1월 1일, 2026-11-24). 1만 원(missed_min_gain) 미만은 뺀다.",
     "operationId": "missed_internal_users__user_id__missed_benefit_get",
     "parameters": [
      {
@@ -816,6 +884,23 @@
        "type": "integer",
        "default": 365,
        "title": "Days"
+      }
+     },
+     {
+      "name": "start",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "format": "date"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Start"
       }
      },
      {
@@ -1833,6 +1918,33 @@
      "text"
     ],
     "title": "ChatTurn"
+   },
+   "DayBody": {
+    "properties": {
+     "day": {
+      "type": "string",
+      "format": "date",
+      "title": "Day"
+     },
+     "now": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Now"
+     }
+    },
+    "type": "object",
+    "required": [
+     "day"
+    ],
+    "title": "DayBody",
+    "description": "하루 배치 (앱 홈 시간 표시줄, 2026-11-23). now 는 백엔드의 '지금' (시연 고정 시각이 있으면 그것)."
    },
    "DraftDecisionBody": {
     "properties": {
