@@ -61,6 +61,7 @@ class AppSchemaMissing(RuntimeError):
 
 
 class TeamDbPgStore:
+    promotions_complete = True  # 행사 목록이 화면 정보·확인 필요까지 갖춰 yml 을 합치지 않는다 (2026-11-23)
     purge_daily = True          # 지난 일정은 요청 밖 하루 작업이 지운다 (engine/jobs.py)
 
     def __init__(self, url: str, schema: str = "public", app: str = "app", card_map: CardMap | None = None):

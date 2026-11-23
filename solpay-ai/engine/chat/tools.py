@@ -493,9 +493,9 @@ class ToolBox:
         word = norm(merchant_name) if merchant_name else ""
         rows, seen = [], set()
         for p in promotions:
-            if p.needs_check or not p.active(self.at) or p.promotion_id in seen:
+            if p.needs_check or not p.shown(self.at) or p.promotion_id in seen:   # 실제 행사 기간 (2026-11-23)
                 continue
-            if word and word not in norm(p.brand) and word not in norm(p.title or ""):
+            if word and word not in norm(p.brand) and word not in norm(p.name) and word not in norm(p.title or ""):
                 continue
             cards = [self.names[c.user_card_id] for c in self.cards
                      if (p.issuer is None or p.issuer == c.issuer) and (p.card_id is None or p.card_id == c.card_id)]
@@ -505,9 +505,10 @@ class ToolBox:
             benefit = f"{p.amount:,}원" if p.amount is not None else f"{(p.rate or 0) * 100:g}%"
             if p.max_amount is not None and p.amount is None:
                 benefit += f" (한 번에 최대 {p.max_amount:,}원)"
-            row = {"promotion_id": p.promotion_id, "brand": p.brand, "title": p.title or p.label(),
+            row = {"promotion_id": p.promotion_id, "brand": p.name, "title": p.title or p.label(),
                    "kind": "마이샵" if p.kind == "myshop" else "이벤트", "benefit": benefit,
-                   "start": f"{p.starts_at:%Y-%m-%d}", "end": f"{p.ends_at:%Y-%m-%d}", "cards": cards}
+                   "start": f"{(p.shown_from or p.starts_at):%Y-%m-%d}", "end": f"{(p.shown_to or p.ends_at):%Y-%m-%d}",
+                   "cards": cards, "logo_url": p.logo_url}
             if p.min_amount:
                 row["min_amount"] = p.min_amount
             rows.append(row)
