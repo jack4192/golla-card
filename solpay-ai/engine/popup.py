@@ -74,7 +74,8 @@ def promotion_offers(state, schedules: list[ScheduleItem], promotions: list[Prom
             if promo.needs_check or not promo.active(item.start):
                 continue
             merchant = next((m for m in sorted(promo.merchant_ids)
-                             if m in catalog.merchants and catalog.merchants[m].category == item.category), None)
+                             if m in catalog.merchants and catalog.merchants[m].category == item.category
+                             and (item.brand is None or catalog.merchants[m].brand_code == item.brand)), None)
             if merchant is None:
                 continue
             brand = catalog.brand_of(merchant)

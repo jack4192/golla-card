@@ -149,6 +149,8 @@ class PlacementService:
         self.popups: dict = {}
         # 맞춤 추천 페이지 결과 (사용자, 날짜) → 응답. 같은 날 다시 열면 그대로 준다 (재시작하면 다시 계산).
         self.pages: dict = {}
+        # 일정 '직접 입력' 분류 결과 (정리한 글 → 사용자와 무관한 분류). 같은 글자는 OpenAI 를 다시 부르지 않는다
+        self.place_cache: dict = {}
         # 월간 리포트의 OpenAI 답: 사용자 → (보낸 사실, 문구, 기록). 숫자는 부를 때마다 다시 계산하고, OpenAI 답만
         # 보낸 사실이 같을 때 다시 쓴다 (2026-11-22 사용자 결정. 사용자마다 마지막 답 하나, 정해진 문구는 두지 않는다).
         self.reports: dict = {}
@@ -382,15 +384,22 @@ class PlacementService:
         if day < now.date():
             raise ValueError("지난 날의 일정은 넣을 수 없습니다")
         names = self.engine.catalog.category_names
+        brands = {m.brand_code for m in self.engine.catalog.merchants.values() if m.brand_code}
+        pairs = self._place_pairs()
         parsed = []
         for i, raw in enumerate(items):
             if raw["category"] not in names or raw["category"] == "ALL":
                 raise ValueError(f"알 수 없는 업종: {raw['category']}")
+            brand = raw.get("brand") or None
+            if brand is not None and brand not in brands:
+                raise ValueError(f"알 수 없는 가맹점 브랜드: {brand}")
+            if brand is not None and (raw["category"], brand) not in pairs:
+                raise ValueError(f"업종과 맞지 않는 가맹점 브랜드: {raw['category']} · {brand}")
             start = datetime.combine(day, raw["start"], tzinfo=now.tzinfo)
             end = datetime.combine(day, raw["end"], tzinfo=now.tzinfo)
             if end <= start:
                 raise ValueError("끝 시각은 시작 시각보다 늦어야 합니다")
-            parsed.append(ScheduleItem(i + 1, user_id, start, end, raw["category"], int(raw["amount"])))
+            parsed.append(ScheduleItem(i + 1, user_id, start, end, raw["category"], int(raw["amount"]), brand))
         self.store.put_schedule(user_id, day, parsed)
         self.forget_day(user_id, day)
         return parsed
@@ -487,6 +496,83 @@ class PlacementService:
                                             "trigger": rec.trigger, "gain": rec.gain})
         return {"recommend": True, "card_id": rec.card_id, "card_name": rec.card_name, "gain": rec.gain,
                 "trigger": rec.trigger, "reason": rec.reason, "first_month_note": rec.first_month_note}
+
+    # ---------- 일정 '직접 입력' 업종·가맹점 분류 (2026-11-23 설계서) ----------
+    def classify_place(self, text: str, user_id: int | None = None, at=None, llm=None) -> dict:
+        """짧은 말 → 업종·브랜드. 규칙 검색이 딱 맞으면 search, 못 찾으면 llm(PlaceLLM) 이 목록 안에서 고른다.
+        확신이 낮으면 후보만, 실패하면 none. 원문은 어디에도 남기지 않는다 (정리한 글만 캐시 키로 쓴다)."""
+        import time as _time
+        from zoneinfo import ZoneInfo
+        from engine.place import amount_hint, clean_text
+        started = _time.monotonic()
+        catalog = self.engine.catalog
+        if user_id is not None:
+            self.store.user(user_id)                  # 없는 사용자는 UnknownUser
+        at = at or datetime.now(ZoneInfo("Asia/Seoul"))
+        q = clean_text(text)
+        base = self.place_cache.get(q)
+        if base is None:
+            base, cacheable = self._classify_new(q, llm)
+            if cacheable:
+                self.place_cache[q] = base
+        out = {**base, "category_name": catalog.category_name(base["category"]) if base["category"] else None,
+               "candidates": [dict(c) for c in base["candidates"]]}
+        hint = None
+        if base["category"]:
+            if user_id is not None:
+                payments = self.store.context(user_id, at).payments
+                hint = amount_hint(payments, catalog, base["category"], base["brand"], at, self.engine.priors)
+            else:
+                hint = int(round(self.engine.priors.amount_median(base["category"]), -2))
+        out["amount_hint"] = hint
+        out["ms"] = int((_time.monotonic() - started) * 1000)
+        return out
+
+    def _place_pairs(self) -> set[tuple[str, str]]:
+        """카탈로그 가맹점의 (업종, 브랜드 코드) 쌍. 써브웨이처럼 두 업종에 걸친 브랜드가 있어 쌍으로 본다."""
+        pairs = self.__dict__.get("_pairs")
+        if pairs is None:
+            pairs = self.__dict__["_pairs"] = {(m.category, m.brand_code) for m in self.engine.catalog.merchants.values()
+                                               if m.brand_code}
+        return pairs
+
+    def _classify_new(self, q: str, llm) -> tuple[dict, bool]:
+        """(사용자와 무관한 분류, 캐시해도 되는지). OpenAI 가 실패한 결과는 캐시하지 않는다 (다음에 다시 시도)."""
+        from engine.place import _candidate, match_place, resembles
+        catalog = self.engine.catalog
+        empty = {"category": None, "brand": None, "brand_name": None}
+        m = match_place(q, catalog)
+        if m.exact or m.category:
+            return {"category": m.category, "brand": m.brand, "brand_name": m.brand_name, "source": "search",
+                    "candidates": m.candidates}, True
+        brand_cands = {c["brand"] for c in m.candidates if c["brand"]}
+        cats = {c["category"] for c in m.candidates}
+        generic = any(c["brand"] is None for c in m.candidates)          # 업종 이름에 걸린 후보가 있다
+        if len(cats) == 1 and (len(brand_cands) >= 2 or (generic and brand_cands)):
+            # '카페'·'커피'·'주유소': 브랜드는 정하지 않아도 업종은 하나. 업종 이름 부분 일치만 있고 가맹점 근거가
+            # 없으면('동네 헬스' → 헬스앤뷰티) 정하지 않는다
+            return {**empty, "category": next(iter(cats)), "source": "search", "candidates": m.candidates}, True
+        if len(brand_cands) >= 2:                 # 'GS' 처럼 여러 업종의 여러 브랜드면 고르지 않는다
+            return {**empty, "source": "search", "candidates": m.candidates}, True
+        if not q or llm is None:
+            return {**empty, "source": "none", "candidates": m.candidates}, False
+        categories = {c: n for c, n in catalog.category_names.items() if c != "ALL"}
+        brands = {mm.brand_code: mm.brand or mm.brand_code for mm in catalog.merchants.values() if mm.brand_code}
+        answer = llm.classify(q, categories, brands)
+        if answer is None:
+            return {**empty, "source": "none", "candidates": m.candidates}, False
+        if answer["category"] == "UNKNOWN":
+            return {**empty, "source": "none", "candidates": m.candidates}, True
+        brand = answer["brand"]
+        if brand is not None and not resembles(q, brand, brands.get(brand)):
+            brand = None                       # 글에 없는 브랜드를 붙이지 않는다 ('커피 한 잔' → 스타벅스)
+        if brand is not None and (answer["category"], brand) not in self._place_pairs():
+            brand = None                       # 그 업종에 없는 브랜드 (카페 + 올리브영)
+        if answer["confidence"] == "low":
+            return {**empty, "source": "llm",
+                    "candidates": [_candidate(catalog, answer["category"], brand, brands.get(brand))]}, True
+        return {"category": answer["category"], "brand": brand, "brand_name": brands.get(brand), "source": "llm",
+                "candidates": []}, True
 
     def missed_benefit(self, user_id: int, at, days: int = 365) -> list[dict]:
         """연말정산 안내: 지난 days 일 동안 각 신한카드가 있었다면 더 받았을 금액 (상위 3장)."""

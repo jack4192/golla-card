@@ -269,14 +269,61 @@ function scheduleRow(item) {
   amount.inputMode = "numeric";
   const amountHint = el("span", "", "muted small");
   const sync = () => { const n = Number(amount.value); amountHint.textContent = n > 0 ? won(n) : ""; };
-  cat.onchange = () => { amount.value = opts.schedule_categories.find((c) => c.code === cat.value).typical_amount; sync(); };
+  const typical = (code) => (opts.schedule_categories.find((c) => c.code === code) || {}).typical_amount || 10000;
+  const allowed = new Set(opts.schedule_categories.map((c) => c.code));
+  // 가게 이름 → 업종·가맹점 (2026-11-23): 검색이 먼저, 못 찾으면 AI. 결과는 칩으로 보여 주고 바꿀 수 있다
+  let brand = item.brand || null;
+  const name = el("input"); name.type = "text"; name.maxLength = 40;
+  name.placeholder = "가게 이름 (예: 스타벅스, 헬스장) · 개인정보는 적지 마세요";
+  const chip = el("div", null, "small place-chip");
+  if (item.brand) chip.append(el("span", `→ ${item.category_name || ""} · ${item.brand}`, "strong"));
+  const pick = (category, b, label, source) => {
+    cat.value = category; brand = b || null;
+    chip.replaceChildren(el("span", `→ ${label}`, "strong"), ...(source ? [el("span", ` (${source})`, "muted")] : []));
+  };
+  let timer = null, seq = 0;
+  name.oninput = () => {
+    // 글이 바뀌면 앞의 분류는 무효: 늦게 온 응답이 덮어쓰지 않게 seq 를 올리고, 보이지 않는 브랜드를 비운다
+    clearTimeout(timer); seq++; brand = null;
+    const text = name.value.trim();
+    if (!text) { chip.replaceChildren(); return; }
+    timer = setTimeout(async () => {
+      const my = ++seq;
+      chip.replaceChildren(el("span", "분류 중…", "muted"));
+      let r;
+      try { r = await post("/api/places/classify", { text }); }
+      catch (e) { if (my === seq) chip.replaceChildren(el("span", e.message, "err")); return; }
+      if (my !== seq) return;
+      const label = (c) => c.brand_name ? `${c.category_name} · ${c.brand_name}` : c.category_name;
+      if (r.category && allowed.has(r.category)) {
+        pick(r.category, r.brand, label(r), r.source === "search" ? "검색" : "AI 분류");
+        amount.value = r.amount_hint || typical(r.category); sync();
+        return;
+      }
+      const cands = (r.candidates || []).filter((c) => allowed.has(c.category));
+      if (cands.length) {
+        chip.replaceChildren(el("span", "어느 쪽인가요? ", "muted"), ...cands.map((c) => {
+          const b = el("button", label(c), "btn small ghost");
+          b.onclick = () => { pick(c.category, c.brand, label(c), "직접 고름"); amount.value = typical(c.category); sync(); };
+          return b;
+        }));
+        return;
+      }
+      chip.replaceChildren(el("span", "업종을 아래에서 직접 골라 주세요", "muted"));
+    }, 400);
+  };
+  cat.onchange = () => {
+    seq++; brand = null; amount.value = typical(cat.value); sync();
+    chip.replaceChildren(el("span", "업종을 직접 골랐어요", "muted"));
+  };
   amount.oninput = sync; sync();
   const del = el("button", "삭제", "btn small ghost"); del.onclick = () => row.remove();
   const time = el("div", null, "srow-time"); time.append(start, el("span", "~"), end);
   const money = el("div", null, "srow-money"); money.append(amount, amountHint);
   const head = el("div", null, "srow-head"); head.append(time, del);
-  row.append(head, cat, money);
-  row.read = () => ({ start: start.value, end: end.value, category: cat.value, amount: Number(amount.value) });
+  row.append(head, name, chip, cat, money);
+  row.read = () => ({ start: start.value, end: end.value, category: cat.value, amount: Number(amount.value),
+                      ...(brand ? { brand } : {}) });
   return row;
 }
 
@@ -303,13 +350,33 @@ async function saveSchedule(items) {
   if (bad) { $("schedErr").textContent = "끝 시각은 시작 시각보다 늦게, 금액은 0원보다 크게 넣어 주세요."; $("schedErr").hidden = false; return; }
   try { await put("/api/schedule", { items }); }
   catch (e) { $("schedErr").textContent = e.message; $("schedErr").hidden = false; return; }
-  await schedulePopup();
+  await recommendationPage();
 }
 $("schedNext").onclick = () => saveSchedule([...$("rows").children].map((r) => r.read()));
 $("schedSkip").onclick = () => saveSchedule([]);
 
-// ---------- 일정 팝업: 3일마다 새 카드 추천, 그 외의 날은 일정 맞춤 프로모션 ----------
+// ---------- 일정 다음: 맞춤 추천 페이지 (2026-11-23). 카드 탭 → 기존 카드 추천 화면, 가맹점 탭 → 기존 프로모션 화면 ----------
 let pendingToast = "";
+let afterCard = null;            // 카드 화면 다음에 보여 줄 것 (두 탭이면 프로모션)
+async function recommendationPage() {
+  let page = { tabs: [] };
+  try { page = await post("/api/recommendation-page"); } catch (e) { /* 건너뛴다 */ }
+  const offers = (page.merchant && page.merchant.offers) || [];
+  const tabs = page.tabs || [];
+  if (tabs.includes("card") && page.card) {
+    afterCard = tabs.includes("merchant") && offers.length ? () => showPromotions(offers) : null;
+    const c = page.card, copy = c.copy || {};
+    showCard({ card_name: c.card_name, trigger: "schedule", gain: c.gain,
+               gain_text: c.show_amount ? (copy.amount_label || `오늘 일정에서 약 ${won(c.gain)} 더`) : `${c.keyword} 혜택을 받을 수 있어요`,
+               reason: copy.summary || c.keyword, first_month_note: c.first_month_note });
+    return;
+  }
+  if (tabs.includes("merchant") && offers.length) { showPromotions(offers); return; }
+  pendingToast = page.error || "오늘 일정에 맞는 혜택이 없어요. 결제 화면으로 이동합니다.";
+  show("pay");
+}
+
+// (이전 방식) 일정 팝업: 3일마다 새 카드 추천, 그 외의 날은 일정 맞춤 프로모션. 서버 /api/schedule-popup 은 남겨 둔다
 async function schedulePopup() {
   let popup = { kind: "none" };
   try { popup = await post("/api/schedule-popup"); } catch (e) { /* 팝업은 건너뛴다 */ }
@@ -337,13 +404,14 @@ $("promoOk").onclick = () => show("pay");
 
 function showCard(rec) {
   $("recName").textContent = rec.card_name;
-  $("recGain").textContent = rec.trigger === "schedule" ? `이번 일정에서 약 ${won(rec.gain)} 더` : `한 달에 약 ${won(rec.gain)} 더`;
+  $("recGain").textContent = rec.gain_text || (rec.trigger === "schedule" ? `이번 일정에서 약 ${won(rec.gain)} 더` : `한 달에 약 ${won(rec.gain)} 더`);
   $("recReason").textContent = rec.reason;
   $("recNote").textContent = rec.first_month_note || "";
   show("rec");
 }
-$("recApply").onclick = () => { pendingToast = "카드 신청 화면으로 연결됩니다 (데모에서는 실제로 신청되지 않아요)."; show("pay"); };
-$("recLater").onclick = () => { pendingToast = "같은 카드는 2주 동안 다시 추천하지 않아요."; show("pay"); };
+const leaveCard = (toast) => { pendingToast = toast; const next = afterCard; afterCard = null; if (next) next(); else show("pay"); };
+$("recApply").onclick = () => leaveCard("카드 신청 화면으로 연결됩니다 (데모에서는 실제로 신청되지 않아요).");
+$("recLater").onclick = () => leaveCard("같은 카드는 2주 동안 다시 추천하지 않아요.");
 
 // ---------- 연말 결산 미리보기 ----------
 $("missedBtn").onclick = async () => {

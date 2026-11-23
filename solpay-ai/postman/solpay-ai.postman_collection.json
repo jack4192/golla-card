@@ -568,6 +568,52 @@
 							}
 						}
 					]
+				},
+				{
+					"name": "일정 직접 입력 분류: 스벅",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/internal/places/classify",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"internal",
+								"places",
+								"classify"
+							]
+						},
+						"description": "별칭 '스벅' → 스타벅스 / 카페. 검색으로 찾으므로 OpenAI 를 부르지 않는다 (source=search).",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"스벅\",\n  \"user_id\": 1,\n  \"at\": \"2026-11-05T12:00:00+09:00\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+									"const r = pm.response.json();",
+									"pm.test('검색으로 스타벅스 / 카페', () => { pm.expect(r.source).to.be.a('string'); pm.expect(r.source).to.eql('search'); pm.expect(r.brand).to.eql('스타벅스'); pm.expect(r.category).to.eql('CAFE'); });"
+								]
+							}
+						}
+					]
 				}
 			]
 		},

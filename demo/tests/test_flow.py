@@ -239,3 +239,30 @@ def test_결제_화면에_이번_달_실적_채우기_방식을_보여준다(env
     client, _, _ = env
     me = client.get("/api/me").json()
     assert me["strategy"] == {"code": "main_top", "label": "② 주력 카드의 높은 구간부터"}
+
+
+# ---------- 일정 직접 입력 분류 (2026-11-23) ----------
+
+def test_분류_프록시는_AI_결과를_그대로(env):
+    from conftest import CLASSIFY
+    client, _, fake = env
+    r = client.post("/api/places/classify", json={"text": "스벅"})
+    assert r.status_code == 200 and r.json() == CLASSIFY
+    method, path, body = fake.calls[-1]
+    assert (method, path, body["text"], body["user_id"]) == ("POST", "/internal/places/classify", "스벅", 1) and body["at"]
+
+
+def test_일정_저장에_brand_가_AI_로_간다(env):
+    client, _, fake = env
+    r = client.put("/api/schedule", json={"items": [{"start": "14:00", "end": "15:00", "category": "CAFE",
+                                                     "amount": 6500, "brand": "스타벅스"}]})
+    assert r.status_code == 200 and r.json()["items"][0]["brand"] == "스타벅스"
+    assert next(iter(fake.schedules.values()))[0]["brand"] == "스타벅스"
+
+
+def test_일정_다음은_추천_페이지(env):
+    client, _, _ = env
+    r = client.post("/api/recommendation-page").json()
+    assert r["tabs"] == ["card", "merchant"] and r["card"]["card_name"] == "신한 카페 카드"
+    offer = r["merchant"]["offers"][0]
+    assert offer["window"] == "13:30~15:30" and offer["schedule_time"] == "14:00~15:00"
