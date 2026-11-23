@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { INDUSTRIES, ROUTINE_TITLE_LIMIT } from '../utils/routineDetails';
-import { CATEGORIES, categoryLabel, isCustomCategory, EVENT_OPTIONS, eventBenefitCategories, confirmToday, dateKey, deleteEvent, eventTimeCaption, eventTitle, eventTypeBenefitLabel, readEvents, saveEvent, shiftDate, validDate } from '../utils/routineData';
+import { Ionicons } from '@expo/vector-icons';
+import { INDUSTRIES, INDUSTRY_ICONS, ROUTINE_TITLE_LIMIT } from '../utils/routineDetails';
+import { CATEGORIES, categoryLabel, isCustomCategory, EVENT_ICONS, EVENT_OPTIONS, eventBenefitCategories, confirmToday, dateKey, deleteEvent, eventTimeCaption, eventTitle, eventTypeBenefitLabel, readEvents, saveEvent, shiftDate, validDate } from '../utils/routineData';
 
 // 시간대 빠른 선택
 const TIME_PRESETS = [
@@ -33,7 +34,7 @@ function dateHeading(day) {
 }
 
 // 1단계: 일정 종류 + 카드 추천 반영 안내
-// 직접 입력은 저장 시 types에 'other' + title 로 저장됩니다(다른 항목과 함께 고를 수 있음).
+// 직접 입력은 저장 시 types에 'other' + title 로 저장됩니다. 일정 종류는 하나만 고른다(직접 입력 또는 칩 하나).
 function TypePicker({ types, setTypes, title, setTitle, disabled }) {
   const labels = [...new Set(types.map(eventTypeBenefitLabel).filter(Boolean))];
   const typed = types.includes('other');
@@ -41,25 +42,29 @@ function TypePicker({ types, setTypes, title, setTitle, disabled }) {
     <TextInput accessibilityLabel="일정 이름 직접 입력" value={title} editable={!disabled}
       onChangeText={text => {
         setTitle(text);
-        const has = Boolean(text.trim());
-        setTypes(previous => has
-          ? (previous.includes('other') ? previous : ['other', ...previous])
-          : previous.filter(item => item !== 'other'));
+        // 직접 입력하면 고른 칩은 풀린다
+        setTypes(text.trim() ? ['other'] : []);
       }}
       style={[s.input, s.fullInput, typed && s.inputActive]} placeholder="직접 입력 · 예: 치과 정기검진, 친구 생일 파티" maxLength={40} />
-    <Text style={s.orText}>또는 아래에서 골라주세요 (여러 개 선택 가능)</Text>
+    <Text style={s.orText}>또는 아래에서 하나를 골라주세요</Text>
     <View style={s.options}>
       {EVENT_OPTIONS.filter(([value]) => value !== 'other').map(([value, label]) => {
         const checked = types.includes(value);
-        return <TouchableOpacity key={value} disabled={disabled} accessibilityRole="checkbox" accessibilityState={{ checked, disabled }}
+        return <TouchableOpacity key={value} disabled={disabled} accessibilityRole="radio" accessibilityState={{ selected: checked, disabled }}
           style={[s.option, checked && s.selected]}
-          onPress={() => setTypes(previous => previous.includes(value) ? previous.filter(item => item !== value) : [...previous, value])}>
+          onPress={() => {
+            // 하나만 선택: 같은 칩을 다시 누르면 해제, 다른 칩을 누르면 바뀐다. 직접 입력한 이름은 지운다
+            setTitle('');
+            setTypes(previous => previous.includes(value) ? [] : [value]);
+          }}>
+          <Ionicons name={EVENT_ICONS[value]} size={17} color="#1854D8" />
           <Text style={[s.optionText, checked && s.optionTextSelected]}>{label}</Text>
         </TouchableOpacity>;
       })}
     </View>
     {!!labels.length && <View style={s.benefitHint}>
-        <Text style={s.benefitHintText}>✨ 카드 추천에 반영돼요: {labels.join(', ')} {custom ? '관련 혜택을 카드에서 찾아요' : '혜택'}</Text>
+        <Ionicons name="card-outline" size={16} color="#245196" />
+        <Text style={s.benefitHintText}>카드 추천에 반영돼요: {labels.join(', ')} 혜택</Text>
       </View>}
   </>;
 }
@@ -129,12 +134,14 @@ function PlacePicker({ category, setCategory, title, setTitle, disabled }) {
         const checked = category === value;
         return <TouchableOpacity key={value} disabled={disabled} accessibilityRole="radio" accessibilityState={{ selected: checked, disabled }}
           style={[s.option, checked && s.selected]} onPress={() => { setCategory(value); setTitle(''); }}>
+          <Ionicons name={INDUSTRY_ICONS[value]} size={17} color="#1854D8" />
           <Text style={[s.optionText, checked && s.optionTextSelected]}>{text}</Text>
         </TouchableOpacity>;
       })}
     </View>
     {!!labels.length && <View style={s.benefitHint}>
-        <Text style={s.benefitHintText}>✨ 카드 추천에 반영돼요: {labels.join(', ')} 혜택</Text>
+        <Ionicons name="card-outline" size={16} color="#245196" />
+        <Text style={s.benefitHintText}>카드 추천에 반영돼요: {labels.join(', ')} {custom ? '관련 혜택을 카드에서 찾아요' : '혜택'}</Text>
       </View>}
   </>;
 }
@@ -178,9 +185,13 @@ export default function SpecialScheduleModal({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [message, setMessage] = useState('');
+  // 방금 추가한 일정(추가 완료 안내용). 새로 입력을 시작하면 안내를 숨긴다.
+  const [added, setAdded] = useState(null);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
   const lock = useRef(false);
+  // 일정을 추가하면 화면 맨 위로 올려서 바로 다음 일정을 입력할 수 있게 한다
+  const scrollRef = useRef(null);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -194,6 +205,7 @@ export default function SpecialScheduleModal({
     setLoading(true);
     setLoadError('');
     setMessage('');
+    setAdded(null);
     setSheet(null);
     readEvents().then(value => {
       if (active) setEvents(value);
@@ -271,7 +283,9 @@ export default function SpecialScheduleModal({
     if (!mounted.current) return;
     store(saved);
     clear();
-    setMessage(`${dateHeading(saved.date)}에 일정을 추가했어요.`);
+    setAdded(saved);
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    setMessage(`${dateHeading(saved.date)}에 '${eventTitle(saved)}' 일정을 추가했어요.`);
     onChanged?.();
   });
   const remove = id => run(async () => {
@@ -383,6 +397,12 @@ export default function SpecialScheduleModal({
     </>;
 
   const addBody = <>
+      {/* 추가가 끝나면 빈 칸 경고 대신 '추가 완료'를 보여주고, 입력을 시작하면 다시 확인 문구를 보여준다 */}
+      {added && !dirty && <View accessibilityRole="alert" accessibilityLiveRegion="polite" style={s.addedBox}>
+          <Text style={s.addedTitle}>✓ 일정이 추가되었어요</Text>
+          <Text style={s.addedText}>{dateHeading(added.date)} · {eventTitle(added)}{eventTimeCaption(added) ? ' · ' + eventTimeCaption(added) : ' · 하루 종일'}</Text>
+          <Text style={s.addedHint}>다른 일정도 이어서 추가할 수 있어요.</Text>
+        </View>}
       <Text style={s.title}>어떤 일정이 있나요?</Text>
       <Text style={s.hint}>평소와 다른 일정을 등록하면 그날에 맞는 카드 혜택을 추천해드려요.</Text>
       <View style={s.card}>
@@ -410,7 +430,7 @@ export default function SpecialScheduleModal({
         <Text style={s.step}>3. 메모 <Text style={s.stepHint}>(선택)</Text></Text>
         <MemoInput memo={memo} setMemo={setMemo} types={types} disabled={disabled} />
 
-        {!!formProblem && !disabled && <Text style={s.formProblem}>{formProblem}</Text>}
+        {!!formProblem && !disabled && dirty && <Text style={s.formProblem}>{formProblem}</Text>}
         <TouchableOpacity accessibilityRole="button" disabled={disabled || !validDate(date) || !!formProblem} style={[s.primary, (disabled || !validDate(date) || !!formProblem) && s.dim]} onPress={add}>
           <Text style={s.white}>{busy ? '처리 중…' : '일정 추가'}</Text>
         </TouchableOpacity>
@@ -439,7 +459,7 @@ export default function SpecialScheduleModal({
             <View style={s.headerSpace} />
           </View>
 
-          <ScrollView style={s.scroll} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+          <ScrollView ref={scrollRef} style={s.scroll} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
             {loading && <ActivityIndicator color="#245DE5" />}
             {!!loadError && <View style={s.card}>
                 <Text accessibilityRole="alert" style={s.error}>{loadError}</Text>
@@ -707,7 +727,10 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E3EAF4",
     borderRadius: 12,
-    justifyContent: 'center'
+    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
   },
   selected: {
     borderColor: "#245DE5",
@@ -736,9 +759,13 @@ const s = StyleSheet.create({
   benefitHint: {
     backgroundColor: '#F1F6FF',
     borderRadius: 12,
-    padding: 12
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
   },
   benefitHintText: {
+    flex: 1,
     fontSize: 13,
     lineHeight: 20,
     color: '#245196',
@@ -829,6 +856,10 @@ const s = StyleSheet.create({
   inputError: {
     borderColor: '#C53D56'
   },
+  addedBox: { backgroundColor: '#E6F6EE', borderRadius: 14, padding: 14, gap: 4, borderWidth: 1, borderColor: '#A8DFC2' },
+  addedTitle: { color: '#087D54', fontSize: 15, fontWeight: '800' },
+  addedText: { color: '#1D4A36', fontSize: 14, fontWeight: '600' },
+  addedHint: { color: '#4C7A65', fontSize: 12 },
   formProblem: {
     fontSize: 13,
     color: '#B45309',

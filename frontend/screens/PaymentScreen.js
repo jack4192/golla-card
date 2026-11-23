@@ -199,6 +199,29 @@ export async function makeDemoCode() {
   }
   return value;
 }
+// 혜택 한 줄: 핵심(업종 + 혜택)만 보여주고, 대상 가맹점·실적 조건·유의사항은 '상세 내역 보기'로 펼친다.
+const shortName = name => String(name || '').split('(')[0].trim() || String(name || '');
+const targetsOf = name => (String(name || '').match(/\(([^)]*)\)/) || [])[1] || '';
+const manwon = value => value >= 10000 && value % 10000 === 0 ? (value / 10000).toLocaleString('ko-KR') + '만 원' : won(value);
+function BenefitLine({ name, value, details = [] }) {
+  const [open, setOpen] = useState(false);
+  const rows = [targetsOf(name) && '대상: ' + targetsOf(name), ...details].filter(Boolean);
+  return <View style={s.detail}>
+    <View style={s.benefitHead}>
+      <Text style={s.benefitName} numberOfLines={1}>{shortName(name)}</Text>
+      {!!value && <Text style={s.benefitValue}>{value}</Text>}
+    </View>
+    {rows.length > 0 && <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: open }}
+        accessibilityLabel={shortName(name) + (open ? ' 상세 내역 접기' : ' 상세 내역 보기')}
+        onPress={() => setOpen(value => !value)} style={s.detailToggle}>
+        <Text style={s.detailToggleText}>{open ? '상세 내역 접기 ▴' : '상세 내역 보기 ▾'}</Text>
+      </TouchableOpacity>}
+    {open && <View style={s.detailBody}>
+        {rows.map((row, index) => <Text key={index} style={s.detailRow}>· {row}</Text>)}
+      </View>}
+  </View>;
+}
+
 // QR 결제 바텀시트(components/QuickPaySheet.js)에서도 같은 QR·바코드를 씁니다.
 export function Codes({
   value,
@@ -415,18 +438,8 @@ export default function PaymentScreen({
       }
     };
   }, []);
-  useEffect(() => {
-    if (!active) return undefined;
-    let stopped = false;
-    let cleanup;
-    protectScreen().then(callback => {
-      if (stopped) callback();else cleanup = callback;
-    }).catch(() => {});
-    return () => {
-      stopped = true;
-      if (cleanup) cleanup();
-    };
-  }, [active]);
+  // '혜택 자세히 보기' 화면이라 QR·바코드를 보여주지 않는다. 화면 캡처 차단·밝기 조절과 코드 발급은
+  // QR 결제 바텀시트(components/QuickPaySheet.js)에서만 한다.
   const issue = async () => {
     if (!selected) return;
     const ticket = ++sequence.current;
@@ -469,7 +482,6 @@ export default function PaymentScreen({
   };
   useEffect(() => {
     setReceipt(null);
-    issue();
   }, [selected?.id, contextKey]);
   const choose = item => {
     userPicked.current = true;
@@ -551,7 +563,7 @@ export default function PaymentScreen({
         </View>
 
         <Text style={s.title}>
-          {receipt ? '예시 승인 결과' : '결제'}
+          {receipt ? '예시 승인 결과' : '혜택 자세히 보기'}
         </Text>
 
         {scheduleScenario && <View style={s.scheduleContext}>
@@ -559,51 +571,7 @@ export default function PaymentScreen({
           <Text style={s.scheduleTitle}>{[schedule.time, schedule.title].filter(Boolean).join(' ')}</Text>
         </View>}
 
-        {/* 맨 위: QR 및 바코드 */}
-        {!receipt && <View style={s.box}>
-            <View style={s.header}>
-              <Text style={s.heading}>
-                QR · 바코드 결제
-              </Text>
-
-              <Text style={[s.timer, expired && s.red]}>
-                {generating ? '발급 중' : expired ? '만료됨' : seconds + '초'}
-              </Text>
-            </View>
-
-            {/* 이 QR로 결제할 카드 + 카드 변경 */}
-            <TouchableOpacity accessibilityRole="button" disabled={options.length < 2}
-              accessibilityLabel={'결제 카드 ' + selected.name + (options.length > 1 ? ', 눌러서 카드 변경' : '')}
-              onPress={() => setPickerOpen(true)} style={s.payCard}>
-              <Image source={typeof selected.image === 'string' ? { uri: selected.image } : selected.image} resizeMode="contain" style={s.payCardImage} />
-              <View style={s.payCardInfo}>
-                <Text style={s.payCardEyebrow}>결제 카드</Text>
-                <Text style={s.payCardName} numberOfLines={1}>{selected.name}</Text>
-              </View>
-              {options.length > 1 && <View style={s.changeCard}>
-                  <Text style={s.changeCardText}>카드 변경</Text>
-                </View>}
-            </TouchableOpacity>
-
-            {generating ? <ActivityIndicator size="large" color="#245DE5" style={{
-          padding: 35
-        }} /> : payment && active ? <Codes value={payment.value} inactive={expired} /> : <Text style={s.hint}>
-                {active ? '코드를 발급해주세요.' : '앱이 비활성 상태라 코드를 숨겼습니다.'}
-              </Text>}
-
-            <Text style={s.hint}>
-              QR·바코드는 예시이며 실제 결제에 사용할 수 없어요.
-            </Text>
-
-            <TouchableOpacity accessibilityRole="button" disabled={generating || !active} onPress={issue} style={[s.secondary, generating && s.dim]}>
-              <Text style={s.link}>
-                새 결제 코드 발급
-              </Text>
-            </TouchableOpacity>
-
-          </View>}
-
-        {/* QR 아래: 실제 상품 카드 이미지 */}
+        {/* 카드 이미지 */}
         <View style={s.hero}>
           <Text style={s.eyebrow}>
             실제 상품 카드 · 카드사 원본 이미지
@@ -636,72 +604,6 @@ export default function PaymentScreen({
             {' · '}실제 상품 이미지
           </Text>
 
-          {placement.status !== 'off' && <View style={s.aiBox} accessibilityLiveRegion="polite">
-              <View style={s.aiHead}>
-                <View style={s.aiBadge}><Text style={s.aiBadgeText}>AI 추천</Text></View>
-                {placement.status === 'loading' && <ActivityIndicator size="small" color="#245DE5" />}
-              </View>
-
-              {placement.status === 'loading' && <Text style={s.aiText}>AI가 카드 순서를 정하고 있어요.</Text>}
-              {placement.status === 'failed' && <Text style={s.aiText}>AI 추천을 불러오지 못해 지갑 순서대로 보여 드려요.</Text>}
-              {placement.status === 'ready' && !!ai?.fallback && <Text style={s.aiText}>AI 응답이 없어 지갑 순서대로 보여 드려요.</Text>}
-              {placement.status === 'ready' && !ai?.fallback && !aiTop && <Text style={s.aiText}>AI가 순서를 정할 수 있는 카드가 아직 없어요.</Text>}
-              {placement.status === 'ready' && !!aiTop && selected.id === aiTop.id && <Text style={s.aiText}>
-                  {ai.message || 'AI가 이 카드를 맨 앞에 뒀어요.'}
-                </Text>}
-              {placement.status === 'ready' && !!aiTop && selected.id !== aiTop.id && <>
-                  <Text style={s.aiText}>
-                    AI가 맨 앞에 둔 카드는 {aiTop.name}예요.
-                  </Text>
-                  <TouchableOpacity accessibilityRole="button" onPress={() => choose(aiTop)} style={s.aiButton}>
-                    <Text style={s.link}>이 카드로 바꾸기</Text>
-                  </TouchableOpacity>
-                </>}
-            </View>}
-
-          <View style={s.benefitBox}>
-            {/* 머리: 제목 + 거래 예시 */}
-            <View style={s.bxHead}>
-              <Text style={s.bxEyebrow}>이 거래의 예상 혜택</Text>
-              <View style={s.bxChip}>
-                <Text style={s.bxChipText}>{scenario.merchant} · {won(scenario.amount)}</Text>
-              </View>
-            </View>
-
-            {!!selectedBenefit.name && <Text style={s.bxName}>{selectedBenefit.name}</Text>}
-
-            {/* 금액이 확인되면 크게, 아니면 작은 상태 배지 + 이유 */}
-            {Number.isFinite(selectedBenefit.value)
-              ? <Text style={s.bxAmount}>{reward(selectedBenefit)}</Text>
-              : <View style={s.bxStatusRow}>
-                  <View style={s.bxStatus}><Text style={s.bxStatusText}>조건 확인 필요</Text></View>
-                  {!!selectedBenefit.reason && <Text style={s.bxReason}>{selectedBenefit.reason}</Text>}
-                </View>}
-
-            {selected.id !== baseline.id && <>
-                <View style={s.bxDivider} />
-                <View style={s.bxCompareRow}>
-                  <View style={s.flex}>
-                    <Text style={s.bxSmall}>비교 카드</Text>
-                    <Text style={s.bxCompareName} numberOfLines={1}>{baseline.name}</Text>
-                  </View>
-                  <Text style={s.bxCompareValue}>{Number.isFinite(baseBenefit.value) ? reward(baseBenefit) : '조건 확인 필요'}</Text>
-                </View>
-                {difference !== null && <Text style={[s.bxDiff, difference > 0 ? s.bxDiffGood : s.bxDiffNeutral]}>
-                    {difference > 0 ? '비교 카드보다 ' + won(difference) + ' 더 아낄 수 있어요'
-                      : difference === 0 ? '두 카드의 혜택이 같아요'
-                      : '비교 카드가 ' + won(-difference) + ' 더 유리해요'}
-                  </Text>}
-              </>}
-
-            <Text style={s.bxFoot}>
-              {aiEstimates.key === scenarioKey && aiEstimates.rows
-                ? (scheduleScenario ? '일정 업종에 맞춘 결제 예시예요. ' : '') + '이번 달 실적·한도와 진행 중인 행사를 반영해 AI가 계산했어요.'
-                : scheduleScenario
-                ? '일정 업종에 맞춘 결제 예시예요. 실제 혜택은 가맹점·실적·잔여 한도에 따라 달라요.'
-                : '전월 실적 기록이 없으면 40만 원으로 계산한 예시예요.'}
-            </Text>
-          </View>
         </View>
 
         {receipt && <View style={s.box}>
@@ -738,12 +640,6 @@ export default function PaymentScreen({
             {error}
           </Text>}
 
-        <Text style={s.scrollHint}>
-          아래에서 카드 선택 이유와 상세 혜택을 확인하세요 ↓
-        </Text>
-
-        <PaymentCardOrder cards={options} selectedId={selected.id} onSelect={choose} aiOrder={ai?.fallback ? null : ai?.order} />
-
         <View style={s.box}>
           <Text style={s.heading}>카드 선정 이유</Text>
 
@@ -757,40 +653,23 @@ export default function PaymentScreen({
                 : '지갑에서 선택한 카드(' + selected.name + ')로 결제해요.'}
           </Text>
 
-          {!!selectedBenefit?.name && <Text style={s.text}>{selectedBenefit.name}</Text>}
-
-          {!!selectedBenefit?.reason && <Text style={s.hint}>
-            {selectedBenefit.reason}
-          </Text>}
-
-          {!!selectedBenefit?.condition && <Text style={s.hint}>
-              {selectedBenefit.condition}
-            </Text>}
+          {!!selectedBenefit?.name && <BenefitLine name={selectedBenefit.name}
+            value={Number.isFinite(selectedBenefit.value) ? reward(selectedBenefit) : ''}
+            details={[selectedBenefit.reason, selectedBenefit.condition]} />}
         </View>
 
         <View style={s.box}>
           <Text style={s.heading}>카드 상세 혜택</Text>
 
-          {catalogOf(selected)?.benefits?.slice(0, 6).map((benefit, index) => <View key={index} style={s.detail}>
-                <Text style={s.label}>
-                  {benefit.name}
-                  {' · '}{benefitText(benefit)}
-                </Text>
+          {catalogOf(selected)?.benefits?.slice(0, 6).map((benefit, index) => <BenefitLine key={index}
+              name={benefit.name} value={benefitText(benefit)}
+              details={[
+                '전월 실적 ' + (benefit.minPrevSpend == null ? '확인 필요' : Number(benefit.minPrevSpend) === 0 ? '조건 없음' : manwon(Number(benefit.minPrevSpend)) + ' 이상'),
+                benefit.note,
+              ]} />)}
 
-                <Text style={s.hint}>
-                  전월 실적{' '}
-                  {benefit.minPrevSpend == null ? '확인 필요' : won(benefit.minPrevSpend) + ' 이상'}
-                </Text>
-
-                {!!benefit.note && <Text style={s.hint}>
-                    {benefit.note}
-                  </Text>}
-              </View>)}
-
-          {!catalogOf(selected) && findCatalog40Product(selected)?.benefits.slice(0, 6).map(benefit => <View key={benefit.benefitId} style={s.detail}>
-            <Text style={s.label}>{benefit.name}</Text>
-            {!!benefit.note && <Text style={s.hint}>{benefit.note}</Text>}
-          </View>)}
+          {!catalogOf(selected) && findCatalog40Product(selected)?.benefits.slice(0, 6).map(benefit => <BenefitLine key={benefit.benefitId}
+              name={benefit.name} details={[benefit.note]} />)}
           {!catalogOf(selected) && !findCatalog40Product(selected) && <Text style={s.hint}>
               {selectedBenefit?.condition || selected.reason || '정확한 혜택 조건은 카드사 상품 안내에서 확인해주세요.'}
             </Text>}
@@ -1291,8 +1170,15 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     borderColor: "#E3EAF4",
     paddingTop: 12,
-    gap: 5
+    gap: 6
   },
+  benefitHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  benefitName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#1D304D' },
+  benefitValue: { fontSize: 15, fontWeight: '800', color: '#245DE5' },
+  detailToggle: { alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, backgroundColor: '#F1F5FD' },
+  detailToggleText: { fontSize: 12, fontWeight: '700', color: '#245DE5' },
+  detailBody: { gap: 4, backgroundColor: '#F7F9FD', borderRadius: 10, padding: 10 },
+  detailRow: { fontSize: 12, lineHeight: 18, color: '#4A5D7A' },
   error: {
     color: "#C53D56",
     fontSize: 13,

@@ -1,20 +1,29 @@
 
+// 업종 이름은 글자만 두고, 화면에서는 INDUSTRY_ICONS 의 선 아이콘(Ionicons)을 함께 보여준다.
 export const INDUSTRIES = [
-  ['cafe', '☕ 커피'],
-  ['restaurant', '🍽 식사'],
-  ['pcroom', '🎮 PC방'],
-  ['travel', '✈️ 여행·숙박'],
-  ['train', '🚆 기차'],
-  ['intercity', '🚌 시외·고속버스'],
-  ['transport', '🚇 버스·지하철'],
-  ['taxi', '🚕 택시'],
-  ['convenience', '🏪 편의점'],
-  ['delivery', '🛵 배달'],
-  ['fuel', '⛽ 주유·충전'],
-  ['shopping', '🛍 쇼핑'],
-  ['medical', '🏥 병원·약국'],
-  ['other', '✏️ 기타'],
+  ['cafe', '커피'],
+  ['restaurant', '식사'],
+  ['pcroom', 'PC방'],
+  ['travel', '여행·숙박'],
+  ['train', '기차'],
+  ['intercity', '시외·고속버스'],
+  ['transport', '버스·지하철'],
+  ['taxi', '택시'],
+  ['convenience', '편의점'],
+  ['delivery', '배달'],
+  ['fuel', '주유·충전'],
+  ['shopping', '쇼핑'],
+  ['medical', '병원·약국'],
+  ['other', '기타'],
 ];
+
+export const INDUSTRY_ICONS = {
+  cafe: 'cafe-outline', restaurant: 'restaurant-outline',
+  pcroom: 'game-controller-outline', travel: 'airplane-outline', intercity: 'bus-outline',
+  train: 'train-outline', transport: 'subway-outline', taxi: 'car-outline',
+  convenience: 'storefront-outline', delivery: 'bicycle-outline', fuel: 'battery-charging-outline',
+  shopping: 'bag-handle-outline', medical: 'medkit-outline', other: 'ellipsis-horizontal-circle-outline',
+};
 
 export const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
 export const ROUTINE_TITLE_LIMIT = 40;

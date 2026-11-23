@@ -51,11 +51,11 @@ export const JOB_OPTIONS = [
   { value: 'freelancer', label: '프리랜서', occupation: 'freelancer' },
   { value: 'self_employed', label: '자영업', occupation: 'freelancer' },
   { value: 'unemployed', label: '무직', occupation: 'other' },
-  { value: 'other', label: '기타', occupation: 'other' },
+  { value: 'other', label: '직접입력', occupation: 'other' },
 ];
 export const JOB_OTHER_LIMIT = 20;
 export const jobLabel = (job, jobOther) => job === 'other'
-  ? (String(jobOther || '').trim() || '기타')
+  ? (String(jobOther || '').trim() || '직접입력')
   : JOB_OPTIONS.find(option => option.value === job)?.label || '';
 
 const emptyForm = () => ({
