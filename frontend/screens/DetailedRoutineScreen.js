@@ -149,12 +149,8 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
     setEditorOpen(true);
   };
   const selectTime = time => openNew(time);
-  // '+ 일정 추가': 오늘이면 지금 이후 가장 가까운 정각, 다른 날이면 09:00부터
-  const addNow = () => {
-    const now = new Date();
-    const next = scheduleDate === dateKey() ? Math.min(23, now.getHours() + (now.getMinutes() ? 1 : 0)) : 9;
-    openNew(String(next).padStart(2, '0') + ':00');
-  };
+  // '+ 일정 추가'는 항상 12:00~13:00 으로 시작한다(시간표의 시각을 누르면 그 시각부터)
+  const addNow = () => openNew('12:00');
   const returnToTimeline = () => {
     if (lock.current) return;
     resetForm();
