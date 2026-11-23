@@ -155,6 +155,14 @@ public class AiService {
 
     // ---------- 일정 ----------
 
+    /**
+     * 일정 '직접 입력' 이름(예: 스타벅스) → 업종·가맹점 (AI 분류기 /internal/places/classify).
+     * 사용자 번호는 보내지 않는다 (금액 힌트는 쓰지 않고, AI 에 없는 사용자여도 분류는 되게).
+     */
+    public String classifyPlace(String text) {
+        return client.postClassify("/internal/places/classify", Map.of("text", text));
+    }
+
     public String schedule(Long userId, LocalDate day) {
         return client.get(userPath(userId, "/schedules/" + day), null);
     }

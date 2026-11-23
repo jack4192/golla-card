@@ -1,16 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
-import FlowHeading from '../components/FlowHeading';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, AppState, Image, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import PromotionOffer from '../components/PromotionOffer';
 import { resolveWalletProduct } from '../components/WalletProductCard';
-import { recommendPromotion } from '../data/promotions';
 import { CardReveal, officialProduct } from './RoutinePatternRecommendationScreen';
-import { dateKey, eventEndDate, makeSignals, readEvents, readProfile } from '../utils/routineData';
+import { dateKey, eventEndDate, readEvents, readProfile } from '../utils/routineData';
 import { benefitText, emptyPreferences, money, rankRecommendations, readPreferences } from '../utils/cardRecommendation';
 import { recordRecommendation } from '../utils/savingsRecords';
 import { addNotification } from '../utils/notifications';
-import { SERVER_MODE, api } from '../utils/api';
+import { API_BASE_URL, SERVER_MODE, api } from '../utils/api';
 import { CARD_CATALOG_40 } from '../data/cardCatalog40';
 import { toCardRecommendation, toPromotionOffer, visibleTabs } from '../utils/aiRecommendCore';
 export { officialProduct, recentPattern } from './RoutinePatternRecommendationScreen';
@@ -34,7 +32,6 @@ function buildRecommendations(profile, events, saved, now, useCurrentTime, cardA
     now >= new Date(`${event.date}T${event.start}:00`) && now < eventEndDate(event)) : [];
   const relevant = active.length ? active.map(event => ({ ...event, date: day })) : events;
   const input = active.length ? null : profile;
-  const signals = makeSignals(input, relevant, day);
   const preferences = emptyPreferences();
   preferences.owned = saved.owned;
   const rank = (routine, schedules) => rankRecommendations(routine, schedules, preferences, now).filter(row =>
@@ -50,7 +47,8 @@ function buildRecommendations(profile, events, saved, now, useCurrentTime, cardA
   // 연말 결산용: 같은 일정에서 혜택이 가장 좋은 '내 카드'(카드사 상관없이)
   const ownedBest = example ? null : rankRecommendations(input, relevant, preferences, now)
     .find(row => row.owned && row.matches.some(match => match.status !== 'blocked')) || null;
-  return { card, example, ownedBest, ...(cardAd ? {} : recommendPromotion(signals, now)) };
+  // 행사 추천은 서버 모드의 AI 맞춤 추천만 (2026-11-23: 앱에 행사 데이터를 두지 않는다)
+  return { card, example, ownedBest };
 }
 export default function RoutineRecommendationScreen({
   onNext,
@@ -130,7 +128,7 @@ export default function RoutineRecommendationScreen({
     if (!aiPage) return local;
     // AI 가 카드를 주면 그것을, 못 주면(결제 내역이 없는 새 가입자 등) 설문 기반 앱 계산을 쓴다 (2026-11-23 결정)
     const aiCard = toCardRecommendation(aiPage, CARD_CATALOG_40);
-    const aiOffer = toPromotionOffer(aiPage);
+    const aiOffer = toPromotionOffer(aiPage, API_BASE_URL);
     return {
       ...local,
       ...(aiCard ? { card: aiCard, example: false, ownedBest: null } : {}),
@@ -200,10 +198,10 @@ export default function RoutineRecommendationScreen({
     }
     await onNext();
   });
-  const promotionContent = () => recommendations?.offer ? <>
-    <Text style={s.caption}>{recommendations.reason || '진행 중인 프로모션이에요.'}</Text>
-    <PromotionOffer offer={recommendations.offer} />
-  </> : <View style={s.empty}>
+  const promotionContent = () => recommendations?.offer
+    ? <PromotionOffer key={recommendations.offer.id} offer={recommendations.offer} reason={recommendations.reason}
+        recommendation reduced={reduced} />
+    : <View style={s.empty}>
     <Text style={s.reason}>{error || '진행 중인 프로모션이 없어요.'}</Text>
   </View>;
   const cardFallback = () => !cardAd && recommendations
@@ -214,15 +212,23 @@ export default function RoutineRecommendationScreen({
           <Text style={s.link}>다시 불러오기</Text>
         </TouchableOpacity>}
       </View>;
+  const recommendationTabs = !cardAd && <View style={s.pager}>
+    {tabs.map(position => (
+      <TouchableOpacity key={position} accessibilityRole="tab" accessibilityState={{ selected: index === position }}
+        disabled={busy} onPress={() => {
+          setIndex(position);
+          setDetails(false);
+          setError('');
+        }}
+        style={[s.choice, index === position && s.active]}>
+        <Text style={[s.choiceText, index === position && s.activeText]}>{RECOMMENDATION_LABELS[position]}</Text>
+      </TouchableOpacity>
+    ))}
+  </View>;
+
   if (presentation === 'popup' || cardAd) {
     return <ScrollView style={s.screen} contentContainerStyle={{padding:18,gap:16}}>
-      {!cardAd && <View style={{flexDirection:'row',gap:8}}>
-        {RECOMMENDATION_LABELS.map((label,i) => !tabs.includes(i) ? null : <TouchableOpacity key={label} accessibilityRole="tab"
-          accessibilityState={{selected:index===i}} onPress={() => {setIndex(i);setError('');}}
-          style={{flex:1,minHeight:44,alignItems:'center',justifyContent:'center',borderRadius:14,backgroundColor:index===i?'#123EAC':'#E3EBFD'}}>
-          <Text style={{color:index===i?'white':'#294674',fontWeight:'700'}}>{label}</Text>
-        </TouchableOpacity>)}
-      </View>}
+      {recommendationTabs}
       {loading ? <ActivityIndicator/> : promotionTab ? promotionContent() : card ? <View style={[s.hero,{gap:12}]}>
         <CardReveal key={card.code} card={card} reduced={reduced} replay={0}/>
         <Text style={s.cardName}>{card.name}</Text>
@@ -235,35 +241,17 @@ export default function RoutineRecommendationScreen({
   }
   return <ScrollView style={s.screen} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
       <View style={s.container}>
-        {/* 뒤로가기는 화면 왼쪽 위에 눈에 띄게 */}
-        {presentation !== 'popup' && <TouchableOpacity accessibilityRole="button" accessibilityLabel="일정 다시 확인" disabled={busy} onPress={() => onBack?.()} style={s.backButton}>
-            <Ionicons name="chevron-back" size={20} color="#104FE7" />
-            <Text style={s.backText}>일정 다시 확인</Text>
-          </TouchableOpacity>}
-
-        <FlowHeading brand icon="sparkles-outline">
-          일정 맞춤 추천
-        </FlowHeading>
-
-        <View style={s.pager}>
-          {RECOMMENDATION_LABELS.map((label, i) => !tabs.includes(i) ? null : (
-            <TouchableOpacity
-              key={label}
-              accessibilityRole="tab"
-              accessibilityLabel={i + 1 + '. ' + label}
-              accessibilityState={{selected: index === i}}
-              disabled={busy}
-              onPress={() => {
-                setIndex(i);
-                setDetails(false);
-                setError('');
-              }}
-              style={[s.choice, index === i && s.active]}
-            >
-              <Text style={index === i ? s.white : s.link}>{i + 1}. {label}</Text>
+        <View style={s.header}>
+          <View style={s.headerNav}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="일정 다시 확인" disabled={busy} onPress={() => onBack?.()} style={s.backButton}>
+              <Ionicons name="chevron-back" size={17} color="#526176" accessible={false} />
+              <Text style={s.backText}>일정 다시 확인</Text>
             </TouchableOpacity>
-          ))}
+            <Text style={s.wordmark}>SOL·Pay</Text>
+          </View>
+          <Text accessibilityRole="header" style={s.heading}>일정 맞춤 추천</Text>
         </View>
+        {recommendationTabs}
 
         {loading ? <ActivityIndicator color="#104FE7" size="large" /> : promotionTab ? promotionContent() : card ? <>
             {!!reason && <Text style={s.reason}>{reason}</Text>}
@@ -325,11 +313,9 @@ export default function RoutineRecommendationScreen({
             {error}
           </Text>}
 
-        {presentation !== 'popup' && <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={next} style={[s.secondary, busy && s.dim]}>
-            <Text style={s.secondaryText}>
-              괜찮아요, 메인으로 갈게요
-            </Text>
-          </TouchableOpacity>}
+        <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={next} style={[s.secondary, busy && s.dim]}>
+          <Text style={s.secondaryText}>홈으로 가기</Text>
+        </TouchableOpacity>
       </View>
     </ScrollView>;
 }
@@ -340,12 +326,12 @@ const s = StyleSheet.create({
   modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   screen: {
     flex: 1,
-    backgroundColor: "#F4F7FF"
+    backgroundColor: '#F7F8FA'
   },
   content: {
     padding: 20,
     paddingBottom: 36,
-    paddingTop: 28
+    paddingTop: 16
   },
   container: {
     width: "100%",
@@ -353,6 +339,10 @@ const s = StyleSheet.create({
     alignSelf: "center",
     gap: 16
   },
+  header: { gap: 10, paddingBottom: 2 },
+  headerNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  wordmark: { color: '#1748B8', fontSize: 18, fontWeight: '800', letterSpacing: -0.5 },
+  heading: { fontSize: 28, lineHeight: 36, fontWeight: '800', letterSpacing: -0.7, color: '#18253B' },
   caption: {
     fontSize: 12,
     lineHeight: 21,
@@ -405,21 +395,16 @@ const s = StyleSheet.create({
     color: "#104FE7"
   },
   backButton: {
-    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
-    minHeight: 40,
-    paddingLeft: 8,
-    paddingRight: 14,
-    borderRadius: 20,
-    backgroundColor: '#E6EEFF',
-    marginBottom: 4
+    gap: 3,
+    minHeight: 44,
+    paddingRight: 8
   },
   backText: {
     fontSize: 14,
-    fontWeight: "800",
-    color: "#104FE7"
+    fontWeight: '600',
+    color: '#526176'
   },
   details: {
     alignSelf: 'stretch',
@@ -442,9 +427,11 @@ const s = StyleSheet.create({
     lineHeight: 21,
     color: '#73839D'
   },
-  pager: {flexDirection: 'row', backgroundColor: '#E5EDFC', padding: 5, gap: 5, borderRadius: 16},
-  choice: {flex: 1, alignItems: 'center', justifyContent: 'center', padding: 8, minHeight: 48, borderRadius: 12},
-  active: {backgroundColor: '#104FE7'},
+  pager: { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#E2E6ED' },
+  choice: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 8, minHeight: 44, borderBottomWidth: 2, borderColor: 'transparent' },
+  active: { borderColor: '#2455C7' },
+  choiceText: { color: '#526176', fontSize: 14, fontWeight: '600' },
+  activeText: { color: '#2455C7', fontWeight: '700' },
   white: {
     color: "#FFFFFF",
     fontSize: 15,
@@ -453,18 +440,15 @@ const s = StyleSheet.create({
   secondary: {
     paddingVertical: 14,
     paddingHorizontal: 16,
-    minHeight: 52,
-    borderRadius: 16,
-    backgroundColor: "#EAF1FF",
-    borderWidth: 1,
-    borderColor: "#C9D9FF",
+    minHeight: 44,
+    alignSelf: 'center',
     alignItems: "center",
     justifyContent: "center"
   },
   secondaryText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#104FE7"
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#526176'
   },
   primary: {
     padding: 16,

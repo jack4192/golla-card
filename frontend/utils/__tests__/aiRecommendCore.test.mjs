@@ -37,6 +37,16 @@ test('AI 가맹점 탭 → 프로모션 카드', () => {
   assert.equal(toPromotionOffer({ merchant: { offers: [] } }), null);
 });
 
+test('AI 가맹점 탭 → 화면 이름과 로고 (2026-11-23 행사 DB 이전)', () => {
+  const named = { merchant: { offers: [{ ...page.merchant.offers[0], brand: '다이소몰', display_name: '온라인 다이소몰', logo_url: '/brand-logos/daiso.png' }] } };
+  const { offer } = toPromotionOffer(named, 'http://x:8090');
+  assert.equal(offer.merchant, '온라인 다이소몰');
+  assert.deepEqual(offer.logo, { uri: 'http://x:8090/brand-logos/daiso.png' });
+  const plain = toPromotionOffer(page, 'http://x:8090').offer;
+  assert.equal(plain.merchant, '메가MGC커피');          // 화면 이름이 없으면 brand
+  assert.equal(plain.logo, null);
+});
+
 test('탭은 AI 규칙을 따른다', () => {
   assert.deepEqual(visibleTabs(page), [0, 1]);
   assert.deepEqual(visibleTabs({ tabs: ['merchant'] }), [1]);

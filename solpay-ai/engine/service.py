@@ -161,11 +161,26 @@ class PlacementService:
 
     @property
     def popup_promotions(self) -> list[Promotion]:
-        """일정 팝업용 프로모션 (data/config/promotions.yml). 처음 쓸 때 읽는다."""
+        """일정 팝업·맞춤 추천용 프로모션. 처음 쓸 때 정한다. 팀 DB 저장소(promotions_complete)는 DB promotions 표 하나가
+        화면 정보·확인 필요까지 갖고 있어 그 목록을 쓰고 (2026-11-23), 그 밖에는 data/config/promotions.yml 을 읽는다."""
         if self._popup_promotions is None:
-            from engine import loader
-            self._popup_promotions = loader.load_popup_promotions(self.engine.catalog)
+            if self._promotions_complete:
+                self._popup_promotions = list(getattr(self.store, "promotions", []))
+            else:
+                from engine import loader
+                self._popup_promotions = loader.load_popup_promotions(self.engine.catalog)
         return self._popup_promotions
+
+    @property
+    def _promotions_complete(self) -> bool:
+        return bool(getattr(self.store, "promotions_complete", False))
+
+    def _merged(self, team: list[Promotion]) -> list[Promotion]:
+        """팀 DB 행사에 yml 행사를 합친다. 팀 DB 저장소는 표 하나로 완전하므로 합치지 않는다 (2026-11-23)."""
+        if self._promotions_complete:
+            return list(team)
+        from engine.page import merge_promotions
+        return merge_promotions(list(team), self.popup_promotions)
 
     @popup_promotions.setter
     def popup_promotions(self, value: list[Promotion]) -> None:
@@ -174,9 +189,9 @@ class PlacementService:
     def _all_promotions(self, context) -> list[Promotion]:
         """팀 DB 행사 + 일정 팝업용 행사(promotions.yml). 한 결제는 행사 하나(가장 큰 것)만 받으므로 같은 행사가 두 번
         들어 있어도 두 번 세지 않는다. yml 에서 '확인 필요'(응모·신규 조건 등)인 번호는 팀 DB 사본도 뺀다
-        (page.merge_promotions. 예전에는 사본이 배치 점수·안내 문구·결제 평가에 그대로 들어갔다)."""
-        from engine.page import merge_promotions
-        return merge_promotions(list(context.promotions), self.popup_promotions)
+        (page.merge_promotions. 예전에는 사본이 배치 점수·안내 문구·결제 평가에 그대로 들어갔다).
+        팀 DB 저장소는 DB 표에 확인 필요·실제 기간이 있어 합치지 않는다 (2026-11-23)."""
+        return self._merged(list(context.promotions))
 
     def _strategy_promotions(self):
         """v4 는 방식 비교(최초·월간 맞춤·손해 방지)에 프로모션을 넘기지 않는다 (v4.2 도 점수에만 넣는다)."""
@@ -424,7 +439,7 @@ class PlacementService:
         """카드사 추천·가맹점 추천 탭. 엔진이 고르고 writer(PageCopyWriter)가 문구를 쓴다 (None 이면 정해진 문구).
         같은 날 다시 부르면 저장해 둔 결과를 준다. 카드를 보여 주면 추천 기록을 남긴다 (같은 날 같은 카드는 한 번)."""
         from engine.chat.page_copy import attach_copy, facts_of, template_copy
-        from engine.page import build_page, merge_promotions
+        from engine.page import build_page
         from engine.popup import offers_by_item
         key = (user_id, at.date())
         if key in self.pages:
@@ -436,7 +451,7 @@ class PlacementService:
         rules = list(context.rules)
         excluded = lambda when: set(resolve(rules, state.cards, when, params).excluded)   # 일정 시각의 제외 규칙
         history = self.store.recommendation_history(user_id)
-        promotions = merge_promotions(list(context.promotions), self.popup_promotions)
+        promotions = self._all_promotions(context)
         page = build_page(state, context.payments, context.schedules, history, promotions, at, params, excluded)
         out = page.to_dict(self.engine.catalog, params)
         facts = facts_of(out)
@@ -649,8 +664,7 @@ class PlacementService:
         before = replace(context, payments=[p for p in context.payments if p.paid_at < prev_start])
         payments = sorted((p for p in context.payments if prev_start <= p.paid_at < this_start),
                           key=lambda p: (p.paid_at, p.payment_id))
-        from engine.page import merge_promotions
-        promotions = merge_promotions(list(getattr(self.store, "promotions", context.promotions)), self.popup_promotions)
+        promotions = self._merged(list(getattr(self.store, "promotions", context.promotions)))
         card_of = {c.user_card_id: (c.issuer, c.card_id) for c in context.cards}
         last_base = None
 

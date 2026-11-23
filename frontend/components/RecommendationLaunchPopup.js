@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { selectDailyPromotion } from '../data/promotionBrands';
+import { selectDailyPromotion } from '../utils/promotionsCore';
 import PromotionOffer from './PromotionOffer';
 import RoutineRecommendationScreen from '../screens/RoutineRecommendationScreen';
 import { hideAdForSevenDays, takeAutomaticAd } from '../utils/recommendationPopup';
 
 export default function RecommendationLaunchPopup({
-  enabled, allowAutomaticAds, selectedWalletCard, openRequest, promotions, onViewPromotions, onClosed
+  enabled, allowAutomaticAds, selectedWalletCard, openRequest, promotions, onViewPromotions, onClosed,
+  emptyText = '현재 진행 중인 이벤트가 없어요.'   // 데모·실패 때는 그 상태 문구 (행사가 없다고 말하지 않게)
 }) {
   const [ad, setAd] = useState(null);
   const [foreground, setForeground] = useState(!AppState.currentState || AppState.currentState === 'active');
@@ -88,10 +89,8 @@ export default function RecommendationLaunchPopup({
 
             <View style={s.content}>
               {promotion ? <ScrollView contentContainerStyle={s.promoBody}>
-                {offer ? <PromotionOffer offer={offer} /> : <Text style={s.promoText}>현재 진행 중인 이벤트가 없어요.</Text>}
-                <TouchableOpacity accessibilityRole="button" onPress={() => {close();onViewPromotions();}} style={s.hide}>
-                  <Text style={s.link}>혜택 둘러보기</Text>
-                </TouchableOpacity>
+                {offer ? <PromotionOffer key={offer.id} offer={offer} onBrowse={() => { close(); onViewPromotions(); }} />
+                  : <Text style={s.promoText}>{emptyText}</Text>}
               </ScrollView> : <RoutineRecommendationScreen
                 presentation={ad.automatic ? 'card-ad' : 'popup'}
                 onNext={close}
