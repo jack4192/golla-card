@@ -151,6 +151,12 @@ export default function App() {
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [scheduleEditor, setScheduleEditor] = useState({});
   const [routineMode, setRoutineMode] = useState('onboarding');
+  // '일정 맞춤 추천'에서 '‹ 일정 다시 확인'을 누르면 돌아갈 곳 (2026-11-24 수정사항):
+  //   'DailyRoutine' = 일정 관리(가입 흐름·일정 관리에서 다음), 그 밖은 메인의 그 탭('schedule' = 오늘의 일정, 'home')
+  const [recommendBack, setRecommendBack] = useState('DailyRoutine');
+  const [mainTab, setMainTab] = useState('home');          // 메인을 열 때 처음 보일 탭
+  const [previewBack, setPreviewBack] = useState('DailyRoutine');
+  const [previewMainTab, setPreviewMainTab] = useState('home');
 
   const [showDevMenu, setShowDevMenu] = useState(false);
   const [previewScreen, setPreviewScreen] = useState(null);
@@ -238,7 +244,16 @@ export default function App() {
 
   const navigate = screen => {
     setShowDevMenu(false);
+    if (screen !== 'Main') setMainTab('home');
     setCurrentScreen(screen);
+  };
+  const backFromRecommendation = () => {
+    if (recommendBack === 'DailyRoutine') {
+      navigate('DailyRoutine');
+      return;
+    }
+    navigate('Main');
+    setMainTab(recommendBack);
   };
 
   const runAction = async action => {
@@ -365,7 +380,7 @@ export default function App() {
     const snapshot = await readWallet();
 
     if (!snapshot.preferences.owned.includes(code)) {
-      throw Error('보유 카드로 등록하고 저장한 후 선택해주세요.');
+      throw Error('내 지갑에 있는 카드만 결제에 쓸 수 있어요. 이 카드는 \'카드 신청\'으로 먼저 신청해주세요.');
     }
 
     const id = walletIdForCode(code);
@@ -518,6 +533,7 @@ export default function App() {
 
   const handleRoutineContinue = () => {
     if (!authenticated) return;
+    setRecommendBack('DailyRoutine');
     navigate('RoutineRecommendation');
   };
 
@@ -708,6 +724,7 @@ export default function App() {
   // 개발자 체험용 이동. 실제 로그인 상태는 변경하지 않습니다.
   const previewGo = screen => {
     Keyboard.dismiss();
+    if (screen !== 'Main') setPreviewMainTab('home');
     setPreviewScreen(screen);
     setShowDevMenu(false);
   };
@@ -746,7 +763,7 @@ export default function App() {
     const cards = previewCards.some(card => card.id === id) ? previewCards : (await readWallet()).cards;
 
     if (!cards.some(card => card.id === id)) {
-      throw Error('보유 카드로 등록하고 저장해주세요.');
+      throw Error('내 지갑에 있는 카드만 결제에 쓸 수 있어요. 이 카드는 \'카드 신청\'으로 먼저 신청해주세요.');
     }
 
     setPreviewWallet({ cards, id });
@@ -790,7 +807,7 @@ export default function App() {
             <DetailedRoutineScreen
               {...scheduleEditor}
               onBack={() => previewGo('Main')}
-              onContinue={() => previewGo('RoutineRecommendation')}
+              onContinue={() => { setPreviewBack('DailyRoutine'); previewGo('RoutineRecommendation'); }}
             />
           );
 
@@ -799,7 +816,10 @@ export default function App() {
             <RoutineRecommendationScreen
               scheduleDate={scheduleEditor.date}
               selectedWalletCard={previewCard}
-              onBack={() => previewGo('DailyRoutine')}
+              onBack={() => {
+                if (previewBack === 'DailyRoutine') previewGo('DailyRoutine');
+                else { previewGo('Main'); setPreviewMainTab(previewBack); }
+              }}
               onNext={async () => previewGo('Main')}
               onPreferencesChange={previewPreferences}
               onUseCard={previewUseCard}
@@ -826,6 +846,7 @@ export default function App() {
           return (
             <View style={styles.screen}>
               <MainScreen
+                initialTab={previewMainTab}
                 walletCards={previewCards}
                 activeCardId={previewCardId}
                 onSelectCard={previewSelect}
@@ -835,9 +856,10 @@ export default function App() {
                   setScheduleEditor({ date, entryId });
                   previewGo('DailyRoutine');
                 }}
-                onViewBenefits={() =>
-                  previewGo('RoutineRecommendation')
-                }
+                onViewBenefits={() => {
+                  setPreviewBack('schedule');
+                  previewGo('RoutineRecommendation');
+                }}
               />
             </View>
           );
@@ -901,7 +923,7 @@ export default function App() {
           <RoutineRecommendationScreen
             scheduleDate={scheduleEditor.date}
             selectedWalletCard={activeCard}
-            onBack={() => navigate('DailyRoutine')}
+            onBack={backFromRecommendation}
             onNext={handleFinishDemo}
             onPreferencesChange={handlePreferencesSaved}
             onUseCard={handleUseCard}
@@ -922,6 +944,7 @@ export default function App() {
         return (
           <View style={styles.screen}>
             <MainScreen
+              initialTab={mainTab}
               walletCards={walletCards}
               activeCardId={activeCardId}
               onSelectCard={handleSelectCard}
@@ -933,6 +956,7 @@ export default function App() {
               onViewBenefits={() => {
                 setScheduleEditor({});
                 setRoutineMode('edit');
+                setRecommendBack('schedule');
                 navigate('RoutineRecommendation');
               }}
             />
@@ -996,6 +1020,7 @@ export default function App() {
               onPress={() => {
                 if (!actionBusy.current) {
                   setRoutineMode('edit');
+                  setRecommendBack('home');
                   navigate('RoutineRecommendation');
                 }
               }}
