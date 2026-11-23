@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { toCardRecommendation, toPromotionOffer, visibleTabs } from '../aiRecommendCore.js';
+import { cardSource, toCardRecommendation, toPromotionOffer, visibleTabs } from '../aiRecommendCore.js';
 
 const products = [{ code: 'SH_MODU', name: '신한 모두의카드', type: '신용' }];
 const page = {
@@ -53,4 +53,13 @@ test('탭은 AI 규칙을 따른다', () => {
   assert.deepEqual(visibleTabs({ tabs: ['card'] }), [0]);
   assert.deepEqual(visibleTabs(null), [0, 1]);
   assert.deepEqual(visibleTabs({ tabs: [] }), [0, 1]);
+});
+
+test('카드 추천 탭: AI 를 묻는 동안은 불러오는 중, 답이 오면 AI 카드, 실패·카드 없음·데모·다른 날은 앱 계산', () => {
+  // 앱 계산 카드를 먼저 보이다가 AI 카드로 바뀌지 않게 (2026-11-23 사용자 결정)
+  assert.equal(cardSource({ asksAi: true, aiState: 'loading', aiCard: null }), 'loading');
+  assert.equal(cardSource({ asksAi: true, aiState: 'ready', aiCard: { card: {} } }), 'ai');
+  assert.equal(cardSource({ asksAi: true, aiState: 'ready', aiCard: null }), 'local');
+  assert.equal(cardSource({ asksAi: true, aiState: 'failed', aiCard: null }), 'local');
+  assert.equal(cardSource({ asksAi: false, aiState: 'loading', aiCard: null }), 'local');
 });

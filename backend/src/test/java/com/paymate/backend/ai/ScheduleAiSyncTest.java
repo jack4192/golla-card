@@ -55,6 +55,57 @@ class ScheduleAiSyncTest {
         return new Schedule(7L, DAY, "PLACE", null, "OTHER", title, start, end, null);
     }
 
+    // ---------- 맞춤 추천 전에 일정 맞추기 (2026-11-23) ----------
+
+    @Test
+    @DisplayName("AI 의 그날 일정이 서버 일정과 같으면 다시 넘기지 않는다 (브랜드 없음은 null 로 와도 같다)")
+    void ensureSyncedSkipsWhenSame() {
+        stored(place("CAFE", "12:00", "13:00"));
+        when(schedules.medianAmountOfUser(7L, "CAFE")).thenReturn(5600);
+        when(ai.schedule(7L, DAY)).thenReturn("{\"day\":\"2026-11-06\",\"items\":[{\"start\":\"12:00\",\"end\":\"13:00\","
+                + "\"category\":\"CAFE\",\"amount\":5600,\"brand\":null}]}");
+
+        sync.ensureSynced(7L, DAY);
+
+        verify(ai, never()).putSchedule(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("AI 에 그날 일정이 없거나 다르면(옛 백엔드·AI 꺼짐 때 저장) 서버 일정으로 다시 넘긴다")
+    void ensureSyncedPutsWhenDifferent() {
+        stored(place("CAFE", "12:00", "13:00"));
+        when(schedules.medianAmountOfUser(7L, "CAFE")).thenReturn(5600);
+        when(ai.schedule(7L, DAY)).thenReturn("{\"day\":\"2026-11-06\",\"items\":[]}");
+
+        sync.ensureSynced(7L, DAY);
+
+        verify(ai).putSchedule(7L, DAY, List.of(Map.of("start", "12:00", "end", "13:00", "category", "CAFE", "amount", 5600)));
+    }
+
+    @Test
+    @DisplayName("직접 입력 분류가 이번에 실패하면 AI 의 일정을 바꾸지 않는다 (맞는 일정을 지우지 않게, 2026-11-23 리뷰)")
+    void ensureSyncedKeepsAiScheduleWhenClassificationFails() {
+        stored(direct("동네 영화관", "19:00", "21:00"));
+        when(ai.classifyPlace("동네 영화관"))
+                .thenThrow(new AiException(HttpStatus.SERVICE_UNAVAILABLE, "AI_UNAVAILABLE", "AI 서버에 연결할 수 없습니다."));
+        when(ai.schedule(7L, DAY)).thenReturn("{\"day\":\"2026-11-06\",\"items\":[{\"start\":\"19:00\",\"end\":\"21:00\","
+                + "\"category\":\"MOVIE\",\"amount\":13200,\"brand\":null}]}");
+
+        sync.ensureSynced(7L, DAY);
+
+        verify(ai, never()).putSchedule(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("일정 맞추기가 실패해도 예외를 내지 않는다 (맞춤 추천은 그대로 부른다)")
+    void ensureSyncedSwallowsErrors() {
+        stored(place("CAFE", "12:00", "13:00"));
+        when(ai.schedule(7L, DAY)).thenThrow(new AiException(HttpStatus.SERVICE_UNAVAILABLE, "AI_UNAVAILABLE", "AI 서버에 연결할 수 없습니다."));
+
+        assertThatCode(() -> sync.ensureSynced(7L, DAY)).doesNotThrowAnyException();
+        verify(ai, never()).putSchedule(any(), any(), any());
+    }
+
     @Test
     @DisplayName("장소 일정만 넘긴다. 상황 일정과 이름 없는 직접 입력(OTHER)은 넘기지 않는다")
     void onlyPlaceSchedules() {
