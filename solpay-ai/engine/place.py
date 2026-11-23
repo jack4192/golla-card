@@ -49,8 +49,9 @@ def match_place(text: str, catalog: Catalog) -> PlaceMatch:
     named = {}
     for h in hits:
         brand = h.brand
-        # 이름·브랜드가 같거나, 입력이 브랜드 이름을 품을 때만 그 가맹점이라고 본다 ('스타벅스 강남' → 스타벅스)
-        if norm(h.name) == target or (brand and (norm(brand) == target or norm(brand) in target)):
+        # 이름·브랜드·별칭이 글자 그대로 같을 때만 그 가맹점으로 확정한다. 글이 브랜드를 품기만 하면('멜론 빙수',
+        # 'outback'→UT) 후보로만 두고 OpenAI 가 확정한다 (2026-11-23 최종 검토)
+        if norm(h.name) == target or (brand and norm(brand) == target):
             named[(brand, h.category)] = h
     if len(named) == 1:
         (brand, category), h = next(iter(named.items()))
