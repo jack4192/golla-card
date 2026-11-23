@@ -51,8 +51,12 @@ class ScheduleAiSyncTest {
         when(schedules.findByUserIdAndScheduleDateOrderByStartTimeAscIdAsc(7L, DAY)).thenReturn(List.of(items));
     }
 
+    private static Schedule direct(String title, String start, String end) {
+        return new Schedule(7L, DAY, "PLACE", null, "OTHER", title, start, end, null);
+    }
+
     @Test
-    @DisplayName("장소 일정만 넘긴다. 상황 일정과 직접 입력(OTHER)은 넘기지 않는다")
+    @DisplayName("장소 일정만 넘긴다. 상황 일정과 이름 없는 직접 입력(OTHER)은 넘기지 않는다")
     void onlyPlaceSchedules() {
         stored(situation("회식"), place("CAFE", "12:00", "13:00"), place("OTHER", "15:00", "16:00"));
         when(schedules.medianAmountOfUser(7L, "CAFE")).thenReturn(5600);
@@ -60,6 +64,69 @@ class ScheduleAiSyncTest {
         List<Map<String, Object>> items = sync.itemsFor(7L, DAY);
 
         assertThat(items).containsExactly(Map.of("start", "12:00", "end", "13:00", "category", "CAFE", "amount", 5600));
+        verify(ai, never()).classifyPlace(any());
+    }
+
+    @Test
+    @DisplayName("직접 입력은 이름을 AI 분류기에 물어, 나온 업종·가맹점과 그 업종의 금액으로 넘긴다")
+    void directInputIsClassified() {
+        stored(direct(" 스타벅스 ", "09:00", "10:00"), direct("동네 헬스", "19:00", "20:00"));
+        when(ai.classifyPlace("스타벅스")).thenReturn("{\"category\":\"CAFE\",\"brand\":\"STARBUCKS\",\"source\":\"search\"}");
+        when(ai.classifyPlace("동네 헬스")).thenReturn("{\"category\":\"FITNESS\",\"brand\":null,\"source\":\"llm\"}");
+        when(schedules.medianAmountOfUser(7L, "CAFE")).thenReturn(5600);
+        when(schedules.medianAmountOfUser(7L, "FITNESS")).thenReturn(null);
+        when(schedules.medianAmount("FITNESS")).thenReturn(70000);
+
+        List<Map<String, Object>> items = sync.itemsFor(7L, DAY);
+
+        assertThat(items).containsExactly(
+                Map.of("start", "09:00", "end", "10:00", "category", "CAFE", "amount", 5600, "brand", "STARBUCKS"),
+                Map.of("start", "19:00", "end", "20:00", "category", "FITNESS", "amount", 70000));
+    }
+
+    @Test
+    @DisplayName("업종을 못 찾았거나(null·OTHER) 분류에 실패한 직접 입력은 넘기지 않고, 예외도 내지 않는다")
+    void unclassifiedDirectInputIsSkipped() {
+        stored(direct("친구 만나기", "10:00", "11:00"), direct("GS", "12:00", "13:00"),
+                direct("아무거나", "14:00", "15:00"), place("CAFE", "16:00", "17:00"));
+        when(ai.classifyPlace("친구 만나기")).thenReturn("{\"category\":null,\"brand\":null,\"source\":\"none\"}");
+        when(ai.classifyPlace("GS")).thenReturn("{\"category\":\"OTHER\"}");
+        when(ai.classifyPlace("아무거나"))
+                .thenThrow(new AiException(HttpStatus.SERVICE_UNAVAILABLE, "AI_UNAVAILABLE", "AI 서버에 연결할 수 없습니다."));
+        when(schedules.medianAmountOfUser(7L, "CAFE")).thenReturn(5600);
+
+        List<Map<String, Object>> items = sync.itemsFor(7L, DAY);
+
+        assertThat(items).extracting(i -> i.get("category")).containsExactly("CAFE");
+    }
+
+    @Test
+    @DisplayName("같은 이름은 한 번만 묻는다")
+    void sameTitleAskedOnce() {
+        stored(direct("스타벅스", "09:00", "10:00"), direct("스타벅스", "15:00", "16:00"));
+        when(ai.classifyPlace("스타벅스")).thenReturn("{\"category\":\"CAFE\",\"brand\":\"STARBUCKS\"}");
+        when(schedules.medianAmountOfUser(7L, "CAFE")).thenReturn(5600);
+
+        assertThat(sync.itemsFor(7L, DAY)).hasSize(2);
+        verify(ai).classifyPlace("스타벅스");   // 한 번만
+    }
+
+    @Test
+    @DisplayName("분류에 4초를 다 쓰면 남은 직접 입력은 묻지 않고 넘기지 않는다 (일정 저장 응답을 붙잡지 않게)")
+    void classifyBudget() {
+        long[] now = {0};
+        sync = new ScheduleAiSync(schedules, ai, () -> now[0]);
+        stored(direct("스타벅스", "09:00", "10:00"), direct("올리브영", "12:00", "13:00"), place("CAFE", "16:00", "17:00"));
+        when(ai.classifyPlace("스타벅스")).thenAnswer(call -> {
+            now[0] += 4_000_000_000L;           // 이 분류가 4초 걸렸다
+            return "{\"category\":\"CAFE\",\"brand\":\"STARBUCKS\"}";
+        });
+        when(schedules.medianAmountOfUser(7L, "CAFE")).thenReturn(5600);
+
+        List<Map<String, Object>> items = sync.itemsFor(7L, DAY);
+
+        assertThat(items).extracting(i -> i.get("start")).containsExactly("09:00", "16:00");
+        verify(ai, never()).classifyPlace("올리브영");
     }
 
     @Test

@@ -31,6 +31,8 @@ ai:
   rank-timeout-ms: ${AI_RANK_TIMEOUT_MS:800}
   # 챗봇·리포트 등 나머지 호출 제한 시간(ms)
   timeout-ms: ${AI_TIMEOUT_MS:20000}
+  # 일정 '직접 입력' 이름 분류 제한 시간(ms). 일정 저장 중에 부르므로 짧게 둔다
+  classify-timeout-ms: ${AI_CLASSIFY_TIMEOUT_MS:3000}
   # 시연용 기준 시각 (예: 2026-11-05T09:30:00). 비우면 현재 시각
   fixed-at: ${AI_FIXED_AT:}
 
