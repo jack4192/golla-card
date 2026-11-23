@@ -405,9 +405,10 @@ def test_카드가_없는_사용자도_도구가_멈추지_않는다(service, mo
 
 def test_prompt_covers_app_usage_and_promotions():
     text = prompts.system_prompt(AT, ["KB ALL 카드"], {"name": "home"})
-    for word in ("앱 사용 안내", "오늘의 일정", "일정 추가", "보유 카드로 등록", "다른 카드로 변경", "혜택 자세히 보기",
-                 "list_promotions"):
+    for word in ("앱 사용 안내", "오늘의 일정", "일정 추가", "보유 카드로 등록", "내 카드 목록", "혜택 자세히 보기",
+                 "전체 초기화", "list_promotions"):
         assert word in text, word
+    assert "다른 카드로 변경" not in text      # 팀원 PR#3 이후 홈에는 없는 버튼 (2026-11-23 .4)
     assert "홈 화면에서 챗봇을 열었다" in text
     assert "카드 혜택, 결제 카드 선택, 앱 사용법만 도와드릴 수 있어요" in text
     assert prompts.PROMPT_VERSION >= "2026-11-23"
