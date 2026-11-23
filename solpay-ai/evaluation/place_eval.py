@@ -1,6 +1,6 @@
 """일정 '직접 입력' 업종·가맹점 분류 정확도 (2026-11-23 설계서).
 
-정답을 단 60개 표현(브랜드 20·별칭/약칭 10·오타 10·일반 말 15·애매/모름 5)을 분류해
+정답을 단 69개 표현(브랜드 20·별칭/약칭 10·오타 10·일반 말 15·애매/모름 5·최종 검토에서 더한 함정 5·업종 이름 같은 말 4)을 분류해
 업종 정확도, 브랜드 정확도, 틀린 브랜드를 붙인 수(목표 0), 출처(검색/AI/없음) 비율, 응답 시간을 잰다.
 OpenAI 를 실제로 부른다 (OPENAI_API_KEY 필요, 표현마다 비용). --no-llm 이면 검색만.
 
@@ -13,7 +13,7 @@ import json
 import os
 import statistics
 
-# (표현, 맞는 업종들(빈 튜플 = 정하지 말아야 함), 맞는 브랜드 또는 None)
+# (표현, 맞는 업종들(빈 튜플 = 정하지 말아야 함, "*" = 업종은 채점 안 함), 맞는 브랜드 또는 None)
 CASES = [
     # 브랜드 20
     ("스타벅스", ("CAFE",), "스타벅스"), ("투썸플레이스", ("CAFE",), "투썸플레이스"), ("이디야", ("CAFE",), "이디야"),
@@ -42,6 +42,11 @@ CASES = [
     ("전기차 충전", ("EV_CHARGING",), None), ("택시", ("TAXI",), None), ("커피 한 잔", ("CAFE",), None),
     # 애매·모름 5 (업종도 브랜드도 정하지 말아야 함)
     ("GS", (), None), ("산책", (), None), ("집", (), None), ("약속", (), None), ("쇼핑", (), None),
+    # 최종 검토에서 더한 함정 5: 짧은 브랜드 이름이 글에 들어 있기만 한 말 (브랜드를 붙이면 안 됨)
+    ("멜론 빙수", ("*",), None), ("웨이브 펌", ("*",), None), ("outback", ("*",), None), ("flower", ("*",), None),
+    ("biscuit", ("*",), None),
+    # 업종 이름 같은 말·브랜드를 품은 말 4
+    ("카페", ("CAFE",), None), ("커피", ("CAFE",), None), ("주유소", ("FUEL",), None), ("스타벅스 강남", ("CAFE",), "스타벅스"),
 ]
 
 
@@ -66,7 +71,7 @@ def main() -> None:
     rows = []
     for text, cats, brand in CASES:
         r = svc.classify_place(text, llm=llm)
-        cat_ok = (r["category"] in cats) if cats else r["category"] is None
+        cat_ok = True if cats == ("*",) else ((r["category"] in cats) if cats else r["category"] is None)
         brand_ok = r["brand"] == brand
         wrong_brand = r["brand"] is not None and r["brand"] != brand
         rows.append({"text": text, "expect_categories": list(cats), "expect_brand": brand, "category": r["category"],
