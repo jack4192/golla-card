@@ -188,6 +188,7 @@ const CUSTOM_SYNONYMS = [
   [/약국|드럭|올리브영/, ['약국', '올리브영', '드럭스토어']],
   [/독서실|스터디/, ['스터디', '독서실']],
   [/OTT|넷플릭스|유튜브|구독/i, ['넷플릭스', '유튜브', 'OTT', '디지털콘텐츠', '구독']],
+  [/야구|트윈스|직관/, ['야구', 'LG트윈스', '트윈스', '홈경기', '입장권', '구단']],     // 2026-11-24
 ];
 export const CUSTOM_CATEGORY_PREFIX = 'custom:';
 export const isCustomCategory = id => typeof id === 'string' && id.startsWith(CUSTOM_CATEGORY_PREFIX);

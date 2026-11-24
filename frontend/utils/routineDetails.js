@@ -14,6 +14,7 @@ export const INDUSTRIES = [
   ['fuel', '주유·충전'],
   ['shopping', '쇼핑'],
   ['medical', '병원·약국'],
+  ['baseball', '야구'],      // 2026-11-24: LG트윈스 신한카드 체크 (서버에는 기타 + 이름 '야구', AI 가 공연/문화 티켓 + LG트윈스로)
   ['other', '기타'],
 ];
 
@@ -22,7 +23,8 @@ export const INDUSTRY_ICONS = {
   pcroom: 'game-controller-outline', travel: 'airplane-outline', intercity: 'bus-outline',
   train: 'train-outline', transport: 'subway-outline', taxi: 'car-outline',
   convenience: 'storefront-outline', delivery: 'bicycle-outline', fuel: 'battery-charging-outline',
-  shopping: 'bag-handle-outline', medical: 'medkit-outline', other: 'ellipsis-horizontal-circle-outline',
+  shopping: 'bag-handle-outline', medical: 'medkit-outline', baseball: 'baseball-outline',
+  other: 'ellipsis-horizontal-circle-outline',
 };
 
 export const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -34,6 +36,11 @@ export function routineLabel(row) {
 }
 
 export const DETAIL_CATEGORIES = {
+  // 2026-11-24: 야구 = LG트윈스 홈경기 (사용자 결정). 카드 혜택 이름·조건에서 찾을 말
+  baseball: {
+    label: '야구',
+    words: ['야구', '야구장', 'LG트윈스', '트윈스', '홈경기', '입장권', '구단'],
+  },
   pcroom: {
     label: 'PC방',
     words: ['PC방', 'pc방', '피시방'],
