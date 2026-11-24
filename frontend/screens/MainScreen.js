@@ -8,7 +8,7 @@ import RecommendationLaunchPopup from '../components/RecommendationLaunchPopup';
 import AccountWithdrawal from '../components/AccountWithdrawal';
 import TodaySchedulePanel from '../components/TodaySchedulePanel';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform, Vibration } from 'react-native';
+import { ActivityIndicator, View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import YearEndReport from '../components/YearEndReport';
 import PaymentCardOrder from '../components/PaymentCardOrder';
@@ -679,7 +679,7 @@ export default function MainScreen({
         <Ionicons name="notifications-outline" size={16} color="#2C60C2" />
         <Text style={styles.noticeStripText}>이번 달 혜택 {summary?.active ?? 0}건</Text>
       </View>}
-      {[['sparkles-outline', '오늘의 카드 추천', 'recommendation'], ['pricetag-outline', '오늘의 프로모션', 'promotion']].map(([icon, label, kind]) =>
+      {[['card-outline', '오늘의 카드 추천', 'recommendation'], ['pricetag-outline', '오늘의 프로모션', 'promotion']].map(([icon, label, kind]) =>
         <TouchableOpacity key={kind} accessibilityRole="button" accessibilityLabel={label}
           style={styles.homeLink} onPress={() => setAdRequest({ kind })}>
           <View style={styles.homeLinkIcon}><Ionicons name={icon} color="#174BCA" size={21} /></View>
@@ -828,17 +828,8 @@ export default function MainScreen({
 
         <SettingsGroup title="편의 기능">
           <SettingsItem icon="qr-code-outline" title="결제" subtitle="QR·바코드 보기" onPress={() => openPaySheet({ cardId: currentCard?.id })} />
+          {/* 버튼 진동·진동 확인은 폰에서 체감이 없어 뺐다 (2026-11-24 사용자 요청) */}
           <SettingsItem icon="card-outline" title="카드 관리" subtitle="등록된 카드 목록" onPress={() => goFromSettings('cards')} />
-          <SettingsToggle icon="phone-portrait-outline" title="버튼 진동" value={vibrationOn} disabled={settingsBusy} onChange={value => persistUISettings(appNotice, value)} />
-          <SettingsItem icon="pulse-outline" title="진동 확인" subtitle="버튼 진동 설정이 켜져 있을 때만 작동" onPress={() => {
-          if (vibrationOn) {
-            if (Platform.OS !== 'web') {
-              Vibration.vibrate(30);
-            }
-          } else {
-            Alert.alert('진동 꺼짐', '버튼 진동을 켜고 다시 시도해주세요.');
-          }
-        }} />
         </SettingsGroup>
 
         <SettingsGroup title="서비스·이용 동의">

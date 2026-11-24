@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, ScrollView, Keyboard, KeyboardAvoidingView, Platform, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import FlowHeading from '../components/FlowHeading';
-import { Alert } from '../utils/demoAlert';
 import { isValidEmail, normalizeEmail } from '../utils/demoEmail';
 export default function LoginScreen({
   onLogin,
@@ -114,16 +113,6 @@ export default function LoginScreen({
           <TouchableOpacity onPress={signUp} disabled={submitting}>
             <Text style={styles.footerText}>회원가입</Text>
           </TouchableOpacity>
-
-          <Text style={styles.separator}>|</Text>
-
-          <TouchableOpacity disabled={submitting} onPress={() => {
-          if (!busy.current && foreground.current) {
-            Alert.alert('비밀번호 찾기', '현재 비밀번호를 재설정할 수 없어요.');
-          }
-        }}>
-            <Text style={styles.footerText}>비밀번호 찾기</Text>
-          </TouchableOpacity>
         </View>
       </ScrollView></KeyboardAvoidingView>
     </SafeAreaView>;
@@ -205,9 +194,5 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 13,
     color: '#555'
-  },
-  separator: {
-    color: '#CCC',
-    fontSize: 13
   }
 });

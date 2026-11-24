@@ -5,7 +5,7 @@ import useRecommendationReveal from './useRecommendationReveal';
 
 const money = value => Number(value).toLocaleString('ko-KR') + '원';
 
-export default function PromotionOffer({ offer, reason, status, onBrowse, recommendation = false, reduced = true }) {
+export default function PromotionOffer({ offer, reason, description, status, onBrowse, recommendation = false, reduced = true }) {
   const [expanded, setExpanded] = useState(false);
   const [logoStatus, setLogoStatus] = useState('loading');
   // 로고는 서버가 준다 (offer.logo = { uri }, 2026-11-23 행사 DB 이전). 없거나 받지 못하면 이름만
@@ -36,6 +36,8 @@ export default function PromotionOffer({ offer, reason, status, onBrowse, recomm
       <View style={recommendation ? s.benefitBadge : s.offerColumn}>
         <Text accessibilityRole="header" style={[s.offer, recommendation && s.recommendationOffer]}>{summary}</Text>
       </View>
+      {/* 혜택 금액 아래 간단한 설명 한 줄 (카드 추천 화면처럼, 2026-11-24) */}
+      {recommendation && !!description && <Text style={s.description}>{description}</Text>}
     </View>
     <TouchableOpacity accessibilityRole="button" accessibilityLabel={detailsLabel} accessibilityState={{ expanded }}
       style={[s.detailsButton, recommendation && s.recommendationButton]} onPress={() => setExpanded(value => !value)}>
@@ -83,6 +85,7 @@ const s = StyleSheet.create({
   offer: { fontSize: 23, lineHeight: 31, fontWeight: '700', color: '#18253B' },
   benefitBadge: { alignSelf: 'stretch', padding: 18, borderRadius: 18, backgroundColor: '#EDF3FF' },
   recommendationOffer: { fontSize: 22, fontWeight: '800', color: '#104FE7', textAlign: 'center' },
+  description: { alignSelf: 'stretch', paddingHorizontal: 4, fontSize: 14, lineHeight: 21, fontWeight: '600', color: '#3A4B66', textAlign: 'center' },
   detailsButton: { minHeight: 46, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#EDF0F4' },
   recommendationButton: { justifyContent: 'center', borderTopWidth: 0, marginTop: 8 },
   link: { fontSize: 14, fontWeight: '600', color: '#2455C7' },

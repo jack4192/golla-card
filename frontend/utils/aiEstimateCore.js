@@ -88,7 +88,7 @@ export function toEstimates(result, linked) {
     out[walletId] = {
       value: Number(card.benefit) || 0,
       unit: 'KRW',
-      name: (card.benefit > 0 ? 'AI 계산 예상 혜택' : '이 거래에 받을 혜택 없음') + promo,
+      name: (card.benefit > 0 ? '예상 혜택' : '이 거래에 받을 혜택 없음') + promo,
       reason: '이번 달 실적·한도와 진행 중인 행사를 반영해 AI 엔진이 계산했어요.',
       condition: '',
       source: 'ai',

@@ -43,13 +43,13 @@ test('일정 모드이고 업종이 같을 때만 AI 예시를 쓴다', () => {
 });
 
 test('홈 문구', () => {
-  assert.equal(scheduleAiLabel(ex, 500), '메가MGC커피 · 4,900원 · 500원 예상 혜택 · AI 계산');
-  assert.equal(scheduleAiLabel(ex, 0), '메가MGC커피 · 4,900원 · AI 추천');
-  assert.equal(scheduleAiLabel({ ...ex, name: null, category_name: '카페' }, 40), '카페 · 4,900원 · 40원 예상 혜택 · AI 계산');
+  assert.equal(scheduleAiLabel(ex, 500), '메가MGC커피 · 4,900원 · 500원 예상 혜택');
+  assert.equal(scheduleAiLabel(ex, 0), '메가MGC커피 · 4,900원');
+  assert.equal(scheduleAiLabel({ ...ex, name: null, category_name: '카페' }, 40), '카페 · 4,900원 · 40원 예상 혜택');
 });
 
 test('창 안 같은 업종 일정에만 AI 1순위 카드를 붙인다', () => {
-  const label = '메가MGC커피 · 4,900원 · 500원 예상 혜택 · AI 계산';
+  const label = '메가MGC커피 · 4,900원 · 500원 예상 혜택';
   assert.deepEqual(scheduleAiMatch({ row, clock: t('17:02'), preview: { result, estimates }, cards }),
     { card: cards[0], label, benefitName: label, category: 'cafe', ai: true });
   assert.equal(scheduleAiMatch({ row, clock: t('20:00'), preview: { result, estimates }, cards }), null);

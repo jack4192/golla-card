@@ -43,10 +43,10 @@ export function scheduleAiExample(result, appCategories) {
   return (appCategories || []).some(category => aiCategory(category) === example.category_code) ? example : null;
 }
 
-/** 홈 일정 카드 문구. 1순위 카드가 받는 금액이 0 이하면 금액 대신 'AI 추천' */
+/** 홈 일정 카드 문구. 1순위 카드가 받는 금액이 0 이하면 금액 없이 (2026-11-24: 'AI 계산·AI 추천' 꼬리말은 뺀다) */
 export function scheduleAiLabel(example, value) {
   const head = `${example.name || example.category_name} · ${Number(example.amount).toLocaleString('ko-KR')}원`;
-  return value > 0 ? `${head} · ${value.toLocaleString('ko-KR')}원 예상 혜택 · AI 계산` : `${head} · AI 추천`;
+  return value > 0 ? `${head} · ${value.toLocaleString('ko-KR')}원 예상 혜택` : head;
 }
 
 /**
