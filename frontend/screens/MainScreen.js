@@ -922,7 +922,8 @@ export default function MainScreen({
 
       <YearEndReport visible={yearEndOpen} onClose={() => setYearEndOpen(false)} />
       <QuickPaySheet visible={!!paySheet} cards={walletCards} cardId={currentCard?.id} context={paySheet}
-        onSelectCard={onSelectCard} onClose={() => setPaySheet(null)} onOpenDetails={openFullPayment} />
+        onSelectCard={onSelectCard} onClose={() => setPaySheet(null)} onOpenDetails={openFullPayment}
+        onPaid={refreshAi} />
       <NotificationCenter visible={notificationsOpen} items={inbox} onClose={() => setNotificationsOpen(false)} onOpenTarget={openNotificationTarget} />
 
       <Modal visible={exitOpen} transparent animationType="fade" onRequestClose={() => setExitOpen(false)}>

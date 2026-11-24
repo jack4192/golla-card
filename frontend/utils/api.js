@@ -176,6 +176,17 @@ export const api = {
     + (beforeId != null ? '&beforeId=' + encodeURIComponent(beforeId) : ''), { auth: true }),
   // 지난 한 달 이용 (카드이용내역 화면, 2026-11-24): { from: 'yyyy-MM-dd', until, count, amount }
   paymentsMonthSummary: () => request('/api/payments/month-summary', { auth: true }),
+  // 결제 코드·시연 결제 (2026-11-24, PR #6 결제 API). QR 결제 창(QuickPaySheet)이 쓴다.
+  // 발급: { paymentTokenId, qrPayload, barcodeNumber(18자리), expiresAt, expiresInSeconds(60) }. 다시 발급하면 이전 코드는 서버가 취소한다.
+  issuePaymentToken: userCardId => request('/api/v1/payment-tokens', { method: 'POST', auth: true, body: { userCardId } }),
+  // 상태: { status: ISSUED / COMPLETED / EXPIRED / CANCELED, paymentId } (가상 POS 에서 결제됐는지 확인)
+  paymentTokenStatus: id => request('/api/v1/payment-tokens/' + encodeURIComponent(id), { auth: true }),
+  cancelPaymentToken: id => request('/api/v1/payment-tokens/' + encodeURIComponent(id) + '/cancel', { method: 'POST', auth: true }),
+  // 시연 결제: category(서버 업종 코드)를 주면 그 업종 가맹점에서, 금액은 업종에 맞게 서버가 정한다.
+  // 응답: { approved, declineReason, paymentId, approvalNo, merchantName, amount, benefitName, benefitAmount,
+  //   promotionName, promotionAmount, totalDiscount, paidAt }
+  payWithToken: (id, { category } = {}) => request('/api/v1/payment-tokens/' + encodeURIComponent(id) + '/pay',
+    { method: 'POST', auth: true, body: category ? { category } : {} }),
   // 연말 결산 (2026-11-24). 받은 혜택: { year, from, until, count, benefit, promotion, total,
   //   months: [{ month, count, benefit, promotion, total }], cards: [{ userCardId, cardName, count, benefit, promotion, total }] }
   paymentsYearSummary: () => request('/api/payments/year-summary', { auth: true, timeout: AI_CHAT_TIMEOUT_MS }),

@@ -41,6 +41,18 @@ public interface PosRepository extends Repository<Card, Long> {
             """, nativeQuery = true)
     List<TerminalRow> findRandomTerminal();
 
+    /** 이 업종의 가맹점 단말기 중 무작위 하나 (앱 시연 결제에서 일정 업종을 따를 때, 2026-11-24). */
+    @Query(value = """
+            SELECT t.terminal_id AS "terminalId", m.merchant_id AS "merchantId",
+                   m.merchant_name AS "merchantName", m.category AS "category"
+              FROM terminals t
+              JOIN merchants m ON m.merchant_id = t.merchant_id
+             WHERE m.category = :category
+             ORDER BY random()
+             LIMIT 1
+            """, nativeQuery = true)
+    List<TerminalRow> findRandomTerminalInCategory(@Param("category") String category);
+
     @Query(value = "SELECT 'A' || LPAD(CAST(nextval('approval_no_seq') AS VARCHAR), 7, '0')", nativeQuery = true)
     String nextApprovalNo();
 
