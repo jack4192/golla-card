@@ -58,6 +58,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
     pickedHere: pickedId != null && pickedId === selected?.id,
     fromSchedule: Boolean(context?.title),
     benefit: reasonBenefit,
+    cardName: selected?.name,
   });
   const [code, setCode] = useState(null);
   const [generating, setGenerating] = useState(false);
