@@ -222,7 +222,7 @@ export default function App() {
       }
 
       if (resume) {
-        await afterAuthentication();
+        await afterAuthentication({ resumed: true });
         return;
       }
       await DemoStore.deleteItemAsync(SESSION_KEY);
@@ -251,11 +251,13 @@ export default function App() {
     if (screen !== 'Main') setMainTab('home');
     setCurrentScreen(screen);
   }, []);
-  // 메인에 들어가면 홈 대신 '오늘의 일정' 탭부터 보여 준다 (2026-11-24). 로그인·약관 동의 직후뿐 아니라
-  // 로그인을 유지한 채 새로고침·앱을 다시 열 때(restore → afterAuthentication)도 같다 (PR #11 검토, 사용자 결정). 다른 탭은 아래 탭바로
-  const enterMainAfterLogin = () => {
-    navigate('Main');
-    setMainTab('schedule');
+  // 직접 로그인(약관 동의 포함)하면 가입을 마친 사람도 처음 가입 때처럼 일정 관리 → 카드 추천 → 홈 순서로 보여 준다
+  //   (2026-11-24 사용자 결정, PR #11 의 '오늘의 일정 탭 먼저'를 바꿈). 가입을 마친 사람은 일정 관리의 '이전'이 홈으로 간다
+  //   (routineMode 'edit'). 로그인을 유지한 채 새로고침·앱을 다시 열 때(restore)는 바로 홈.
+  const startLoginFlow = completed => {
+    setScheduleEditor({});
+    setRoutineMode(completed ? 'edit' : 'onboarding');
+    navigate('DailyRoutine');
   };
   const backFromRecommendation = () => {
     if (recommendBack === 'DailyRoutine') {
@@ -432,7 +434,8 @@ export default function App() {
     navigate('Payment');
   });
 
-  const afterAuthentication = async ({ firstSignupLogin = false } = {}) => {
+  // resumed: 로그인을 유지한 채 새로고침·앱을 다시 열어 들어온 경우 (가입을 마쳤으면 바로 홈)
+  const afterAuthentication = async ({ firstSignupLogin = false, resumed = false } = {}) => {
     let [savedConsent, finished] = await Promise.all([
       readConsent(),
       DemoStore.getItemAsync(FINISHED_KEY),
@@ -479,10 +482,10 @@ export default function App() {
 
     if (savedConsent?.termsAgreed !== true) {
       navigate('Agreement');
-    } else if (completed) {
-      enterMainAfterLogin();
+    } else if (completed && resumed) {
+      navigate('Main');
     } else {
-      navigate('DailyRoutine');
+      startLoginFlow(completed);
     }
   };
 
@@ -584,8 +587,7 @@ export default function App() {
 
     const completed = await DemoStore.getItemAsync(FINISHED_KEY) === 'yes';
     setOnboardingComplete(completed);
-    if (completed) enterMainAfterLogin();
-    else navigate('DailyRoutine');
+    startLoginFlow(completed);
   });
 
   const handleRoutineContinue = () => {
