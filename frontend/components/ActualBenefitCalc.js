@@ -57,12 +57,14 @@ export default function ActualBenefitCalc({ card, cards, onClose }) {
         return;
       }
       const now = new Date();
-      const rows = options.map(item => ({ card: item, benefit: aiRows?.[item.id] || (scenario ? estimatePayment(item, scenario, true, now) : null) }));
+      // 비교는 같은 계산끼리만 (PR #10 검토): 이 카드의 AI 값이 있으면 AI 값끼리, 없으면 앱 계산끼리 비교한다
+      const useAi = Boolean(aiRows?.[selected.id]);
+      const rows = options.map(item => ({ card: item, benefit: useAi ? aiRows[item.id] : scenario ? estimatePayment(item, scenario, true, now) : null }));
       const mine = rows.find(row => row.card.id === selected.id)?.benefit;
       const better = rows.filter(row => row.card.id !== selected.id && Number.isFinite(row.benefit?.value)
         && (!Number.isFinite(mine?.value) || row.benefit.value > mine.value))
         .sort((x, y) => y.benefit.value - x.benefit.value)[0];
-      setResult({ benefit: mine, better, ai: Boolean(aiRows), merchant: where, amount: value });
+      setResult({ benefit: mine, better, ai: useAi, merchant: where, amount: value });
     } catch {
       if (ticket === run.current) setError('계산하지 못했어요. 다시 시도해 주세요.');
     } finally {

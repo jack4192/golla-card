@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { ActivityIndicator, Animated, Image, Modal, PanResponder, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as Store from '../utils/demoStore';
 import { CARD_ORDER_KEY, saveWalletCardOrder } from '../utils/wallet';
-import { syncAction } from '../utils/autoPlacementCore';
+import { orderButton, orderHint, syncAction } from '../utils/autoPlacementCore';
 
 const ROW_GAP = 12;
 const CARDS_PER_PAGE = 5;
@@ -58,20 +58,21 @@ export default function PaymentCardOrder({
   cards = [],
   selectedId,
   onSelect,
-  onDragActiveChange,
   syncSelection = true,
   aiOrder = null,  // AI 가 정한 순서(카드 id 목록). 사용자가 직접 끌어 옮기기 전까지 이 순서로 보여 준다
-  // 홈 '내 카드'에서는 수정 모드에서 손잡이를 표시한다.
-  //   ON 이면 AI 순서를 따르고, 순서를 직접 바꾸면 확인 뒤 OFF(onAutoChange(false)). 결제 화면은 주지 않는다.
+  // 홈 '내 카드' (2026-11-24 수정사항·수정사항2): 자동 배치 ON/OFF. 주면 '순서 변경' 버튼을 쓴다.
+  //   ON 이면 AI 순서를 따른다. '순서 변경'을 눌러야만 ☰ 손잡이가 생겨 순서를 바꿀 수 있고(평소엔 카드를 눌러도 안 바뀜),
+  //   ON 에서 누르면 먼저 묻고 OFF(onAutoChange(false)) 뒤 편집한다. 결제 화면은 주지 않는다(늘 ☰, 카드를 누르면 선택).
   autoOn,
-  onAutoChange
+  onAutoChange,
+  // 끄는 동안 true (홈 화면이 스크롤을 잠근다: 폰에서 끌기와 화면 스크롤이 겹쳐 카드가 튀던 문제, 2026-11-24 수정사항2)
+  onDragActiveChange
 }) {
   const [savedIds, setSavedIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [readError, setReadError] = useState('');
   const [error, setError] = useState('');
   const [draggedId, setDraggedId] = useState(null);
-  const [editing, setEditing] = useState(false);
   const drag = useRef(null);
   const rows = useRef(new Map());
   const writeRevision = useRef(0);
@@ -80,16 +81,17 @@ export default function PaymentCardOrder({
   const [manual, setManual] = useState(false);
   const [visibleCount, setVisibleCount] = useState(CARDS_PER_PAGE);
   const homeMode = autoOn !== undefined;
-  const showHandles = !homeMode || editing;
   const hasAiOrder = Array.isArray(aiOrder) && aiOrder.length > 0;
   const usingAi = homeMode ? Boolean(autoOn) && hasAiOrder : !manual && hasAiOrder;
   const ordered = useMemo(() => orderCards(cards, usingAi ? aiOrder : savedIds), [cards, savedIds, usingAi, aiOrder]);
-  // 자동 배치 중 직접 순서를 바꾸려 할 때의 확인 창 { cards, from, to }
-  const [pendingMove, setPendingMove] = useState(null);
-  // 스위치로 끌 때 보이던 AI 순서를 내 순서로 저장한다 (끄는 순간 목록이 갑자기 바뀌지 않게). 확인 창으로 끈 경우는 이미 저장했다
+  // 홈 '순서 변경' 편집 중인지, 자동 배치 중에 눌러 묻는 창이 열렸는지
+  const [editing, setEditing] = useState(false);
+  const [confirmEdit, setConfirmEdit] = useState(false);
+  const canDrag = !homeMode || editing;
+  const button = homeMode ? orderButton({ editing, autoOn: Boolean(autoOn) }) : null;
+  // 자동 배치를 끌 때 보이던 AI 순서를 내 순서로 저장한다 (끄는 순간 목록이 갑자기 바뀌지 않게, 편집도 그 순서에서 시작)
   const lastAiShown = useRef(null);
   if (usingAi) lastAiShown.current = ordered.map(card => String(card.id));
-  const skipAutoOffSave = useRef(false);
   const previousAuto = useRef(autoOn);
   const visibleCards = ordered.slice(0, visibleCount);
   const nextPageSize = Math.min(CARDS_PER_PAGE, ordered.length - visibleCards.length);
@@ -114,11 +116,8 @@ export default function PaymentCardOrder({
   useEffect(() => {
     const was = previousAuto.current;
     previousAuto.current = autoOn;
+    if (homeMode && autoOn) setEditing(false);       // 편집 중에 스위치로 다시 켜면 편집을 끝낸다
     if (!homeMode || was !== true || autoOn !== false) return;
-    if (skipAutoOffSave.current) {
-      skipAutoOffSave.current = false;
-      return;
-    }
     const ids = lastAiShown.current;
     if (!ids?.length) return;
     setSavedIds(ids);
@@ -143,32 +142,29 @@ export default function PaymentCardOrder({
       }
     }
   };
+  const dragActive = useRef(onDragActiveChange);
+  dragActive.current = onDragActiveChange;
   useEffect(() => {
     mounted.current = true;
     load();
     return () => {
       mounted.current = false;
       revision.current++;
-      if (drag.current?.scrollLocked && !drag.current.settling) onDragActiveChange?.(false);
+      if (drag.current) dragActive.current?.(false);   // 끄는 중에 화면을 떠나도 홈 스크롤 잠금을 푼다
     };
   }, []);
 
-  const saveMove = async (cards, from, to, selectTop = false) => {
+  const saveMove = async (cards, from, to) => {
     if (from === to && !error) return;
     const ticket = ++writeRevision.current;
-    const next = [...cards];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    const ids = next.map(card => String(card.id));
+    const ids = cards.map(card => String(card.id));
+    const [moved] = ids.splice(from, 1);
+    ids.splice(to, 0, moved);
     setManual(true);
     setSavedIds(ids);
     setError('');
     try {
-      const saving = persistCardOrder(ids);
-      if (selectTop && from !== to && next[0] && (!syncSelection || next[0].id !== selectedId)) {
-        onSelect?.(next[0].id);
-      }
-      await saving;
+      await persistCardOrder(ids);
     } catch (problem) {
       if (mounted.current && ticket === writeRevision.current) {
         setError(problem.message || '순서를 저장하지 못했습니다. 다시 시도해주세요.');
@@ -176,22 +172,28 @@ export default function PaymentCardOrder({
     }
   };
 
-  // 사용자가 순서를 바꿀 때(누르기·끌기·화살표): 자동 배치 중이면 먼저 묻는다 (2026-11-24 수정사항)
+  // 사용자가 순서를 바꿀 때(끌기·화살표). 홈은 '순서 변경' 편집 중에만 (편집을 시작할 때 자동 배치는 이미 꺼져 있다)
   const requestMove = (cards, from, to) => {
-    if (from === to && !error) return;
-    if (homeMode && autoOn) {
-      setPendingMove({ cards, from, to });
-      return;
+    if (!canDrag) return;
+    saveMove(cards, from, to);
+    // 결제 화면(syncSelection=false, 2026-11-24 사용자 결정 'PR #10: 맨 위가 바뀔 때만 선택'):
+    // 끌어서 맨 위 카드가 실제로 바뀌었을 때만 그 카드를 결제 카드로 고른다. 맨 위가 그대로면 AI·일정이 고른 카드를 지킨다.
+    if (!syncSelection && from !== to) {
+      const next = [...cards];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      if (next[0] && next[0].id !== cards[0]?.id) onSelect?.(next[0].id);
     }
-    saveMove(cards, from, to, true);
   };
-  const confirmMove = () => {
-    const move = pendingMove;
-    setPendingMove(null);
-    if (!move) return;
-    skipAutoOffSave.current = true;
-    saveMove(move.cards, move.from, move.to, true);
-    onAutoChange?.(false);
+  const pressOrderButton = () => {
+    if (button.action === 'finish') setEditing(false);
+    else if (button.action === 'confirm') setConfirmEdit(true);
+    else setEditing(true);
+  };
+  const confirmOrderEdit = () => {
+    setConfirmEdit(false);
+    onAutoChange?.(false);     // 보이던 AI 순서를 내 순서로 저장한다 (위 효과)
+    setEditing(true);
   };
 
   const rowFor = id => {
@@ -201,14 +203,16 @@ export default function PaymentCardOrder({
     return rows.current.get(id);
   };
 
+  // 폰에서도 JS 로 움직인다: 끝낼 때 새 순서와 위치 0 을 한 번에 그려야 카드가 두 번 튀지 않는다 (네이티브 드라이버는
+  // 값이 따로 반영돼 한 프레임 동안 옛 위치가 남았다, 2026-11-24 수정사항2 'Expo 에서 여러 카드가 움직임')
   const animate = (row, toValue) => Animated.timing(row.y, {
     toValue,
     duration: 150,
-    useNativeDriver: !IS_WEB,
+    useNativeDriver: false,
     isInteraction: false,
   });
 
-  const startDrag = (id, pointerId, startY = 0, scrollLocked = true) => {
+  const startDrag = (id, pointerId, startY = 0) => {
     if (drag.current || loading || readError) return false;
     const cards = orderedRef.current;
     const from = cards.findIndex(card => card.id === id);
@@ -221,9 +225,9 @@ export default function PaymentCardOrder({
       top += row.height + ROW_GAP;
       return position;
     });
-    drag.current = { id, pointerId, startY, cards, rows: measuredRows, tops, from, to: from, settling: false, scrollLocked };
-    if (scrollLocked) onDragActiveChange?.(true);
+    drag.current = { id, pointerId, startY, cards, rows: measuredRows, tops, from, to: from, settling: false };
     setDraggedId(id);
+    onDragActiveChange?.(true);
     return true;
   };
 
@@ -249,19 +253,21 @@ export default function PaymentCardOrder({
     const session = drag.current;
     if (!session || session.settling) return;
     session.settling = true;
-    if (session.scrollLocked) onDragActiveChange?.(false);
     const { cards, rows, from } = session;
     const to = cancel ? from : session.to;
     session.to = to;
     Animated.parallel(rows.map((row, index) => animate(row,
       index === from ? topForDrop(session, to) : shiftForDrop(session, index)
     ))).start(() => {
-      if (!mounted.current || drag.current !== session) return;
+      if (!mounted.current) return;
+      onDragActiveChange?.(false);
+      if (drag.current !== session) return;
       const currentCards = orderedRef.current;
-      if (!cancel && currentCards.length === cards.length && cards.every((card, index) => card.id === currentCards[index].id)) {
-        // 확인 창에서 취소하면 저장하지 않아서, 아래 레이아웃 효과가 위치를 되돌려 원래 순서가 보인다
+      if (currentCards.length === cards.length && cards.every((card, index) => card.id === currentCards[index].id)) {
+        // 그 사이 목록이 바뀌었으면 저장하지 않는다 (아래 레이아웃 효과가 위치를 되돌려 지금 순서가 보인다)
         requestMove(cards, from, to);
       }
+      // 새 순서와 '위치 0'(아래 transform)이 같은 그리기에 들어간다
       setDraggedId(null);
     });
   };
@@ -291,8 +297,7 @@ export default function PaymentCardOrder({
           moveWithArrow(index, event.key === 'ArrowUp' ? -1 : 1);
         },
         onPointerDown: event => {
-          if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0) ||
-            !startDrag(id, event.pointerId, event.clientY, event.pointerType !== 'mouse')) return;
+          if (event.button !== 0 || !event.isPrimary || !startDrag(id, event.pointerId, event.clientY)) return;
           event.preventDefault();
           event.currentTarget.setPointerCapture(event.pointerId);
         },
@@ -309,6 +314,7 @@ export default function PaymentCardOrder({
         onLostPointerCapture: event => {
           if (drag.current?.pointerId === event.pointerId) finishDrag(true);
         },
+        // 폰 브라우저가 스크롤 등으로 터치를 가져가면 끌기를 취소한다 (PR #10)
         onPointerCancel: event => {
           if (drag.current?.pointerId === event.pointerId) finishDrag(true);
         },
@@ -317,7 +323,10 @@ export default function PaymentCardOrder({
     const row = rowFor(id);
     if (!row.pan) {
       row.pan = PanResponder.create({
+        // 손잡이를 잡으면 화면 스크롤보다 먼저 가져간다
         onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponderCapture: () => true,
+        onMoveShouldSetPanResponder: () => true,
         onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: () => dragCallbacks.current.startDrag(id),
         onPanResponderMove: (_, gesture) => dragCallbacks.current.moveDrag(gesture.dy),
@@ -333,19 +342,20 @@ export default function PaymentCardOrder({
         <Text style={[s.heading, s.flexOne]}>
           내 카드 · {cards.length}장
         </Text>
-        {homeMode && <TouchableOpacity accessibilityRole="button" disabled={draggedId !== null}
-          accessibilityState={{ expanded: editing }}
-          onPress={() => setEditing(value => !value)} style={[s.editModeButton, editing && s.editModeButtonActive]}>
-          <Text style={[s.editModeText, editing && s.editModeTextActive]}>{editing ? '완료' : '수정'}</Text>
+        {/* '순서 변경'을 눌러야만 ☰ 로 순서를 바꾼다. 편집 중이면 '완료' (자동 배치 켜고 끄기는 위 '자동 배치' 스위치) */}
+        {homeMode && <TouchableOpacity accessibilityRole="button" accessibilityLabel={button.label === '완료' ? '순서 변경 완료' : '카드 순서 변경'}
+          disabled={draggedId !== null || loading || Boolean(readError)}
+          onPress={pressOrderButton} style={[s.autoPill, editing ? s.autoPillOn : s.autoPillOff]}>
+          <Text style={editing ? s.autoPillOnText : s.autoPillOffText}>{button.label}</Text>
         </TouchableOpacity>}
       </View>
 
       <Text style={s.hint}>
-        {showHandles ? '오른쪽 손잡이(☰)를 끌어 카드 순서를 바꿔요.' : '카드를 누르면 결제 카드로 선택돼요.'}
+        {homeMode ? orderHint({ editing, autoOn: Boolean(autoOn) }) : '카드를 눌러 선택하고, ☰를 끌어 순서를 바꿔요.'}
       </Text>
 
       {!homeMode && usingAi && <Text style={s.link}>
-          AI가 지금 결제에 맞춰 정한 순서예요.
+          지금 결제에 맞춰 정한 순서예요.
         </Text>}
 
       {loading && <ActivityIndicator color="#245DE5" />}
@@ -362,24 +372,31 @@ export default function PaymentCardOrder({
 
       {visibleCards.map((card, index) => {
         const row = rowFor(card.id);
-        // 결제 화면에서는 일정을 통해 선택한 카드도 표시합니다. 목록을 직접 재정렬하면 맨 위 카드가 선택됩니다.
+        // 결제 화면(syncSelection=false)은 순서와 결제 카드가 따로라서, 실제로 고른 카드에 표시합니다.
         const selected = syncSelection ? index === 0 : card.id === selectedId;
+        const body = <>
+          <CardThumb card={card} />
+
+          <View style={s.copy}>
+            <Text style={s.name}>{card.name}</Text>
+            <Text style={s.hint}>{card.issuer}</Text>
+
+            <Text style={s.link}>{selected ? '✓ 현재 결제 카드' : '\u00A0'}</Text>
+          </View>
+        </>;
+        // 끄는 중에만 움직이는 값(row.y)을 붙인다. 끝나면 새 순서와 위치 0 이 한 번에 그려진다
         return <Animated.View key={card.id}
             onLayout={event => { row.height = event.nativeEvent.layout.height; }}
-            style={[s.item, { transform: [{ translateY: row.y }] }, draggedId === card.id && s.dragging]}>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel={index + 1 + '번 ' + card.name} accessibilityState={{ selected }}
-              disabled={draggedId !== null || loading || Boolean(readError)} onPress={() => syncSelection ? requestMove(ordered, index, 0) : onSelect?.(card.id)} style={s.itemButton}>
-              <CardThumb card={card} />
+            style={[s.item, { transform: [{ translateY: draggedId !== null ? row.y : 0 }] }, draggedId === card.id && s.dragging]}>
+            {/* 홈은 카드를 눌러도 순서가 바뀌지 않는다 ('순서 변경'에서만). 결제 화면은 누르면 그 카드로 결제 */}
+            {homeMode ? <View accessible accessibilityLabel={index + 1 + '번 ' + card.name + (selected ? ', 현재 결제 카드' : '')}
+                style={s.itemButton}>{body}</View>
+              : <TouchableOpacity accessibilityRole="button" accessibilityLabel={index + 1 + '번 ' + card.name} accessibilityState={{ selected }}
+                  disabled={draggedId !== null || loading || Boolean(readError)} onPress={() => onSelect?.(card.id)} style={s.itemButton}>
+                  {body}
+                </TouchableOpacity>}
 
-              <View style={s.copy}>
-                <Text style={s.name}>{card.name}</Text>
-                <Text style={s.hint}>{card.issuer}</Text>
-
-                <Text style={s.link}>{selected ? '✓ 현재 결제 카드' : '\u00A0'}</Text>
-              </View>
-            </TouchableOpacity>
-
-              {showHandles && <View {...handleFor(card.id, index)} accessibilityRole="adjustable" accessibilityLabel={card.name + ' 순서 이동 손잡이'}
+              {canDrag && <View {...handleFor(card.id, index)} accessibilityRole="adjustable" accessibilityLabel={card.name + ' 순서 이동 손잡이'}
                 accessibilityValue={{ min: 1, max: visibleCards.length, now: index + 1 }}
                 accessibilityActions={[{ name: 'decrement' }, { name: 'increment' }]}
                 onAccessibilityAction={event => moveWithArrow(index, event.nativeEvent.actionName === 'decrement' ? -1 : 1)}
@@ -398,16 +415,17 @@ export default function PaymentCardOrder({
           {error}
         </Text>}
 
-      <Modal visible={!!pendingMove} transparent animationType="fade" onRequestClose={() => setPendingMove(null)}>
+      {/* 자동 배치 중에 '순서 변경'을 누르면 먼저 묻는다 (2026-11-24 수정사항2 결정) */}
+      <Modal visible={confirmEdit} transparent animationType="fade" onRequestClose={() => setConfirmEdit(false)}>
         <View style={s.dialogBackdrop}>
           <View style={s.dialog} accessibilityViewIsModal>
-            <Text accessibilityRole="header" style={s.dialogTitle}>정말로 카드 순서를 바꾸시겠습니까?</Text>
-            <Text style={s.dialogText}>순서를 바꾸면 AI 자동 배치가 꺼져요. 카드 추천 위의 자동 배치 스위치에서 다시 켤 수 있어요.</Text>
+            <Text accessibilityRole="header" style={s.dialogTitle}>카드 순서를 직접 바꿀까요?</Text>
+            <Text style={s.dialogText}>직접 순서를 정하면 자동 배치가 꺼지고, 1순위 카드로 결제해요. 위의 '자동 배치' 스위치로 언제든 다시 켤 수 있어요.</Text>
             <View style={s.dialogActions}>
-              <TouchableOpacity accessibilityRole="button" onPress={() => setPendingMove(null)} style={[s.dialogButton, s.dialogCancel]}>
+              <TouchableOpacity accessibilityRole="button" onPress={() => setConfirmEdit(false)} style={[s.dialogButton, s.dialogCancel]}>
                 <Text style={s.dialogCancelText}>취소</Text>
               </TouchableOpacity>
-              <TouchableOpacity accessibilityRole="button" onPress={confirmMove} style={[s.dialogButton, s.dialogConfirm]}>
+              <TouchableOpacity accessibilityRole="button" onPress={confirmOrderEdit} style={[s.dialogButton, s.dialogConfirm]}>
                 <Text style={s.dialogConfirmText}>바꾸기</Text>
               </TouchableOpacity>
             </View>
@@ -432,10 +450,11 @@ function shiftForDrop({ rows, from, to }, index) {
 const s = StyleSheet.create({
   headRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   flexOne: { flex: 1, minWidth: 0 },
-  editModeButton: { minWidth: 64, minHeight: 36, paddingHorizontal: 12, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EDF3FF' },
-  editModeButtonActive: { backgroundColor: '#245DE5' },
-  editModeText: { color: '#245DE5', fontSize: 13, fontWeight: '700' },
-  editModeTextActive: { color: '#FFFFFF' },
+  autoPill: { minHeight: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center', borderWidth: 1 },
+  autoPillOn: { backgroundColor: '#245DE5', borderColor: '#245DE5' },
+  autoPillOff: { backgroundColor: '#FFFFFF', borderColor: '#C9D3E3' },
+  autoPillOnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
+  autoPillOffText: { color: '#62738D', fontSize: 12, fontWeight: '800' },
   dialogBackdrop: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: 'rgba(12, 22, 44, 0.45)' },
   dialog: { width: '100%', maxWidth: 360, gap: 12, padding: 20, borderRadius: 20, backgroundColor: '#FFFFFF' },
   dialogTitle: { color: '#142D4E', fontSize: 17, fontWeight: '800' },

@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import FlowHeading from '../components/FlowHeading';
-import AiNotice from '../components/AiNotice';
 import ScheduleTimeWheel from '../components/ScheduleTimeWheel';
 import { dateKey, deleteEvent, eventTimeCaption, eventTitle, readEvents, saveEvent, shiftDate } from '../utils/routineData';
 import { INDUSTRIES, INDUSTRY_ICONS, ROUTINE_TITLE_LIMIT } from '../utils/routineDetails';
@@ -314,7 +313,6 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
             })}
           </View>
         </View>
-        <AiNotice style={s.aiNotice} />
       </ScrollView>
       <View style={s.footer}>
         {!editorOpen && !!error && <Text accessibilityRole="alert" style={s.danger}>{error}</Text>}
@@ -412,7 +410,6 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
 }
 
 const s = StyleSheet.create({
-  aiNotice: { marginTop: 16 },
   screen: { flex: 1, backgroundColor: '#F1F5FF' },
   scroll: { flex: 1 },
   body: { width: '100%', maxWidth: 720, alignSelf: 'center', gap: 16, paddingHorizontal: 16, paddingVertical: 23 },

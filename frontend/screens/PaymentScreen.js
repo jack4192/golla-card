@@ -1,6 +1,5 @@
 import { orderCards } from '../components/PaymentCardOrder';
 import PaymentBenefitChat from '../components/PaymentBenefitChat';
-import AiNotice from '../components/AiNotice';
 import BenefitDetailBox from '../components/BenefitDetailBox';
 import ActualBenefitCalc from '../components/ActualBenefitCalc';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -708,7 +707,7 @@ export default function PaymentScreen({
               <Text style={s.calcOpenText}>실제 혜택 계산하기</Text>
             </TouchableOpacity>}
 
-        {/* '내 카드 · N장' 순서 목록은 결제 상세에서 뺐다 (2026-11-24). 카드는 위 카드 선택에서 바꾼다 */}
+        {/* '내 카드 · N장' 순서 목록과 '카드 선정 이유' 상자는 결제 상세에서 뺐다 (2026-11-24, 이유는 예상 혜택 상자 안에) */}
 
         <View style={s.box}>
           <Text style={s.heading}>카드 상세 혜택</Text>
@@ -728,7 +727,6 @@ export default function PaymentScreen({
         </View>
 
       </View>
-      <AiNotice style={s.aiNotice} />
     </ScrollView>
     <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
       <TouchableOpacity activeOpacity={1} accessibilityLabel="카드 선택 닫기" style={s.sheetBackdrop} onPress={() => setPickerOpen(false)}>
@@ -772,7 +770,6 @@ const s = StyleSheet.create({
   },
   calcPrompt: { marginTop: 6, marginBottom: -4, fontSize: 13, lineHeight: 20, fontWeight: '700', color: '#4A5A75', textAlign: 'center' },
   calcOpenText: { fontSize: 15, fontWeight: '800', color: '#1D55D9' },
-  aiNotice: { marginTop: 16 },
   scrollLocked: { overflowY: 'hidden' },
   screen: {
     flex: 1,
