@@ -75,7 +75,8 @@ SYSTEM = """\
   unwell 몸 상태가 좋지 않음, overtime 야근·추가 공부, appointment 개인 약속, team_dinner 회식·모임, night_snack 야식·배달,
   travel 외출·여행, shopping 쇼핑·장보기, refuel 주유·충전, other 기타). 카페·편의점처럼 장소 일정은 kind=place 와
   place_category(cafe 커피, restaurant 식사, pcroom PC방, travel 여행·숙박, train 기차, intercity 시외·고속버스, transport 버스·지하철,
-  taxi 택시, convenience 편의점, delivery 배달, fuel 주유·충전, shopping 쇼핑, medical 병원·약국, other 기타)와 시작·끝 시간이 필요하다.
+  taxi 택시, convenience 편의점, delivery 배달, fuel 주유·충전, shopping 쇼핑, medical 병원·약국, baseball 야구, other 기타)와
+  시작·끝 시간이 필요하다.
   사용자가 말하지 않은 날짜·시간은 넣지 않는다. 장소 일정의 끝 시간을 말하지 않았으면 몇 시까지인지 되묻는다.
   상황 일정은 시간을 말하지 않았으면 하루 종일로 둔다. other 는 일정 이름(title)을 물어본다.
 - 저장된 규칙을 지워 달라고 하면 draft_rule_delete 로 지우기 초안만 만든다 (query 에 카드 이름·요일 같은 특징, 모두 지우면 all=true).
