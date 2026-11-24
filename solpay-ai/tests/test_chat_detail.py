@@ -1,7 +1,6 @@
 """챗봇 고도화 1단계 (2026-11-24, docs/superpowers/specs/2026-11-24-chatbot-stage1-design.md).
 
-- 기본 답을 지금보다 자세히, '자세히'를 입력하면 더 자세히 (뒤따르는 '자세히'만 오면 앞 질문을 자세히)
-- '자세히' 안내 문장은 코드가 대화에서 한 번만 붙인다
+- 기본 답을 지금보다 자세히 (3~6문장). '자세히' 입력·안내 문장·버튼은 2026-11-24 사용자 결정으로 뺐다
 - 앱이 표를 그리지 않으므로, 검사 두 번 실패 때는 도구 결과로 만든 요약 문장
 - 결제 추천·카드 비교의 계산 근거(applied), 카드 용어, 프로모션 기간
 """
@@ -10,7 +9,8 @@ import re
 from datetime import date
 
 from engine.chat import guard, prompts
-from engine.chat.agent import DETAIL_HINT, NO_ANSWER_REPLY, TABLE_REPLY, detail_only, wants_detail
+from engine.chat import agent as agent_module
+from engine.chat.agent import NO_ANSWER_REPLY, TABLE_REPLY
 from engine.chat.tools import TOOL_SPECS, block_summary
 from tests.test_chat import AT, DEMO, _agent, _tool_call, service, tb  # noqa: F401
 
@@ -20,12 +20,11 @@ STARBUCKS_TURNS = [{"role": "user", "text": "스타벅스에서 6천 원 결제�
 
 # ---------- 데이터 없이 ----------
 
-def test_자세히_알아채기():
-    assert wants_detail("1순위 이유 자세히 알려줘") and wants_detail("자세하게 설명해줘")
-    assert not wants_detail("왜 이 카드가 1순위야?") and not wants_detail("스타벅스에서 6천 원")
-    for only in ("자세히", "더 자세히 알려줘", "자세히 설명해 줘요", "좀 더 자세하게!", "자세히요"):
-        assert detail_only(only), only
-    assert not detail_only("스타벅스 결제 자세히") and not detail_only("1순위 이유 자세히")
+def test_자세히_기능은_뺐다():
+    assert not hasattr(agent_module, "DETAIL_HINT") and not hasattr(agent_module, "wants_detail")
+    assert not hasattr(prompts, "DETAIL_CONTEXT")
+    text = prompts.system_prompt(AT, ["KB ALL 카드"])
+    assert "[답변 길이]" not in text and "'자세히'를 입력" not in text
 
 
 def test_지시문_기본은_더_자세히_표는_안_보임_용어집():
@@ -36,10 +35,6 @@ def test_지시문_기본은_더_자세히_표는_안_보임_용어집():
     for word in ("전월 실적", "실적 구간", "통합 할인 한도", "건당", "마이샵", "기본 카드", "주력 카드 우선", "연회비"):
         assert word in glossary, word
     assert not re.search(r"\d", glossary)                           # 숫자 검사기에 걸리지 않게 숫자 없이
-    assert prompts.DETAIL_CONTEXT["ask"] not in text and prompts.DETAIL_CONTEXT["again"] not in text
-    ask = prompts.system_prompt(AT, ["KB ALL 카드"], None, detail="ask")
-    again = prompts.system_prompt(AT, ["KB ALL 카드"], None, detail="again")
-    assert "[답변 길이] 자세히" in ask and "[답변 길이] 자세히" in again and "바로 앞" in again
     assert prompts.PROMPT_VERSION >= "2026-11-24.2"
 
 
@@ -100,33 +95,11 @@ def test_검사_두_번_실패면_요약_문장(service):
     assert out["log"]["retries"] == 2
 
 
-def test_자세히를_말하면_지시문에_답변_길이(service):
-    agent, client = _agent(service, [[_tool_call(1, "explain_ranking", {})], "1순위 카드는 기본 카드라서 먼저 보여요."])
-    out = agent.answer(DEMO, "1순위 이유 자세히 알려줘", AT)
-    system = client.requests[0]["messages"][0]["content"]
-    assert "[답변 길이] 자세히" in system and "바로 앞" not in system
-    assert DETAIL_HINT not in out["reply"]                         # 이미 자세히 물었으면 안내하지 않는다
-
-
-def test_자세히만_오면_앞_질문을_자세히(service):
-    agent, client = _agent(service, [[_tool_call(1, "recommend_for_payment", {"merchant_name": "스타벅스", "amount": 6000})],
-                                     "스타벅스 결제는 추천 카드가 가장 좋아요."])
-    agent.answer(DEMO, "자세히", AT, STARBUCKS_TURNS)
-    system = client.requests[0]["messages"][0]["content"]
-    assert "[답변 길이] 자세히" in system and "바로 앞" in system
-
-
-def test_자세히_안내는_대화에서_한_번만(service):
-    agent, _ = _agent(service, [[_tool_call(1, "get_card_status", {})], "이번 달 카드별 실적을 확인했어요."])
-    first = agent.answer(DEMO, "이번 달 실적 알려줘", AT)
-    assert first["reply"].endswith("\n\n" + DETAIL_HINT)
-    agent, _ = _agent(service, [[_tool_call(1, "get_card_status", {})], "이번 달 카드별 실적을 확인했어요."])
-    history = [{"role": "user", "text": "이번 달 실적 알려줘"}, {"role": "assistant", "text": first["reply"]}]
-    again = agent.answer(DEMO, "그럼 다음 달은?", AT, history)
-    assert DETAIL_HINT not in again["reply"]
-    agent, _ = _agent(service, ["일정은 오늘의 일정 탭 > 일정 추가에서 넣을 수 있어요."])
-    guide = agent.answer(DEMO, "일정은 어떻게 추가해?", AT, [], {"name": "home"})
-    assert DETAIL_HINT not in guide["reply"]                       # 도구를 쓰지 않은 답(앱 사용법)에는 붙이지 않는다
+def test_자세히라고_해도_길이_지시나_안내_문장을_붙이지_않는다(service):
+    agent, client = _agent(service, [[_tool_call(1, "get_card_status", {})], "이번 달 카드별 실적을 확인했어요."])
+    out = agent.answer(DEMO, "이번 달 실적 자세히 알려줘", AT, STARBUCKS_TURNS)
+    assert "[답변 길이]" not in client.requests[0]["messages"][0]["content"]
+    assert out["reply"] == "이번 달 카드별 실적을 확인했어요." and "detail" not in out["log"]
 
 
 def test_테스트_날짜_기준():

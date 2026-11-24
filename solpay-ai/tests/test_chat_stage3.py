@@ -1,11 +1,10 @@
 """챗봇 고도화 3단계 (2026-11-24, docs/superpowers/specs/2026-11-24-chatbot-stage3-design.md).
 
-채팅으로 일정 초안(draft_schedule), 규칙 지우기 초안(draft_rule_delete), '자세히' 버튼이 있는 앱에는 안내 문장을 붙이지 않기.
+채팅으로 일정 초안(draft_schedule), 규칙 지우기 초안(draft_rule_delete). ('자세히' 버튼은 2026-11-24 사용자 결정으로 뺐다)
 저장은 앱이 기존 API 로 한다 (일정: saveEvent → POST /api/schedules, 규칙: GET·PUT /api/ai/rules).
 """
 
 from engine.chat import guard, prompts
-from engine.chat.agent import DETAIL_HINT
 from engine.chat.tools import TOOL_SPECS, block_summary
 from tests.test_chat import AT, DEMO, _agent, _tool_call, service, tb  # noqa: F401
 
@@ -119,14 +118,6 @@ def test_일정_초안이_있으면_아래_카드_안내는_통과(service):
         "내일 12:00~14:00 회식 일정 초안을 만들었어요. 아래 카드에서 '일정에 추가'를 누르면 저장돼요."])
     out = agent.answer(DEMO, "내일 12시부터 2시까지 회식 일정 넣어줘", AT, [], {"name": "home"})
     assert out["log"]["retries"] == 0 and any(b["type"] == "schedule_draft" for b in out["blocks"])
-
-
-def test_자세히_버튼이_있는_앱에는_안내_문장을_붙이지_않는다(service):
-    agent, _ = _agent(service, [[_tool_call(1, "get_card_status", {})], "이번 달 카드별 실적을 확인했어요."])
-    out = agent.answer(DEMO, "이번 달 실적 알려줘", AT, [], {"name": "home", "blocks": True, "detail_button": True})
-    assert DETAIL_HINT not in out["reply"]
-    from engine.api import ChatScreen
-    assert ChatScreen(name="home", detail_button=True).model_dump()["detail_button"] is True
 
 
 def test_초안_요약_문장(tb):
