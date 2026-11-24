@@ -692,14 +692,29 @@ export default function PaymentScreen({
           // 추천을 불러오는 중·못 불러옴·대체 응답이면 한 줄 알린다 (PR #11 검토: AI 상자와 함께 빠졌던 안내)
           status={scheduleScenario && !scheduleAi ? ''
             : placement.status === 'loading' ? '추천 카드를 정하고 있어요.'
-            : placement.status === 'failed' ? '추천을 불러오지 못해 지금 고른 카드로 계산했어요.'
-            : placement.status === 'ready' && ai?.fallback ? '추천 응답이 없어 지금 고른 카드로 계산했어요.' : ''}
-          details={[
-            selectedBenefit && scenario && Number.isFinite(selectedBenefit.value) && selectedBenefit.unit === 'KRW' && selectedBenefit.value > 0
-              && '계산: ' + won(scenario.amount) + ' 결제 → ' + won(selectedBenefit.value) + ' 혜택 → 실제로 내는 돈 약 ' + won(Math.max(0, scenario.amount - selectedBenefit.value)),
-            selectedBenefit?.reason && '계산 기준: ' + String(selectedBenefit.reason).replace(/^AI 엔진 계산\s*·?\s*/, ''),
-            selectedBenefit?.condition && selectedBenefit.condition !== selectedBenefit.reason && selectedBenefit.condition,
-          ]} />
+            : placement.status === 'failed' ? 'AI 추천 서버가 잠시 쉬는 중이라, 지금 고른 카드로 계산했어요.'
+            : placement.status === 'ready' && ai?.fallback ? 'AI가 잠깐 바빠서, 지금 고른 카드로 계산했어요.' : ''}
+          // 상세 내역 (2026-11-24 '상세하지 않다' → 늘 숫자로): 결제 예시, 이 카드 혜택, 실제로 내는 돈, 내 카드별 비교,
+          // 이 카드 주요 혜택, AI 안내, 계산 기준·조건
+          details={(() => {
+            if (!scenario || !selectedBenefit) return [];
+            const krw = selectedBenefit.unit === 'KRW' && Number.isFinite(selectedBenefit.value);
+            const named = selectedBenefit.name && !/^예상 혜택|^다음 결제/.test(selectedBenefit.name) ? ' (' + selectedBenefit.name + ')' : '';
+            const ranked = estimates.filter(row => Number.isFinite(row.benefit?.value))
+              .sort((a, b) => b.benefit.value - a.benefit.value)
+              .map(row => row.card.name + ' ' + reward(row.benefit) + (row.card.id === selected.id ? '(지금 카드)' : ''));
+            const catalog = catalogOf(selected)?.benefits?.slice(0, 3).map(benefit => benefit.name + ' ' + benefitText(benefit)) || [];
+            return [
+              '결제 예시: ' + scenario.merchant + '에서 ' + won(scenario.amount) + ' 결제',
+              '이 카드 혜택: ' + (Number.isFinite(selectedBenefit.value) ? reward(selectedBenefit) : '조건 확인 필요') + named,
+              krw && '실제로 내는 돈: ' + won(scenario.amount) + ' − ' + won(selectedBenefit.value) + ' = 약 ' + won(Math.max(0, scenario.amount - selectedBenefit.value)),
+              ranked.length > 1 && '내 카드별 혜택 (많은 순): ' + ranked.join(' · '),
+              catalog.length > 0 && '이 카드 주요 혜택: ' + catalog.join(' · '),
+              aiTop && selected.id === aiTop.id && ai?.message && 'AI 안내: ' + String(ai.message).replace(/!$/, ''),
+              selectedBenefit.reason && '계산 기준: ' + String(selectedBenefit.reason).replace(/^AI 엔진 계산\s*·?\s*/, ''),
+              selectedBenefit.condition && selectedBenefit.condition !== selectedBenefit.reason && '조건: ' + selectedBenefit.condition,
+            ];
+          })()} />
         {/* 예상 혜택 아래 '실제 혜택 계산하기': 업종·금액을 직접 넣어 지금 고른 카드 혜택 계산 (2026-11-24) */}
         <Text style={s.calcPrompt}>예상 혜택과 실제 혜택은 얼마나 다를까요?{'\n'}결제할 곳과 금액을 넣고 직접 확인해 보세요!</Text>
         {calcOpen
