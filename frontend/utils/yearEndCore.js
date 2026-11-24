@@ -1,6 +1,6 @@
 // 연말 결산 화면의 계산 (2026-11-24, 설계서 2026-11-23-year-end-report-design.md).
 // 받은 혜택은 백엔드 /api/payments/year-summary, 놓친 혜택은 AI /api/ai/missed-benefit?thisYear=true.
-// 숫자와 놓친 혜택 문장(message)은 서버가 준 그대로 쓰고, 여기서는 보여 줄 글자만 만든다.
+// 서버가 계산한 금액을 화면 문구로 바꾼다.
 
 export function won(n) {
   return Math.round(Number(n) || 0).toLocaleString('ko-KR') + '원';
@@ -53,6 +53,27 @@ export function missedTags(item) {
   const fee = Math.round((Number(item.annual_fee) || 0) * (Number(item.months) || 0) / 12);
   if (fee > 0) tags.push(`연회비 ${won(fee)} 빼고 계산`);
   return tags;
+}
+
+const usageByTag = {
+  대중교통: '대중교통을 자주 타신다면',
+  교통: '교통비를 자주 결제하신다면',
+  카페: '카페에 자주 가신다면',
+  편의점: '편의점을 자주 이용하신다면',
+  배달앱: '배달앱을 자주 이용하신다면',
+  영화: '영화를 자주 보신다면',
+  전기차: '전기차 충전을 자주 하신다면',
+  주유: '주유비를 자주 결제하신다면',
+  해외: '해외 결제를 자주 하신다면',
+  온라인쇼핑: '온라인 쇼핑을 자주 하신다면',
+  무실적: '전월 실적을 따로 챙기기 어렵다면',
+};
+
+export function missedUsageTip(card) {
+  const tag = card?.tags?.find(value => usageByTag[value]);
+  return tag
+    ? `${usageByTag[tag]} 이 카드를 활용해 보세요!`
+    : '평소 자주 결제하는 곳에서 받을 수 있는 혜택을 확인해 보세요!';
 }
 
 // AI 응답 → 화면 상태. 배열이 아니면(오류 JSON 등) 실패.

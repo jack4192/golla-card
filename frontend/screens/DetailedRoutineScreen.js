@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import FlowHeading from '../components/FlowHeading';
-import ScheduleTimeFields from '../components/ScheduleTimeFields';
-import { dateKey, deleteEvent, eventTimeCaption, eventTitle, readEvents, saveEvent } from '../utils/routineData';
+import ScheduleTimeWheel from '../components/ScheduleTimeWheel';
+import { dateKey, deleteEvent, eventTimeCaption, eventTitle, readEvents, saveEvent, shiftDate } from '../utils/routineData';
 import { INDUSTRIES, INDUSTRY_ICONS, ROUTINE_TITLE_LIMIT } from '../utils/routineDetails';
 
 const icons = INDUSTRY_ICONS;
@@ -25,7 +25,17 @@ function eventAppearance(category, title) {
   return eventThemes.find(theme => theme.keywords.test(text)) ?? neutralEventTheme;
 }
 
-const empty = { category: '', start: '', end: '', title: '' };
+const empty = { category: '', start: '', end: '', title: '', memo: '' };
+const DAY_NAMES = '일월화수목금토';
+// 입력 창 맨 위 날짜: '오늘 · 11월 24일 (화)' (오늘의 일정 입력 창과 같은 모양)
+function dateHeading(day) {
+  const today = dateKey();
+  const value = new Date(day + 'T12:00:00');
+  const text = `${value.getMonth() + 1}월 ${value.getDate()}일 (${DAY_NAMES[value.getDay()]})`;
+  if (day === today) return '오늘 · ' + text;
+  if (day === shiftDate(today, 1)) return '내일 · ' + text;
+  return text;
+}
 const hours = Array.from({ length: 25 }, (_, hour) => String(hour).padStart(2, '0') + ':00');
 const DAY_END = 24 * 60;
 const STEP = 10; // 시작·종료 최소 간격(분)
@@ -96,10 +106,8 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
   const timelineTop = useRef(0);
 
   // 시간 칸에 타이핑 중인 글자(칸을 벗어나면 09:30 형식으로 맞춰 반영)
-  const [timeDraft, setTimeDraft] = useState({});
   const edit = event => {
-    setTimeDraft({});
-    setForm({ category: event.category, start: event.start, end: event.end, title: event.title || activityNames[event.category] || '', memo: event.memo });
+    setForm({ category: event.category, start: event.start, end: event.end, title: event.title || activityNames[event.category] || '', memo: event.memo || '' });
     setEditing(event.id);
     setEditorOpen(true);
     setError('');
@@ -143,7 +151,6 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
     setSavedRange(null);
     setEditing(null);
     const next = { ...empty, start: toTime(from), end: toTime(Math.min(DAY_END, from + 60)) };
-    setTimeDraft({});
     setForm(next);
     setError('');
     setEditorOpen(true);
@@ -155,59 +162,19 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
     if (lock.current) return;
     resetForm();
   };
-  // 시작을 옮긴다. 시작이 종료와 같거나 늦어지면 종료를 시작 + 1시간으로 민다.
-  const setStartAt = minutes => {
-    const from = Math.max(0, Math.min(DAY_END - STEP, minutes));
-    setForm(current => {
-      const to = toMinutes(current.end) > from ? toMinutes(current.end) : Math.min(DAY_END, from + 60);
-      return { ...current, start: toTime(from), end: toTime(to) };
-    });
-    setError('');
-  };
-  // 종료를 옮긴다(시작보다 최소 10분 뒤, 24:00까지)
-  const setEndAt = minutes => {
-    setForm(current => ({ ...current, end: toTime(Math.max(toMinutes(current.start) + STEP, Math.min(DAY_END, minutes))) }));
-    setError('');
-  };
-  // 시간 칸: 숫자 4자리만, 자리마다 쓸 수 있는 숫자를 제한한다(HH:MM)
-  // 1번째 0~2, 2번째 0~9(1번째가 2면 0~4), 3번째 0~5, 4번째 0~9. 24시는 24:00만.
-  const maskTime = text => {
-    let digits = '';
-    for (const char of String(text || '').replace(/\D/g, '')) {
-      const n = Number(char);
-      const at = digits.length;
-      const ok = at === 0 ? n <= 2
-        : at === 1 ? (digits[0] === '2' ? n <= 4 : true)
-        : at === 2 ? (digits.slice(0, 2) === '24' ? n === 0 : n <= 5)
-        : at === 3 ? (digits.slice(0, 2) === '24' ? n === 0 : true)
-        : false;
-      if (ok) digits += char;
-    }
-    return digits.length > 2 ? digits.slice(0, 2) + ':' + digits.slice(2) : digits;
-  };
-  const parseTyped = text => {
-    const digits = String(text || '').replace(/\D/g, '');
-    if (digits.length !== 4) return null;
-    const minutes = Number(digits.slice(0, 2)) * 60 + Number(digits.slice(2));
-    return minutes <= DAY_END ? minutes : null;
-  };
-  const commitTyped = (key, typed) => {
-    const text = typed ?? timeDraft[key];
-    if (text === undefined) return;
-    setTimeDraft(current => ({ ...current, [key]: undefined }));
-    const minutes = parseTyped(text);
-    if (minutes === null) {
-      setError('시간을 숫자 4자리로 입력해주세요. 예: 0930');
-      return;
-    }
-    if (key === 'start') setStartAt(minutes); else setEndAt(minutes);
-  };
-  const typeTime = (key, text) => {
-    const masked = maskTime(text);
-    // 4자리를 다 치면 바로 반영
-    if (masked.length === 5) commitTyped(key, masked);
-    else setTimeDraft(current => ({ ...current, [key]: masked }));
-  };
+  // 시간 휠(오늘의 일정 입력 창과 같은 ScheduleTimeWheel): 시작을 바꾸면 종료는 언제나 시작 + 1시간(24:00 까지),
+  // 종료를 시작과 같거나 앞으로 돌리면 시작 + 1시간으로 맞춘다 (2026-11-24, 하루 일정이라 다음 날로 넘기지 않음)
+  const wheelValue = (updater, current) => (typeof updater === 'function' ? updater(current) : updater);
+  const setStartWheel = updater => setForm(current => {
+    const from = Math.max(0, Math.min(DAY_END - STEP, toMinutes(wheelValue(updater, current.start))));
+    const to = Math.min(DAY_END, from + 60);
+    return { ...current, start: toTime(from), end: toTime(to) };
+  });
+  const setEndWheel = updater => setForm(current => {
+    const to = Math.min(DAY_END, toMinutes(wheelValue(updater, current.end)));
+    const from = toMinutes(current.start);
+    return { ...current, end: toTime(to > from ? to : Math.min(DAY_END, from + 60)) };
+  });
   const enterTitle = title => {
     if (lock.current || disabled) return;
     setForm(current => ({ ...current, category: categoryByName.get(title.trim()) ?? 'other', title }));
@@ -238,7 +205,7 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
   const save = continueAfter => run(async () => {
     if (!continueAfter) {
       if (!form.title.trim()) {
-        throw Error('업종을 입력해주세요.');
+        throw Error('일정을 입력해주세요. 예: 헬스장, 영화관');
       }
       const saved = await saveEvent({ ...form, id: editing, date: scheduleDate });
       setEvents(current => [saved, ...current.filter(event => event.id !== saved.id)]);
@@ -279,15 +246,16 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
           {loading && <ActivityIndicator color="#1854D8" />}
           {loadFailed && <Action onPress={() => setRetry(value => value + 1)} label="다시 불러오기" />}
         </View>
+        {/* 스크롤해도 '일정 추가' 버튼과 '시간 · 일과' 머리글이 함께 위에 붙어 있게 한 덩어리로 (2026-11-24) */}
         <View style={s.addBar}>
           <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={addNow} style={[s.addButton, disabled && s.dim]}>
             <Ionicons name="add" size={20} color="#FFFFFF" />
             <Text style={s.white}>일정 추가</Text>
           </TouchableOpacity>
-        </View>
-        <View style={s.timelineHeading}>
-          <Text style={[s.section, s.railHeading]}>시간</Text>
-          <Text style={s.section}>일과</Text>
+          <View style={s.timelineHeading}>
+            <Text style={[s.section, s.railHeading]}>시간</Text>
+            <Text style={s.section}>일과</Text>
+          </View>
         </View>
         <View style={s.timeline} onLayout={event => { timelineTop.current = event.nativeEvent.layout.y; }}>
           {highlightedIntervals.map(([from, to]) => <View key={from} pointerEvents="none"
@@ -392,27 +360,24 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
                 <Ionicons name="close" size={26} color="#385988" accessible={false} />
               </TouchableOpacity>
             </View>
-            <ScheduleTimeFields disabled={disabled}
-              onAdjust={(key, delta) => (key === 'start' ? setStartAt : setEndAt)(toMinutes(form[key]) + delta)}
-              inputProps={key => ({
-                value: timeDraft[key] ?? form[key],
-                onChangeText: text => typeTime(key, text),
-                onFocus: () => setTimeDraft(current => ({ ...current, [key]: '' })),
-                onBlur: () => {
-                  if (timeDraft[key] === '') setTimeDraft(current => ({ ...current, [key]: undefined }));
-                  else commitTyped(key);
-                },
-                onSubmitEditing: () => commitTyped(key),
-              })} />
-            <Text style={s.durationHint}>{duration > 0 ? `${Math.floor(duration / 60) ? Math.floor(duration / 60) + '시간 ' : ''}${duration % 60 ? duration % 60 + '분' : ''}`.trim() + ' 동안' : ''}</Text>
-            <ScrollView style={s.editorScroll} keyboardShouldPersistTaps="handled">
+            {/* 오늘의 일정 '일과 입력' 창과 같은 모양 (2026-11-24): 날짜 → 시간 휠 → 일정 직접 입력 → 취소/일정 추가 (추가 옵션은 뺌) */}
+            {/* 날짜·시간 휠은 창 위쪽에 고정: 휠을 굴릴 때 창 전체가 같이 움직이지 않게 (2026-11-24) */}
+            <View style={s.editorFixed}>
+              <Text style={s.todayLabel}>{dateHeading(scheduleDate)}</Text>
+              <Text style={s.stepLabel}>시간</Text>
+              <View style={s.timeWheels}>
+                <ScheduleTimeWheel label="시작" value={form.start || '12:00'} disabled={disabled} setValue={setStartWheel} />
+                <ScheduleTimeWheel label="종료" value={form.end || '13:00'} disabled={disabled} setValue={setEndWheel} allowMidnight />
+              </View>
+              {duration > 0 && <Text style={s.durationHint}>{`${Math.floor(duration / 60) ? Math.floor(duration / 60) + '시간 ' : ''}${duration % 60 ? duration % 60 + '분' : ''}`.trim()} 동안</Text>}
+            </View>
+            <ScrollView style={s.editorScroll} contentContainerStyle={s.editorBody} keyboardShouldPersistTaps="handled">
               <View style={s.directEntry}>
-                <Text style={s.directTitle}>업종 직접 입력</Text>
-                <TextInput accessibilityLabel="업종 직접 입력" style={s.input}
+                <Text style={s.directTitle}>일정 직접 입력</Text>
+                <TextInput accessibilityLabel="일정 직접 입력" style={s.input}
                   value={form.title} onChangeText={enterTitle}
-                  maxLength={ROUTINE_TITLE_LIMIT} editable={!disabled} placeholder="예: 헬스장, 영화관, 미용실"
+                  maxLength={ROUTINE_TITLE_LIMIT} editable={!disabled} placeholder="예: 헬스장, 영화관, 병원 예약"
                   placeholderTextColor="#697C98" returnKeyType="done" />
-                <Text style={s.directHint}>입력한 업종으로 카드 혜택을 추천해요.</Text>
               </View>
             </ScrollView>
             {!!error && <Text accessibilityRole="alert" style={s.danger}>{error}</Text>}
@@ -422,10 +387,20 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
                 <Action disabled={disabled} onPress={() => setConfirmRemove(false)} label="취소" />
                 <Action destructive disabled={disabled} onPress={() => remove(editing)} label="일정 삭제" />
               </View>
-            </> : <View style={s.actions}>
-                <Action destructive disabled={disabled}
-                  onPress={editing ? () => setConfirmRemove(true) : returnToTimeline} label="삭제" />
-                <Action primary disabled={disabled} onPress={() => save(false)} label={editing ? '수정 저장' : '일정 추가'} />
+            </> : <View style={s.editorActions}>
+                {editing
+                  ? <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={() => setConfirmRemove(true)}
+                      style={[s.editorCancel, s.editorDelete, disabled && s.dim]}>
+                      <Text style={[s.editorCancelText, s.editorDeleteText]}>삭제</Text>
+                    </TouchableOpacity>
+                  : <TouchableOpacity accessibilityRole="button" accessibilityLabel="일정 입력 취소" disabled={busy}
+                      onPress={returnToTimeline} style={[s.editorCancel, busy && s.dim]}>
+                      <Text style={s.editorCancelText}>취소</Text>
+                    </TouchableOpacity>}
+                <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={() => save(false)}
+                  style={[s.editorSave, disabled && s.dim]}>
+                  <Text style={s.editorSaveText}>{busy ? '저장 중…' : editing ? '수정 저장' : '일정 추가'}</Text>
+                </TouchableOpacity>
               </View>}
           </View>
         </KeyboardAvoidingView>
@@ -439,7 +414,7 @@ const s = StyleSheet.create({
   scroll: { flex: 1 },
   body: { width: '100%', maxWidth: 720, alignSelf: 'center', gap: 16, paddingHorizontal: 16, paddingVertical: 23 },
   scheduleHeader: { gap: 16 },
-  addBar: { backgroundColor: '#F1F5FF' },
+  addBar: { backgroundColor: '#F1F5FF', gap: 16, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: '#DEE7F5' },
   steps: { width: '100%', maxWidth: 720, alignSelf: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
   stepRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   step: { flexGrow: 1, color: '#536A88', backgroundColor: '#E8EEF9', borderRadius: 14, paddingVertical: 7, paddingHorizontal: 6, fontSize: 11, fontWeight: '700', textAlign: 'center' },
@@ -499,7 +474,6 @@ const s = StyleSheet.create({
   editorScroll: { flexGrow: 0, flexShrink: 1 },
   directEntry: { alignSelf: 'center', width: '100%', maxWidth: 340, gap: 8, marginBottom: 4 },
   directTitle: { color: '#1854D8', fontSize: 15, fontWeight: '800', textAlign: 'center' },
-  directHint: { color: '#5A6E89', fontSize: 12, lineHeight: 18, textAlign: 'center' },
   selectedHour: { backgroundColor: '#1854D8', borderColor: '#1854D8' },
   inRange: { backgroundColor: '#EAF1FF' },
   input: { backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#D9E5F7', textAlign: 'center', minHeight: 48, paddingHorizontal: 8, color: '#152D50', fontSize: 16 },
@@ -516,4 +490,16 @@ const s = StyleSheet.create({
   blue: { color: '#1D53C9', fontWeight: '800', fontSize: 13 },
   danger: { color: '#B4384D', fontWeight: '700', fontSize: 13, textAlign: 'center' },
   dim: { opacity: 0.45 },
+  editorBody: { gap: 12, paddingBottom: 4 },
+  editorFixed: { gap: 12 },
+  todayLabel: { paddingVertical: 8, textAlign: 'center', color: '#385988', fontSize: 15, fontWeight: '700', backgroundColor: '#F1F5FC', borderRadius: 12 },
+  stepLabel: { fontSize: 14, fontWeight: '800', color: '#29456B' },
+  timeWheels: { flexDirection: 'row', gap: 12 },
+  editorActions: { flexDirection: 'row', alignItems: 'stretch', gap: 6 },
+  editorCancel: { backgroundColor: '#EDF3FF', borderRadius: 24, paddingHorizontal: 18, minHeight: 52, justifyContent: 'center' },
+  editorCancelText: { color: '#245DE5', fontSize: 13, fontWeight: '800' },
+  editorDelete: { backgroundColor: '#FFF0F2' },
+  editorDeleteText: { color: '#B4384D' },
+  editorSave: { flex: 1, minHeight: 52, alignItems: 'center', justifyContent: 'center', borderRadius: 26, backgroundColor: '#104FE7' },
+  editorSaveText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
 });
