@@ -5,7 +5,7 @@
 export const DAY_MINUTES = 1440;
 export const STEP_MINUTES = 10;
 export const MAX_MINUTE = DAY_MINUTES - STEP_MINUTES;   // 23:50 까지
-export const NO_AI_CARD = '이 시각 AI 카드를 불러오지 못했어요';
+export const NO_AI_CARD = '이 시각 카드를 불러오지 못했어요';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const pad = value => String(value).padStart(2, '0');

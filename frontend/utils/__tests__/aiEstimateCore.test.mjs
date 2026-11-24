@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { bestCardOf, chooseEstimateScenario, evaluateRequest, exampleBasisLine, exampleNote, exampleScenario, toEstimates } from '../aiEstimateCore.js';
 
 test('상자 아래 줄은 예시를 고른 근거에 맞게 말한다', () => {
-  assert.equal(exampleBasisLine('promotion'), 'AI 추천 문구가 말하는 거래로 계산했어요. ');
-  assert.equal(exampleBasisLine('benefit'), 'AI 추천 문구가 말하는 거래로 계산했어요. ');
+  assert.equal(exampleBasisLine('promotion'), '추천 문구가 말하는 거래로 계산했어요. ');
+  assert.equal(exampleBasisLine('benefit'), '추천 문구가 말하는 거래로 계산했어요. ');
   assert.equal(exampleBasisLine('likely'), '지금 시간대에 결제할 가능성이 가장 높은 거래로 계산했어요. ');
   assert.equal(exampleBasisLine('schedule'), '오늘 일정에 맞춘 거래로 계산했어요. ');
   assert.equal(exampleBasisLine(undefined), '');
@@ -71,7 +71,7 @@ test('안내 줄은 행사 문구이고 가능성이 0~1 사이일 때만', () =
   // 문구의 '약 N원'은 이 시간대 행사 혜택 전체의 기대 금액이라(현대백화점 + 올리브영 …) 한 가게 × 가능성과 같지 않다
   const ex = { basis: 'promotion', name: '현대백화점', prob: 0.025 };
   assert.equal(exampleNote(ex, '현대백화점 마이샵 15%로 약 480원을 더 받을 수 있어요!'),
-    "AI 문구의 '약 480원'은 이 시간대에 결제할 만한 곳의 행사 혜택을 가능성만큼 더한 금액이에요. 현대백화점에서 결제할 가능성은 약 3%예요.");
+    "추천 문구의 '약 480원'은 이 시간대에 결제할 만한 곳의 행사 혜택을 가능성만큼 더한 금액이에요. 현대백화점에서 결제할 가능성은 약 3%예요.");
   assert.match(exampleNote({ ...ex, prob: 0.004 }, '약 30원'), /1% 미만/);
   assert.equal(exampleNote({ ...ex, prob: 1 }, '약 480원'), '');
   assert.equal(exampleNote({ ...ex, prob: 0 }, '약 480원'), '');

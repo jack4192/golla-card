@@ -279,6 +279,55 @@ class ScheduleAiSyncTest {
     }
 
     @Test
+    @DisplayName("저장 때 직접 입력 분류가 늦거나 실패하면, 그 일정은 AI 에 이미 있던 값을 그대로 두고 나머지만 바꾼다 "
+            + "(빈 목록으로 덮어써 표시줄에서 일정이 사라지던 문제, 2026-11-24)")
+    void onChangeKeepsKnownItemsWhenClassificationFails() {
+        stored(direct("영화관", "12:00", "13:00"), place("CAFE", "15:00", "16:00"), typed("other", "영화관", "20:00", "21:00"));
+        when(ai.classifyPlace("영화관"))
+                .thenThrow(new AiException(HttpStatus.GATEWAY_TIMEOUT, "AI_TIMEOUT", "AI 응답 시간이 지났습니다."));
+        when(schedules.medianAmountOfUser(7L, "CAFE")).thenReturn(5600);
+        when(ai.schedule(7L, DAY)).thenReturn("{\"day\":\"2026-11-06\",\"items\":[{\"start\":\"12:00\",\"end\":\"13:00\","
+                + "\"category\":\"MOVIE\",\"amount\":10500,\"brand\":null},{\"start\":\"18:00\",\"end\":\"19:00\","
+                + "\"category\":\"MART\",\"amount\":30000,\"brand\":null}]}");
+
+        sync.on(new ScheduleChangedEvent(7L, Set.of(DAY)));
+
+        // 12:00 영화관은 AI 에 있던 그대로, 15:00 카페는 새로, 지운 18:00 마트는 빠지고, 아직 분류 못 한 20:00 은 다음에
+        verify(ai).putSchedule(7L, DAY, List.of(
+                Map.of("start", "12:00", "end", "13:00", "category", "MOVIE", "amount", 10500),
+                Map.of("start", "15:00", "end", "16:00", "category", "CAFE", "amount", 5600)));
+    }
+
+    @Test
+    @DisplayName("분류에 실패했는데 AI 의 일정도 읽지 못하면 아무것도 넘기지 않는다 (맞는 일정을 지우지 않게)")
+    void onChangeSkipsWhenClassificationFailsAndAiUnreadable() {
+        stored(typed("other", "영화관", "20:00", "21:00"));
+        when(ai.classifyPlace("영화관"))
+                .thenThrow(new AiException(HttpStatus.GATEWAY_TIMEOUT, "AI_TIMEOUT", "AI 응답 시간이 지났습니다."));
+        when(ai.schedule(7L, DAY)).thenThrow(new AiException(HttpStatus.SERVICE_UNAVAILABLE, "AI_UNAVAILABLE", "AI 서버에 연결할 수 없습니다."));
+
+        assertThatCode(() -> sync.on(new ScheduleChangedEvent(7L, Set.of(DAY)))).doesNotThrowAnyException();
+        verify(ai, never()).putSchedule(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("맞춤 추천·하루 배치 전 맞추기도 분류 못 한 일정은 AI 값을 두고, 나머지가 다르면 다시 넘긴다")
+    void ensureSyncedMergesKnownItems() {
+        stored(direct("동네 영화관", "19:00", "21:00"), place("CAFE", "09:00", "10:00"));
+        when(ai.classifyPlace("동네 영화관"))
+                .thenThrow(new AiException(HttpStatus.GATEWAY_TIMEOUT, "AI_TIMEOUT", "AI 응답 시간이 지났습니다."));
+        when(schedules.medianAmountOfUser(7L, "CAFE")).thenReturn(5600);
+        when(ai.schedule(7L, DAY)).thenReturn("{\"day\":\"2026-11-06\",\"items\":[{\"start\":\"19:00\",\"end\":\"21:00\","
+                + "\"category\":\"MOVIE\",\"amount\":13200,\"brand\":null}]}");
+
+        sync.ensureSynced(7L, DAY);
+
+        verify(ai).putSchedule(7L, DAY, List.of(
+                Map.of("start", "09:00", "end", "10:00", "category", "CAFE", "amount", 5600),
+                Map.of("start", "19:00", "end", "21:00", "category", "MOVIE", "amount", 13200)));
+    }
+
+    @Test
     @DisplayName("지난 날의 일정은 AI 가 받지 않으므로 넘기지 않는다")
     void pastDay() {
         sync.on(new ScheduleChangedEvent(7L, Set.of(LocalDate.of(2026, 11, 4))));

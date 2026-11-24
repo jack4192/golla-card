@@ -13,7 +13,6 @@ import { Ionicons } from '@expo/vector-icons';
 import YearEndReport from '../components/YearEndReport';
 import PaymentCardOrder from '../components/PaymentCardOrder';
 import AutoPlacementSwitch from '../components/AutoPlacementSwitch';
-import AiNotice from '../components/AiNotice';
 import { useAutoPlacement } from '../utils/autoPlacement';
 import { loadPlacementPreview } from '../utils/aiPlacement';
 import RecentPayments from '../components/RecentPayments';
@@ -263,7 +262,6 @@ export default function MainScreen({
   onSelectCard = () => {}
 }) {
   const [tab, setTab] = useState(initialTab || 'home');   // '일정 다시 확인'으로 돌아오면 오늘의 일정 탭 (2026-11-24)
-  const [cardDragActive, setCardDragActive] = useState(false);
   const [schedulePayment, setSchedulePayment] = useState(null);
   const [adRequest, setAdRequest] = useState(null);
   const [catalogQuery, setCatalogQuery] = useState('');
@@ -351,6 +349,8 @@ export default function MainScreen({
   const refreshAi = () => setAiRefresh(value => value + 1);
   // 카드 자동 배치 ON/OFF (2026-11-24 수정사항): ON 이면 홈 '내 카드'가 지금 시각 AI 추천 순서(기록 없는 미리보기)를 따른다
   const auto = useAutoPlacement();
+  // 홈 '내 카드'에서 카드를 끄는 동안 화면 스크롤을 잠근다 (폰에서 끌기와 스크롤이 겹쳐 카드가 튀던 문제, 2026-11-24 수정사항2)
+  const [cardDragging, setCardDragging] = useState(false);
   const [homeAiOrder, setHomeAiOrder] = useState(null);
   const [placementHour, setPlacementHour] = useState(() => new Date().getHours());
   useEffect(() => {
@@ -608,13 +608,15 @@ export default function MainScreen({
     home={home}
     onOpenCards={() => selectTab('cards')}
     cardList={home ? <PaymentCardOrder cards={homeWalletCards} selectedId={currentCard?.id}
-      onSelect={onSelectCard} syncSelection={!paySheet} onDragActiveChange={setCardDragActive}
-      aiOrder={auto.on ? homeAiOrder : null} autoOn={auto.on} onAutoChange={auto.setOn} /> : null}
+      onSelect={onSelectCard} syncSelection={!paySheet}
+      aiOrder={auto.on ? homeAiOrder : null} autoOn={auto.on} onAutoChange={auto.setOn}
+      onDragActiveChange={setCardDragging} /> : null}
     headerRight={home ? <AutoPlacementSwitch on={auto.on} onChange={auto.setOn} /> : null}
     paymentsList={home && SERVER_MODE ? <RecentPayments refreshKey={aiRefresh} /> : null}
     onOpenSchedule={() => selectTab('schedule')}
     disabled={scheduleDisabled}
     aiRefresh={aiRefresh}
+    autoOn={auto.on}
     onEditRoutine={onEditRoutine}
     onViewBenefits={onViewBenefits}
     cards={realWalletCards(currentCard, walletCards)}
@@ -781,7 +783,6 @@ export default function MainScreen({
     return <FlatList style={styles.mainScroll} contentContainerStyle={[styles.pageContent, styles.chatClearance]}
       showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"
       data={results} keyExtractor={card => card.code} ListHeaderComponent={renderCardsHeader()}
-      ListFooterComponent={<AiNotice style={styles.aiNoticeGap} />}
       initialNumToRender={5} maxToRenderPerBatch={5} windowSize={3}
       ListEmptyComponent={<Text style={styles.catalogIssuer}>
         {catalogFilter === 'owned' && !query ? '아직 등록한 내 카드가 없어요. 전체 상품에서 카드를 눌러 등록해보세요.' : '검색 결과가 없어요.'}
@@ -852,8 +853,6 @@ export default function MainScreen({
 
         <AccountWithdrawal />
 
-        <AiNotice style={styles.aiNoticeGap} />
-
       </ScrollView>
     </>;
   return <SafeAreaView style={styles.root}><RecommendationLaunchPopup onClosed={refreshAi} selectedWalletCard={currentCard} allowAutomaticAds={tab === 'home' && allowAutomaticAds} onViewPromotions={() => selectTab('benefits')} promotions={activeNow} emptyText={emptyPromotionText(promotions.status)} openRequest={adRequest} enabled={(tab === 'home' || tab === 'benefits') && !settingsOpen && !exitOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
@@ -889,14 +888,12 @@ export default function MainScreen({
           onClose={() => selectTab(schedulePayment?.returnTab || 'home')}
           onOpenCards={() => selectTab('cards')}
         /> : tab === 'cards' ? renderCards() : <ScrollView key={tab}
-          style={[styles.mainScroll, Platform.OS === 'web' && cardDragActive && styles.scrollLocked]}
-          scrollEnabled={!cardDragActive} contentContainerStyle={[styles.pageContent, styles.chatClearance]}
+          style={[styles.mainScroll, Platform.OS === 'web' && cardDragging && styles.scrollLocked]}
+          scrollEnabled={!cardDragging} contentContainerStyle={[styles.pageContent, styles.chatClearance]}
           showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {tab === 'home' && <>{renderSchedule(true)}{renderYearEndTile()}{renderHomeHighlights()}</>}
             {tab === 'benefits' && renderBenefits()}
             {tab === 'schedule' && renderSchedule()}
-            {/* AI 안내: 홈·혜택·오늘의 일정 맨 아래 (2026-11-24, 모든 화면에) */}
-            <AiNotice />
           </ScrollView>}
         {!settingsOpen && tab !== 'payment' && !chatVisible && <View pointerEvents="box-none" style={styles.chatDock}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="챗봇 열기" onPress={openChat} style={styles.chatFab}>
@@ -1799,7 +1796,6 @@ const styles = StyleSheet.create({
   catalogApply: { flex: 2, backgroundColor: '#245DE5' },
   catalogCloseText: { color: '#245DE5', fontWeight: '800' },
   catalogApplyText: { color: '#FFFFFF', fontWeight: '800' },
-  aiNoticeGap: { marginTop: 16 },
   disclaimer: {
     fontSize: 12,
     color: '#8B95A5',
