@@ -39,9 +39,6 @@ public class User {
     @Column(name = "mydata_agreed")
     private Boolean mydataAgreed;
 
-    @Column(name = "location_agreed")
-    private Boolean locationAgreed;
-
     @Column(name = "notification_agreed")
     private Boolean notificationAgreed;      // 알림 수신 동의(선택, 2026-11-24). null = 아직 응답 안 함
 
