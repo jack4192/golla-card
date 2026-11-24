@@ -5,7 +5,9 @@
 // 테스트: node --test utils/__tests__/chatBlocks.test.mjs
 
 const won = value => Math.round(Number(value) || 0).toLocaleString('ko-KR') + '원';
-const monthDay = day => `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))}까지`;
+const md = day => `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))}`;
+const monthDay = day => `${md(day)}까지`;
+const ratioOf = (value, max) => (max > 0 ? Math.max(0, Math.min(1, (Number(value) || 0) / max)) : 0);
 
 /**
  * blocks → view 목록. 모르는 표, 규칙 카드(이미 초안 카드로 보여 줌), 빈 표는 뺀다.
@@ -37,6 +39,11 @@ function toView(block, walletIdOf) {
     case 'benefit_list': return benefitsView(block);
     case 'new_card_list': return newCardsView(block);
     case 'promotion_list': return promotionsView(block);
+    case 'spending_summary': return spendingView(block);
+    case 'payment_review': return reviewView(block);
+    case 'benefit_summary': return benefitSummaryView(block);
+    case 'day_plan': return dayPlanView(block);
+    case 'rule_list': return rulesView(block);
     default: return null;
   }
 }
@@ -114,7 +121,7 @@ function newCardsView(block) {
     amount: `월 ${won(card.net_benefit)}`,
     sub: [`연회비 ${won(card.annual_fee)}`, ...(card.top_categories || []).slice(0, 2).map(c => c.category_name)].join(' · '),
   }));
-  return rows.length ? { kind: 'newCards', title: '내 소비로 다시 계산한 신한카드 · 연회비 뺀 월 혜택', rows } : null;
+  return rows.length ? { kind: 'newCards', title: block.title || '내 소비로 다시 계산한 신한카드 · 연회비 뺀 월 혜택', rows } : null;
 }
 
 function promotionsView(block) {
@@ -125,4 +132,64 @@ function promotionsView(block) {
     rows: all.slice(0, 5).map(p => ({ brand: p.brand, kind: p.kind, benefit: p.benefit, until: monthDay(p.end) })),
     more: Math.max(0, all.length - 5),
   };
+}
+
+// ---------- 고도화 2단계 표 (2026-11-24) ----------
+
+function spendingView(block) {
+  const cats = block.by_category || [];
+  const max = Math.max(0, ...cats.map(c => c.amount));
+  return {
+    kind: 'spending',
+    title: block.title,
+    total: won(block.total),
+    sub: `${md(block.from)}~${md(block.to)} · ${block.count}건`,
+    previous: block.previous_total == null ? null : `직전 같은 기간 ${won(block.previous_total)}`,
+    rows: cats.map(c => ({ name: c.category_name, amount: won(c.amount), count: c.count, ratio: ratioOf(c.amount, max) })),
+  };
+}
+
+function reviewView(block) {
+  return {
+    kind: 'review',
+    title: block.title,
+    sub: block.count
+      ? `${block.count}건 중 ${block.best_card_count}건은 가장 많이 받는 카드 · 그 결제만 보면 더 받을 수 있던 금액 ${won(block.missed_total)}`
+      : '비교할 결제가 없어요',
+    rows: (block.rows || []).map(r => ({
+      label: `${md(r.date)} ${r.brand || r.category_name}`,
+      amount: won(r.amount),
+      used: `${r.used_card} ${won(r.got)}`,
+      best: r.missed > 0 ? `${r.best_card} ${won(r.best_got)} (+${won(r.missed)})` : '가장 많이 받는 카드로 냈어요',
+    })),
+  };
+}
+
+function benefitSummaryView(block) {
+  const months = block.by_month || [];
+  const max = Math.max(0, ...months.map(m => m.benefit));
+  return {
+    kind: 'benefitSummary',
+    title: block.title,
+    total: won(block.total),
+    rows: (block.rows || []).map(r => ({ name: r.name, amount: won(r.benefit) })),
+    months: months.map(m => ({ label: m.month, amount: won(m.benefit), ratio: ratioOf(m.benefit, max) })),
+    lines: block.lines || [],
+  };
+}
+
+function dayPlanView(block) {
+  const rows = (block.rows || []).map(r => ({ time: `${r.start}~${r.end}`, card: r.card }));
+  if (!rows.length) return null;
+  return {
+    kind: 'dayPlan',
+    title: '오늘 시간대별 결제 화면 1순위 카드',
+    rows,
+    schedules: (block.schedules || []).map(s => ({ time: `${s.start}~${s.end}`, label: s.category_name })),
+  };
+}
+
+function rulesView(block) {
+  const rows = (block.rules || []).map(r => ({ summary: r.summary, sub: [r.kind, r.condition].filter(Boolean).join(' · ') }));
+  return { kind: 'rules', title: rows.length ? '저장된 규칙' : '저장된 규칙이 없어요', rows };
 }

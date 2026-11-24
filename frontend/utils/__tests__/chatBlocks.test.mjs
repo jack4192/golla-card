@@ -90,3 +90,57 @@ test('규칙 카드·모르는 표·빈 값은 그리지 않는다', () => {
   assert.deepEqual(chatBlockViews([{ type: 'rule_card', summary: 'x' }, { type: 'new_thing' }], links), []);
   assert.deepEqual(chatBlockViews([{ type: 'card_compare', basis: 'x', rows: [] }], links), []);
 });
+
+// ---------- 고도화 2단계 표 (2026-11-24) ----------
+
+test('결제 요약: 합계·건수·기간, 업종별 막대, 직전 같은 기간', () => {
+  const [v] = chatBlockViews(demo.get_spending, links);
+  const b = demo.get_spending[0];
+  assert.equal(v.kind, 'spending');
+  assert.equal(v.title, '이번 달 결제');
+  assert.equal(v.total, Number(b.total).toLocaleString('ko-KR') + '원');
+  assert.match(v.sub, /11\/1~11\/5 · \d+건/);
+  assert.match(v.previous, /^직전 같은 기간 [\d,]+원$/);
+  assert.equal(v.rows.length, b.by_category.length);
+  assert.equal(v.rows[0].ratio, 1);
+  assert.ok(v.rows.every(r => r.ratio > 0 && r.ratio <= 1 && /원$/.test(r.amount)));
+});
+
+test('지난 결제 다시 보기: 낸 카드와 가장 많이 받았을 카드, 그 결제만 본 값이라고 밝힘', () => {
+  const [v] = chatBlockViews(demo.review_payments, links);
+  const row = demo.review_payments[0].rows[0];
+  assert.equal(v.kind, 'review');
+  assert.match(v.sub, /그 결제만 보면/);
+  assert.equal(v.rows[0].label, `11/3 ${row.brand}`);
+  assert.equal(v.rows[0].used, `${row.used_card} ${row.got.toLocaleString('ko-KR')}원`);
+  assert.match(v.rows[0].best, /\+[\d,]+원\)$/);
+});
+
+test('받은 혜택: 합계, 카드별, 올해는 달별 막대와 놓친 혜택 문장', () => {
+  const [last] = chatBlockViews(demo.get_benefit_summary_last_month, links);
+  assert.equal(last.kind, 'benefitSummary');
+  assert.deepEqual(last.months, []);
+  assert.ok(last.rows.length >= 1 && last.lines.length >= 0);
+  const [year] = chatBlockViews(demo.get_benefit_summary_this_year, links);
+  assert.equal(year.title, '2026년 받은 혜택');
+  assert.ok(year.months.length >= 1 && year.months.every(m => m.ratio >= 0 && m.ratio <= 1));
+  assert.ok(year.months.some(m => m.ratio === 1));
+});
+
+test('하루 카드 계획과 규칙 목록', () => {
+  const [day] = chatBlockViews(demo.get_day_plan, links);
+  assert.equal(day.kind, 'dayPlan');
+  assert.deepEqual(day.rows[0], { time: '00:00~24:00', card: '신한카드 Discount Plan+' });
+  const [rules] = chatBlockViews(demo.list_my_rules, links);
+  assert.equal(rules.kind, 'rules');
+  assert.deepEqual(rules.rows[0], { summary: '주말에는 KB ALL 카드를 먼저 보여 드려요', sub: '먼저 보여 주기 · 주말, 하루 종일' });
+  const [none] = chatBlockViews([{ type: 'rule_list', rules: [] }], links);
+  assert.equal(none.title, '저장된 규칙이 없어요');
+});
+
+test('카드 지정 비교는 새 카드 목록 표를 다시 쓰고 제목을 바꾼다', () => {
+  const [v] = chatBlockViews(demo.compare_cards, links);
+  assert.equal(v.kind, 'newCards');
+  assert.equal(v.title, demo.compare_cards[0].title);
+  assert.equal(v.rows.length, 2);
+});
