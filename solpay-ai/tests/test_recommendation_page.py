@@ -90,9 +90,24 @@ def test_일정이_있으면_일정():
     assert today_items([coffee()], habit_payments(), page_catalog(), NOW, Params(), 1) == ("schedule", [coffee()])
 
 
-def test_남은_일정이_없으면_평소_소비():
-    source, items = today_items([coffee(7)], habit_payments(), page_catalog(), at(10, 7, 9), Params(), 1)
+def test_오늘_일정이_하나도_없으면_평소_소비():
+    source, items = today_items([], habit_payments(), page_catalog(), at(10, 7, 9), Params(), 1)
     assert source == "pattern" and [i.item_id for i in items] == [-1, -2]
+
+
+def test_남은_일정이_없으면_오늘_지난_일정으로():
+    # 2026-11-24 사용자 결정: 12~13시 동물병원을 18시에 넣어도 그 일정으로 카드를 고른다 (평소 소비로 넘어가지 않는다)
+    assert today_items([coffee(7)], habit_payments(), page_catalog(), at(10, 7, 9), Params(), 1) == ("schedule", [coffee(7)])
+
+
+def test_남은_일정이_있으면_남은_일정만():
+    past, later = coffee(7), coffee(14, item_id=2)
+    assert today_items([past, later], habit_payments(), page_catalog(), at(10, 7, 9), Params(), 1) == ("schedule", [later])
+
+
+def test_지난_일정만_있어도_그_일정에서_카드를_고른다():
+    page = build_page(state_of(), habit_payments(), [coffee(7)], [], PROMOS, at(10, 7, 9), TODAY)
+    assert page.source == "schedule" and page.card.card_id == 9
 
 
 def test_카드날():
