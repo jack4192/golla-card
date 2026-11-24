@@ -44,6 +44,8 @@ function toView(block, walletIdOf) {
     case 'benefit_summary': return benefitSummaryView(block);
     case 'day_plan': return dayPlanView(block);
     case 'rule_list': return rulesView(block);
+    case 'schedule_draft': return block.input ? { kind: 'scheduleDraft', summary: block.summary, input: block.input } : null;
+    case 'rule_delete_draft': return block.rules?.length ? { kind: 'ruleDelete', summary: block.summary, rules: block.rules } : null;
     default: return null;
   }
 }
@@ -192,4 +194,24 @@ function dayPlanView(block) {
 function rulesView(block) {
   const rows = (block.rules || []).map(r => ({ summary: r.summary, sub: [r.kind, r.condition].filter(Boolean).join(' · ') }));
   return { kind: 'rules', title: rows.length ? '저장된 규칙' : '저장된 규칙이 없어요', rows };
+}
+
+// ---------- 고도화 3단계: 규칙 지우기 (2026-11-24) ----------
+
+const RULE_FIELDS = ['rule_type', 'condition', 'target', 'settings'];
+const sameContent = (a, b) => RULE_FIELDS.every(field => JSON.stringify(a?.[field] ?? {}) === JSON.stringify(b?.[field] ?? {}));
+
+/**
+ * 지금 저장된 규칙(current, GET /api/ai/rules)에서 지우기 초안의 규칙(drafts: [{rule_id, rule}])을 뺀 목록.
+ * rule_id 가 둘 다 있으면 번호로, 없으면 규칙 내용(종류·조건·대상·설정)으로 찾는다. 저장할 때 rule_id 는 뗀다 (PUT 은 목록을 통째로 바꾼다).
+ */
+export function withoutRules(current, drafts) {
+  const list = Array.isArray(current) ? current : [];
+  const gone = new Set();
+  for (const draft of drafts || []) {
+    const index = list.findIndex((rule, i) => !gone.has(i) && (
+      draft.rule_id != null && rule.rule_id != null ? rule.rule_id === draft.rule_id : sameContent(rule, draft.rule)));
+    if (index >= 0) gone.add(index);
+  }
+  return list.filter((_, i) => !gone.has(i)).map(({ rule_id, ...rule }) => rule);
 }
