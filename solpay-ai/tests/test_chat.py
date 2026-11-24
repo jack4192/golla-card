@@ -262,6 +262,14 @@ def test_agent_runs_tools_and_answers(service):
     assert out["log"]["tokens_in"] == 300
     sent = json.dumps(client.requests[0]["messages"], ensure_ascii=False)
     assert "김하나" not in sent and "test1@" not in sent           # 이름·이메일은 보내지 않는다
+    assert all(r["model"] == "gpt-6.1-terra" and r["reasoning_effort"] == "none" and "temperature" not in r
+               for r in client.requests)                        # GPT-6 계열: 온도 대신 생각 단계 none
+
+
+def test_agent_old_model_sends_temperature(service):
+    agent, client = _agent(service, ["안녕하세요. 카드 혜택을 물어봐 주세요."], model="gpt-4o-mini", reasoning_effort=None)
+    agent.answer(DEMO, "안녕", AT, [], None)
+    assert client.requests[0]["temperature"] == 0.2 and "reasoning_effort" not in client.requests[0]
 
 
 def test_agent_rewrites_once_then_falls_back_to_table(service):
