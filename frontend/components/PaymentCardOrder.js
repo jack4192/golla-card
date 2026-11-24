@@ -327,7 +327,7 @@ export default function PaymentCardOrder({
       </View>
 
       <Text style={s.hint}>
-        카드를 눌러 선택하고, ☰를 끌어 순서를 바꿔요.
+        쓰고 싶은 카드를 톡! 누르고, ☰를 쭈욱 끌면 순서가 바뀌어요 😊
       </Text>
 
       {!homeMode && usingAi && <Text style={s.link}>

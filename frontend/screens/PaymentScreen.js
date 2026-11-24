@@ -20,7 +20,7 @@ import { SERVER_MODE } from '../utils/api';
 import { loadPlacement } from '../utils/aiPlacement';
 import { useAutoPlacement } from '../utils/autoPlacement';
 import { loadAiEstimates } from '../utils/aiEstimate';
-import { chooseEstimateScenario, exampleBasisLine, exampleNote, exampleScenario } from '../utils/aiEstimateCore';
+import { chooseEstimateScenario, exampleNote, exampleScenario } from '../utils/aiEstimateCore';
 import { scheduleAiPaymentExample } from '../utils/scheduleAiCore';
 const SCENARIOS = [{
   id: 'coffee',
@@ -685,22 +685,19 @@ export default function PaymentScreen({
                   <Text style={s.bxCompareValue}>{Number.isFinite(baseBenefit.value) ? reward(baseBenefit) : '조건 확인 필요'}</Text>
                 </View>
                 {difference !== null && <Text style={[s.bxDiff, difference > 0 ? s.bxDiffGood : s.bxDiffNeutral]}>
-                    {difference > 0 ? '비교 카드보다 ' + won(difference) + ' 더 아낄 수 있어요'
+                    {difference > 0 ? 'AI 추천 카드로 결제하면 ' + won(difference) + ' 절약돼요!'
                       : difference === 0 ? '두 카드의 혜택이 같아요'
                       : '비교 카드가 ' + won(-difference) + ' 더 유리해요'}
                   </Text>}
               </>}
 
             {!!exampleLine && <Text style={s.bxNote}>{exampleLine}</Text>}
-            <Text style={s.bxFoot}>
-              {aiRows
-                ? (scenario.aiExample ? exampleBasisLine(scenario.basis)
-                  : scheduleScenario ? '일정 업종에 맞춘 결제 예시예요. ' : '')
-                  + '이번 달 실적·한도와 진행 중인 행사를 반영해 AI가 계산했어요.'
-                : scheduleScenario
+            {/* AI 계산일 때의 'AI 추천 문구가 말하는 거래로…' 설명은 뺐다 (2026-11-24). 앱 계산 예시일 때만 안내 */}
+            {!aiRows && <Text style={s.bxFoot}>
+              {scheduleScenario
                 ? '일정 업종에 맞춘 결제 예시예요. 실제 혜택은 가맹점·실적·잔여 한도에 따라 달라요.'
                 : '전월 실적 기록이 없으면 40만 원으로 계산한 예시예요.'}
-            </Text>
+            </Text>}
           </View>
         </View>
 
@@ -1086,12 +1083,14 @@ const s = StyleSheet.create({
     fontWeight: '600'
   },
   bxName: {
+    textAlign: 'center',
     fontSize: 14,
     lineHeight: 21,
     fontWeight: '700',
     color: '#1E395F'
   },
   bxAmount: {
+    textAlign: 'center',
     fontSize: 26,
     fontWeight: '800',
     color: '#245DE5',
