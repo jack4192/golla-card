@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AppState, Image, PanResponder, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import CardBenefitFlip from './CardBenefitFlip';
+import ActualBenefitCalc from './ActualBenefitCalc';
 import { Ionicons } from '@expo/vector-icons';
 import { findCatalog40Product } from '../data/cardCatalog40';
 import { CSV_CARD_CATALOG } from '../data/cardCatalogCsv';
@@ -257,6 +259,7 @@ export default function TodaySchedulePanel({
   // 홈 시간 표시줄 (2026-11-23 설계서 home-day-timeline): 옮긴 시각(분, null 이면 지금),
   //   하루 배치 구간(null 이면 읽는 중, [] 이면 실패·없음), 오늘 결제(결제 점)
   const [viewMinute, setViewMinute] = useState(null);
+  const [calculatorCardId, setCalculatorCardId] = useState(null);
   const [daySegments, setDaySegments] = useState(() => aiMemory.daySegments);
   useEffect(() => { aiMemory.daySegments = daySegments; }, [daySegments]);
   const [todayPayments, setTodayPayments] = useState([]);
@@ -598,13 +601,16 @@ export default function TodaySchedulePanel({
             {' · '}{reasonLine.text}
           </Text>
         </View>}
+        {/* 큰 카드: 누르면 뒤집혀 '이 거래의 예상 혜택' (결제 화면과 같은 계산, 2026-11-24). 카드 그림만 뒤집힌다 */}
         {artwork && <View style={styles.homeCardStage}>
           <View pointerEvents="none" style={styles.homeCardHalo} />
-          <Image source={artwork} resizeMode="contain" fadeDuration={0}
-            style={[styles.homeArtwork, styles.homeScheduledArtwork]}
-            accessibilityLabel={card.name + ' 상품 이미지'} />
+          <CardBenefitFlip card={card} cards={cards} artwork={artwork} artworkStyle={[styles.homeArtwork, styles.homeScheduledArtwork]}
+            onOpenCalculator={card && !scrubbing ? () => setCalculatorCardId(card.id) : undefined} />
         </View>}
         <Text style={[styles.homeCardName, card && styles.homeCardCaption]}>{card?.name || '등록된 카드가 없습니다'}</Text>
+        {/* 업종·금액을 직접 넣어 이 카드 혜택 계산 (2026-11-24) */}
+        {card && !scrubbing && calculatorCardId === card.id &&
+          <ActualBenefitCalc key={card.id} card={card} cards={cards} onClose={() => setCalculatorCardId(null)} />}
         {scrubPayment && <Text style={styles.homeScrubPayment} numberOfLines={1}>{paymentLine(scrubPayment)}</Text>}
       </View>
       {card && <TouchableOpacity accessibilityRole="button" accessibilityLabel="이 카드로 결제"

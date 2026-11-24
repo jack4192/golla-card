@@ -58,9 +58,10 @@ export default function PaymentCardOrder({
   cards = [],
   selectedId,
   onSelect,
+  onDragActiveChange,
   syncSelection = true,
   aiOrder = null,  // AI 가 정한 순서(카드 id 목록). 사용자가 직접 끌어 옮기기 전까지 이 순서로 보여 준다
-  // 홈 '내 카드' (2026-11-24 수정사항): 자동 배치 ON/OFF. 주면 '자동 배치 적용' 버튼과 순서 변경 확인 창을 쓴다.
+  // 홈 '내 카드'에서는 수정 모드에서 손잡이를 표시한다.
   //   ON 이면 AI 순서를 따르고, 순서를 직접 바꾸면 확인 뒤 OFF(onAutoChange(false)). 결제 화면은 주지 않는다.
   autoOn,
   onAutoChange
@@ -70,6 +71,7 @@ export default function PaymentCardOrder({
   const [readError, setReadError] = useState('');
   const [error, setError] = useState('');
   const [draggedId, setDraggedId] = useState(null);
+  const [editing, setEditing] = useState(false);
   const drag = useRef(null);
   const rows = useRef(new Map());
   const writeRevision = useRef(0);
@@ -78,6 +80,7 @@ export default function PaymentCardOrder({
   const [manual, setManual] = useState(false);
   const [visibleCount, setVisibleCount] = useState(CARDS_PER_PAGE);
   const homeMode = autoOn !== undefined;
+  const showHandles = !homeMode || editing;
   const hasAiOrder = Array.isArray(aiOrder) && aiOrder.length > 0;
   const usingAi = homeMode ? Boolean(autoOn) && hasAiOrder : !manual && hasAiOrder;
   const ordered = useMemo(() => orderCards(cards, usingAi ? aiOrder : savedIds), [cards, savedIds, usingAi, aiOrder]);
@@ -146,20 +149,26 @@ export default function PaymentCardOrder({
     return () => {
       mounted.current = false;
       revision.current++;
+      if (drag.current?.scrollLocked && !drag.current.settling) onDragActiveChange?.(false);
     };
   }, []);
 
-  const saveMove = async (cards, from, to) => {
+  const saveMove = async (cards, from, to, selectTop = false) => {
     if (from === to && !error) return;
     const ticket = ++writeRevision.current;
-    const ids = cards.map(card => String(card.id));
-    const [moved] = ids.splice(from, 1);
-    ids.splice(to, 0, moved);
+    const next = [...cards];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    const ids = next.map(card => String(card.id));
     setManual(true);
     setSavedIds(ids);
     setError('');
     try {
-      await persistCardOrder(ids);
+      const saving = persistCardOrder(ids);
+      if (selectTop && from !== to && next[0] && (!syncSelection || next[0].id !== selectedId)) {
+        onSelect?.(next[0].id);
+      }
+      await saving;
     } catch (problem) {
       if (mounted.current && ticket === writeRevision.current) {
         setError(problem.message || '순서를 저장하지 못했습니다. 다시 시도해주세요.');
@@ -174,14 +183,14 @@ export default function PaymentCardOrder({
       setPendingMove({ cards, from, to });
       return;
     }
-    saveMove(cards, from, to);
+    saveMove(cards, from, to, true);
   };
   const confirmMove = () => {
     const move = pendingMove;
     setPendingMove(null);
     if (!move) return;
     skipAutoOffSave.current = true;
-    saveMove(move.cards, move.from, move.to);
+    saveMove(move.cards, move.from, move.to, true);
     onAutoChange?.(false);
   };
 
@@ -199,7 +208,7 @@ export default function PaymentCardOrder({
     isInteraction: false,
   });
 
-  const startDrag = (id, pointerId, startY = 0) => {
+  const startDrag = (id, pointerId, startY = 0, scrollLocked = true) => {
     if (drag.current || loading || readError) return false;
     const cards = orderedRef.current;
     const from = cards.findIndex(card => card.id === id);
@@ -212,7 +221,8 @@ export default function PaymentCardOrder({
       top += row.height + ROW_GAP;
       return position;
     });
-    drag.current = { id, pointerId, startY, cards, rows: measuredRows, tops, from, to: from, settling: false };
+    drag.current = { id, pointerId, startY, cards, rows: measuredRows, tops, from, to: from, settling: false, scrollLocked };
+    if (scrollLocked) onDragActiveChange?.(true);
     setDraggedId(id);
     return true;
   };
@@ -239,6 +249,7 @@ export default function PaymentCardOrder({
     const session = drag.current;
     if (!session || session.settling) return;
     session.settling = true;
+    if (session.scrollLocked) onDragActiveChange?.(false);
     const { cards, rows, from } = session;
     const to = cancel ? from : session.to;
     session.to = to;
@@ -247,7 +258,7 @@ export default function PaymentCardOrder({
     ))).start(() => {
       if (!mounted.current || drag.current !== session) return;
       const currentCards = orderedRef.current;
-      if (currentCards.length === cards.length && cards.every((card, index) => card.id === currentCards[index].id)) {
+      if (!cancel && currentCards.length === cards.length && cards.every((card, index) => card.id === currentCards[index].id)) {
         // 확인 창에서 취소하면 저장하지 않아서, 아래 레이아웃 효과가 위치를 되돌려 원래 순서가 보인다
         requestMove(cards, from, to);
       }
@@ -280,7 +291,8 @@ export default function PaymentCardOrder({
           moveWithArrow(index, event.key === 'ArrowUp' ? -1 : 1);
         },
         onPointerDown: event => {
-          if (event.button !== 0 || !event.isPrimary || !startDrag(id, event.pointerId, event.clientY)) return;
+          if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0) ||
+            !startDrag(id, event.pointerId, event.clientY, event.pointerType !== 'mouse')) return;
           event.preventDefault();
           event.currentTarget.setPointerCapture(event.pointerId);
         },
@@ -295,6 +307,9 @@ export default function PaymentCardOrder({
           finishDrag();
         },
         onLostPointerCapture: event => {
+          if (drag.current?.pointerId === event.pointerId) finishDrag(true);
+        },
+        onPointerCancel: event => {
           if (drag.current?.pointerId === event.pointerId) finishDrag(true);
         },
       };
@@ -318,16 +333,15 @@ export default function PaymentCardOrder({
         <Text style={[s.heading, s.flexOne]}>
           내 카드 · {cards.length}장
         </Text>
-        {/* 켜짐 = AI 추천 순서로 자동 배치 중, 꺼짐 = 내가 정한 순서. 누를 때마다 켜고 끈다 */}
-        {homeMode && <TouchableOpacity accessibilityRole="switch" accessibilityLabel={autoOn ? '자동 배치 적용 해제' : '자동 배치 적용'}
-          accessibilityState={{ checked: Boolean(autoOn) }}
-          onPress={() => onAutoChange?.(!autoOn)} style={[s.autoPill, autoOn ? s.autoPillOn : s.autoPillOff]}>
-          <Text style={autoOn ? s.autoPillOnText : s.autoPillOffText}>자동 배치 적용</Text>
+        {homeMode && <TouchableOpacity accessibilityRole="button" disabled={draggedId !== null}
+          accessibilityState={{ expanded: editing }}
+          onPress={() => setEditing(value => !value)} style={[s.editModeButton, editing && s.editModeButtonActive]}>
+          <Text style={[s.editModeText, editing && s.editModeTextActive]}>{editing ? '완료' : '수정'}</Text>
         </TouchableOpacity>}
       </View>
 
       <Text style={s.hint}>
-        카드를 눌러 선택하고, ☰를 끌어 순서를 바꿔요.
+        {showHandles ? '오른쪽 손잡이(☰)를 끌어 카드 순서를 바꿔요.' : '카드를 누르면 결제 카드로 선택돼요.'}
       </Text>
 
       {!homeMode && usingAi && <Text style={s.link}>
@@ -348,7 +362,7 @@ export default function PaymentCardOrder({
 
       {visibleCards.map((card, index) => {
         const row = rowFor(card.id);
-        // 결제 화면(syncSelection=false)은 순서와 결제 카드가 따로라서, 실제로 고른 카드에 표시합니다.
+        // 결제 화면에서는 일정을 통해 선택한 카드도 표시합니다. 목록을 직접 재정렬하면 맨 위 카드가 선택됩니다.
         const selected = syncSelection ? index === 0 : card.id === selectedId;
         return <Animated.View key={card.id}
             onLayout={event => { row.height = event.nativeEvent.layout.height; }}
@@ -365,13 +379,13 @@ export default function PaymentCardOrder({
               </View>
             </TouchableOpacity>
 
-              <View {...handleFor(card.id, index)} accessibilityRole="adjustable" accessibilityLabel={card.name + ' 순서 이동 손잡이'}
+              {showHandles && <View {...handleFor(card.id, index)} accessibilityRole="adjustable" accessibilityLabel={card.name + ' 순서 이동 손잡이'}
                 accessibilityValue={{ min: 1, max: visibleCards.length, now: index + 1 }}
                 accessibilityActions={[{ name: 'decrement' }, { name: 'increment' }]}
                 onAccessibilityAction={event => moveWithArrow(index, event.nativeEvent.actionName === 'decrement' ? -1 : 1)}
                 style={[s.handle, draggedId === card.id && s.grabbing]}>
                 <Text style={s.handleText}>☰</Text>
-              </View>
+              </View>}
           </Animated.View>;
       })}
 
@@ -388,7 +402,7 @@ export default function PaymentCardOrder({
         <View style={s.dialogBackdrop}>
           <View style={s.dialog} accessibilityViewIsModal>
             <Text accessibilityRole="header" style={s.dialogTitle}>정말로 카드 순서를 바꾸시겠습니까?</Text>
-            <Text style={s.dialogText}>바꾸면 AI 자동 배치가 꺼지고 정한 순서대로 써요. '자동 배치 적용'으로 언제든 되돌릴 수 있어요.</Text>
+            <Text style={s.dialogText}>순서를 바꾸면 AI 자동 배치가 꺼져요. 카드 추천 위의 자동 배치 스위치에서 다시 켤 수 있어요.</Text>
             <View style={s.dialogActions}>
               <TouchableOpacity accessibilityRole="button" onPress={() => setPendingMove(null)} style={[s.dialogButton, s.dialogCancel]}>
                 <Text style={s.dialogCancelText}>취소</Text>
@@ -418,11 +432,10 @@ function shiftForDrop({ rows, from, to }, index) {
 const s = StyleSheet.create({
   headRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   flexOne: { flex: 1, minWidth: 0 },
-  autoPill: { minHeight: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center', borderWidth: 1 },
-  autoPillOn: { backgroundColor: '#245DE5', borderColor: '#245DE5' },
-  autoPillOff: { backgroundColor: '#FFFFFF', borderColor: '#C9D3E3' },
-  autoPillOnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
-  autoPillOffText: { color: '#62738D', fontSize: 12, fontWeight: '800' },
+  editModeButton: { minWidth: 64, minHeight: 36, paddingHorizontal: 12, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EDF3FF' },
+  editModeButtonActive: { backgroundColor: '#245DE5' },
+  editModeText: { color: '#245DE5', fontSize: 13, fontWeight: '700' },
+  editModeTextActive: { color: '#FFFFFF' },
   dialogBackdrop: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: 'rgba(12, 22, 44, 0.45)' },
   dialog: { width: '100%', maxWidth: 360, gap: 12, padding: 20, borderRadius: 20, backgroundColor: '#FFFFFF' },
   dialogTitle: { color: '#142D4E', fontSize: 17, fontWeight: '800' },

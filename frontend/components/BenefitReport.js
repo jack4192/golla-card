@@ -1,6 +1,12 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+
+export const benefitFontFamily = Platform.select({
+  web: '"Pretendard", "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif',
+  ios: 'System',
+  android: 'sans-serif',
+});
 
 export default function BenefitReport({offers, date}) {
   const active = offers.filter(offer => offer.start <= date && offer.end >= date).length;
@@ -18,9 +24,9 @@ export default function BenefitReport({offers, date}) {
 const s=StyleSheet.create({
   report:{gap:14},
   hero:{backgroundColor:'#EAF2FF',borderRadius:24,padding:20,flexDirection:'row',alignItems:'center',gap:12},
-  heading:{fontSize:17,fontWeight:'800',color:'#142747'},
-  total:{fontSize:49,letterSpacing:-2,lineHeight:60,fontWeight:'800',color:'#114FD7'},
-  unit:{fontSize:24,letterSpacing:0},
-  caption:{fontSize:12,lineHeight:18,color:'#536784'},
+  heading:{fontFamily:benefitFontFamily,fontSize:16,lineHeight:24,fontWeight:'600',color:'#142747'},
+  total:{fontFamily:benefitFontFamily,fontSize:46,letterSpacing:-1,lineHeight:58,fontWeight:'700',fontVariant:['tabular-nums'],color:'#114FD7'},
+  unit:{fontSize:21,fontWeight:'500',letterSpacing:0},
+  caption:{fontFamily:benefitFontFamily,fontSize:12,lineHeight:18,color:'#536784'},
   symbol:{width:62,height:62,borderRadius:20,backgroundColor:'#FFFFFF',alignItems:'center',justifyContent:'center'},
 });
