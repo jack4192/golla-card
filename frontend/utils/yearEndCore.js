@@ -76,6 +76,18 @@ export function missedUsageTip(card) {
     : '평소 자주 결제하는 곳에서 받을 수 있는 혜택을 확인해 보세요!';
 }
 
+// 놓친 혜택을 계산한 기간 (2026-11-24 수정사항: 언제부터 그 카드였다면인지 밝힌다).
+// AI 가 준 from·until 이 있으면 '1월 1일부터 11월 24일까지', 없으면(옛 AI 서버) 개월 수로.
+export function missedPeriod(item) {
+  if (item?.from && item?.until) return `${monthDay(item.from)}부터 ${monthDay(item.until)}까지`;
+  return item?.months ? `올해 1월부터 ${item.months}개월 동안` : '올해';
+}
+
+// '1월 1일부터 11월 24일까지 추천 카드를 사용했다면 103,666원을 아꼈어요. 카페에 자주 가신다면 …'
+export function missedMessage(item, card) {
+  return `${missedPeriod(item)} 추천 카드를 사용했다면 ${won(item?.gain)}을 아꼈어요. ${missedUsageTip(card)}`;
+}
+
 // AI 응답 → 화면 상태. 배열이 아니면(오류 JSON 등) 실패.
 export function missedView(result) {
   if (!Array.isArray(result)) return { state: 'error', items: [] };

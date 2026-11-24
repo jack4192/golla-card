@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { barRatios, findCatalogCard, missedTags, missedView, monthLabel, peakLine, periodLine, splitLine, topCards, won } from '../yearEndCore.js';
+import { barRatios, findCatalogCard, missedMessage, missedPeriod, missedTags, missedView, monthLabel, peakLine, periodLine, splitLine, topCards, won } from '../yearEndCore.js';
 
 const summary = { year: 2026, from: '2026-01-01', until: '2026-11-23T14:05:00', count: 1633, benefit: 533440, promotion: 7000, total: 540440 };
 const months = [{ month: '2026-05', total: 60140 }, { month: '2026-06', total: 64110 }, { month: '2026-07', total: 64110 }];
@@ -57,4 +57,17 @@ test('findCatalogCardMissing', () => {
   assert.equal(findCatalogCard(catalog, ' 신한카드 Discount Plan ').code, 'SH_DISCOUNT_PLAN');
   assert.equal(findCatalogCard(catalog, '없는 카드'), null);
   assert.equal(findCatalogCard(catalog, undefined), null);
+});
+
+// 2026-11-24 수정사항: '추천 카드를 사용했다면 …'에 언제부터 언제까지인지 밝힌다
+test('missedPeriodFromAndUntil', () => {
+  assert.equal(missedPeriod({ from: '2026-01-01', until: '2026-11-24', months: 11 }), '1월 1일부터 11월 24일까지');
+  assert.equal(missedPeriod({ months: 11 }), '올해 1월부터 11개월 동안');                 // 기간을 주지 않는 옛 AI 서버
+  assert.equal(missedPeriod({}), '올해');
+});
+
+test('missedMessageNamesPeriod', () => {
+  const item = { gain: 103666, from: '2026-01-01', until: '2026-11-24', months: 11 };
+  assert.equal(missedMessage(item, { tags: ['카페'] }),
+    '1월 1일부터 11월 24일까지 추천 카드를 사용했다면 103,666원을 아꼈어요. 카페에 자주 가신다면 이 카드를 활용해 보세요!');
 });
