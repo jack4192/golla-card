@@ -1,7 +1,7 @@
 """1년 가상 데이터를 최종 DB 형식(카드서비스_DB)으로 내보낸다 (2026-11-16 결정).
 
 실행: uv run python -m generate.export_db [원본 DB 폴더] [결과 폴더]
-기본: ../카드서비스_DB → ../카드서비스_DB_1년
+기본: ../카드서비스_DB → ../카드서비스_DB_1년 (SOLPAY_DATA_VERSION=v2 이면 ../카드서비스_DB_1년_v2, 2026-11-22)
 
 - 카드·혜택·업종·가맹점·단말기 표는 원본 그대로 쓴다. 가맹점과 단말기에는 '동네 기타'(OTHER) 1곳만 더한다.
 - 프로모션 표는 원본 5건을 지우고 SOL 페이 혜택 정보 29건을 넣는다 (2026-11-18 결정, generate.promotions).
@@ -29,7 +29,7 @@ import pandas as pd
 
 from .benefit import CardMonth, apply, evaluate, pay_method
 from .card_db import load_cards
-from .common import DATA_DIR, OUT_DIR, load_config
+from .common import DATA_DIR, OUT_DIR, VERSION, load_config
 from .promotions import best_promotion, db_frame, final_promotions, index_by_merchant
 
 HMAC_SECRET = b"demo-hmac-secret-change-me"   # 원본 테스트 가이드의 테스트용 비밀키
@@ -47,7 +47,10 @@ DEMO_PROFILE = {
     4: {"birth_date": "2000-01-30", "workplace_name": "가산디지털단지 직장인"},
     5: {"birth_date": "1991-05-05", "workplace_name": "재택근무"},
 }
-AGE = {"20s": (20, 29), "30s": (30, 39), "40s": (40, 49), "50s": (50, 59)}
+AGE = {"20s": (20, 29), "30s": (30, 39), "40s": (40, 49), "50s": (50, 59),
+       "60s": (60, 64)}   # v2: 60대는 60~64세 (지하철 무임승차 없음)
+# v2 새 직업의 직장명 (회사 동네 이름 뒤에 붙인다). 전업주부·은퇴자는 직장 없음
+WORKPLACE_SUFFIX = {"SELFEMP": "자영업", "SHIFT": "교대근무", "FIELD": "영업직"}
 SURNAMES = list("김이박최정강조윤장임한오서신권황안송류홍")
 GIVEN = ["민준", "서연", "지호", "하은", "도윤", "수아", "예준", "지유", "시우", "서윤", "주원", "하린", "지훈", "채원",
          "현우", "지민", "건우", "다은", "우진", "수빈", "선우", "예린", "민재", "소율", "윤호", "가은", "정우", "나연",
@@ -62,7 +65,20 @@ def copy_original(src: Path, dst: Path, names: list[str]) -> None:
         shutil.copyfile(src / f"{name}.csv", dst / f"{name}.csv")
 
 
+def default_dst(version: str = VERSION) -> Path:
+    """결과 폴더: v1 은 카드서비스_DB_1년, v2 는 카드서비스_DB_1년_v2 (2026-11-22)."""
+    root = DATA_DIR.parent
+    return root / ("카드서비스_DB_1년" if version == "v1" else f"카드서비스_DB_1년_{version}")
+
+
+def check_dst(dst: Path, version: str = VERSION) -> None:
+    """v2 결과가 v1 폴더를 덮어쓰지 않게 막는다."""
+    if version != "v1" and Path(dst).resolve() == default_dst("v1").resolve():
+        raise SystemExit(f"v1 폴더에 {version} 를 쓰지 않습니다: {dst}")
+
+
 def main(src: Path, dst: Path) -> None:
+    check_dst(dst)
     rng = np.random.default_rng(SEED)
     pq = OUT_DIR / "parquet"
     users = pd.read_parquet(pq / "users.parquet")
@@ -134,6 +150,8 @@ def _users(db_users: pd.DataFrame, users: pd.DataFrame, user_map: dict, rng) -> 
             work = "대학생"
         elif r.persona_code == "REMOTE":
             work = "재택근무"
+        elif r.persona_code in WORKPLACE_SUFFIX and isinstance(r.work_zone, str):
+            work = f"{zone[r.work_zone]} {WORKPLACE_SUFFIX[r.persona_code]}"
         elif isinstance(r.work_zone, str):
             work = f"{zone[r.work_zone]} 직장인"
         else:
@@ -162,13 +180,14 @@ def _users(db_users: pd.DataFrame, users: pd.DataFrame, user_map: dict, rng) -> 
 
 
 def _user_cards(db_uc: pd.DataFrame, ucards: pd.DataFrame, user_map: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """데모 카드 15장은 원본 행(끝 4자리·목표 구간)을 그대로, 배경 카드는 목표 구간 미설정."""
-    demo = db_uc.set_index("user_card_id")
+    """데모 카드 중 원본 test 계정에 같은 카드가 있으면 원본 행(끝 4자리·목표 구간)을 그대로, 그 밖은 생성 값·목표 구간 미설정.
+    원본 행은 (사용자, 카드)로 찾는다 (v2 는 데모 카드가 바뀌어 카드 번호가 원본과 다르다, 2026-11-22)."""
+    demo_ids = {u for u, db in user_map.items() if u == db and u <= 5}
+    demo = {(int(d.user_id), int(d.card_id)): d for d in db_uc.itertuples(index=False)}
     rows = []
     for r in ucards.sort_values("user_card_id").itertuples():
-        if r.user_card_id in demo.index:
-            d = demo.loc[r.user_card_id]
-            assert int(d.card_id) == int(r.card_id) and int(d.user_id) == user_map[int(r.user_id)], r
+        d = demo.get((user_map[int(r.user_id)], int(r.card_id))) if int(r.user_id) in demo_ids else None
+        if d is not None:
             rows.append({"user_card_id": r.user_card_id, "user_id": int(d.user_id), "card_id": int(d.card_id),
                          "card_last4": f"{int(d.card_last4):04d}", "target_tier_id": d.target_tier_id})
         else:
@@ -328,5 +347,5 @@ def _codes(payments, details, merchants, terminals, near, rng) -> tuple[pd.DataF
 if __name__ == "__main__":
     root = DATA_DIR.parent
     src = Path(sys.argv[1]) if len(sys.argv) > 1 else root / "카드서비스_DB"
-    dst = Path(sys.argv[2]) if len(sys.argv) > 2 else root / "카드서비스_DB_1년"
+    dst = Path(sys.argv[2]) if len(sys.argv) > 2 else default_dst()
     main(src, dst)

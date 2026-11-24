@@ -6,6 +6,7 @@ __pycache__/
 
 # 생성 결과물은 다시 만들 수 있으므로 깃에 올리지 않음
 data/out/
+data/out_*/
 
 # 비밀 값
 .env

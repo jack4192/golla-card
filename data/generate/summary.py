@@ -37,6 +37,25 @@ def main() -> None:
         "주 카드 지출 비중": top_share,
     }).round(2).to_string())
 
+    if users.age_band.nunique() > 4:
+        # v2 (2026-11-22): 직업×나이대 칸. 같은 직업 안 나이대 차이를 본다
+        bg = pay[pay.user_id >= 1000]
+        merch = pd.read_parquet(p / "merchants.parquet")[["merchant_id", "kind"]]
+        bg = bg.merge(users[["user_id", "age_band"]], on="user_id").merge(merch, on="merchant_id", how="left")
+        per_user = bg.groupby(["persona_code", "age_band", "user_id"]).amount.sum() / months / 10000
+        reg = bg[bg.channel != "auto_debit"]
+        cell = reg.groupby(["persona_code", "age_band"])
+        print("\n== 직업×나이대 (배경 사용자)")
+        print(pd.DataFrame({
+            "인원": per_user.groupby(["persona_code", "age_band"]).size(),
+            "월 지출 중앙(만원)": per_user.groupby(["persona_code", "age_band"]).median(),
+            "병원%": cell.kind.apply(lambda k: (k == "MEDICAL").mean() * 100),
+            "배달%": cell.kind.apply(lambda k: (k == "DELIVERY").mean() * 100),
+            "편의점%": cell.kind.apply(lambda k: (k == "CVS").mean() * 100),
+            "마트·슈퍼%": cell.kind.apply(lambda k: k.isin(["MART", "SUPER"]).mean() * 100),
+            "현장 건당 중앙(원)": reg[reg.channel == "offline_qr"].groupby(["persona_code", "age_band"]).amount.median(),
+        }).round(1).to_string())
+
     print("\n== 업종 비중 (건수 %, 금액 %)")
     cat = pd.DataFrame({
         "건수%": pay.category_code.value_counts(normalize=True) * 100,
