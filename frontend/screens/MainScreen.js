@@ -924,7 +924,7 @@ export default function MainScreen({
       {Platform.OS === 'web' && <View style={styles.devClearance} />}
 
       <YearEndReport visible={yearEndOpen} onClose={() => setYearEndOpen(false)} />
-      <QuickPaySheet visible={!!paySheet} cards={walletCards} cardId={currentCard?.id} context={paySheet}
+      <QuickPaySheet visible={!!paySheet} cards={walletCards} cardId={currentCard?.id} context={paySheet} autoOn={auto.on}
         onSelectCard={onSelectCard} onClose={() => setPaySheet(null)} onOpenDetails={openFullPayment}
         onPaid={refreshAi} />
       <NotificationCenter visible={notificationsOpen} items={inbox} onClose={() => setNotificationsOpen(false)} onOpenTarget={openNotificationTarget} />
