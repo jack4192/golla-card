@@ -342,8 +342,9 @@ def test_대신_보여준_카드_기록(page_svc):
     assert page["tabs"] == ["card"] and page_svc.store.recommended[-1]["trigger"] == FALLBACK
 
 
-def test_추천_페이지_API(page_svc):
+def test_추천_페이지_API(page_svc, monkeypatch):
     from tests.test_page_copy import GOOD, FakeClient
+    monkeypatch.setenv("SOLPAY_PAGE_COPY_LLM", "1")              # 2026-11-24: OpenAI 문구는 이 설정이 있을 때만
     _save_coffee(page_svc)
     with TestClient(create_app(page_svc, chat_client=FakeClient([json.dumps(GOOD, ensure_ascii=False)]))) as c:
         r = c.post("/internal/users/1/recommendation-page", json={"at": NOW.isoformat()})
@@ -528,7 +529,8 @@ def test_실제_데이터에서_1년_금액은_연말정산_화면과_같다():
         rows = [p for p in context.payments if when - timedelta(days=365) <= p.paid_at < when]
         yearly = {m["card_id"]: m for m in missed_benefit(svc.build_state(context, when), rows,
                                                          svc.engine.params.switch_threshold)}
-        assert card["keyword"] and card["yearly_gain"] > 0 and card["gain"] > 0
+        # 관련 업종 카드는 보유 카드보다 더 주지 않아도 추천한다 (2026-11-24 사용자 결정)
+        assert card["keyword"] and card["yearly_gain"] > 0 and (card["gain"] > 0 or card["related"])
         assert (card["yearly_gain"], card["yearly_months"]) == (yearly[card["card_id"]]["gain"], yearly[card["card_id"]]["months"])
     assert shown >= 4
 
@@ -585,3 +587,180 @@ def test_대표_항목은_일정_업종_혜택이_먼저다():
     card = build_page(state_of(payments=year_payments(), catalog=cat), year_payments(), TWO_ITEMS, [], [], NOW,
                       Params()).to_dict(cat, Params())["card"]
     assert (card["keyword"], card["keywords"]) == ("STAR 10% 할인", ["STAR 10% 할인", "모든 가맹점 5% 할인"])
+
+
+# ---------- 관련 업종 카드 먼저 (2026-11-24 사용자 결정 "금액은 신경쓰지 말고 관련 업종이면 그 카드로 추천") ----------
+CGV_M = 90
+
+
+def movie_catalog(with_movie_card=True) -> Catalog:
+    """보유 11(KB): 영화 10%(CGV·LOTTE). 후보 10: CGV 영화 예매 5천 원(1만 2천 원 이상 결제), 연회비 15,000원.
+    후보 12: 모든 가맹점 1.5% (연회비 없음)."""
+    cards = {
+        11: Card(11, "KB_MOVIE", "KB", "KB 영화", "credit", (), 0, {},
+                 (Benefit(111, "MOVIE", "discount", rate=0.10, brands=frozenset({"CGV", "LOTTE"}), name="영화 10% 할인"),)),
+        12: Card(12, "NEW_ALL15", "SHINHAN", "새 1.5% 카드", "credit", (), 0, {},
+                 (Benefit(121, "*", "discount", rate=0.015, name="국내 1.5% 할인"),)),
+    }
+    if with_movie_card:
+        cards[10] = Card(10, "NEW_MOVIE", "SHINHAN", "새 영화 카드", "credit", (), 15_000, {},
+                         (Benefit(101, "MOVIE", "discount", amount=5_000, min_amount=12_000, brands=frozenset({"CGV"}),
+                                  name="영화 예매 5천원 할인"),))
+    merchants = {CGV_M: Merchant(CGV_M, "CGV 강남", "MOVIE", brand="CGV", brand_code="CGV")}
+    return Catalog(cards, merchants, {"MOVIE": "영화"})
+
+
+KB_MOVIE = [UserCard(301, 11, "KB", 1)]
+MOVIE_10500 = ScheduleItem(1, 1, at(10, 7, 12), at(10, 7, 13), "MOVIE", 10_500)
+
+
+def test_관련_업종_카드는_금액_조건과_보유_카드에_상관없이_추천한다():
+    pick = pick_card(state_of(KB_MOVIE, catalog=movie_catalog()), [], [MOVIE_10500], [], NOW, TODAY)
+    top = pick.items[0]
+    assert (pick.card_id, pick.related) == (10, True)
+    # 10,500원은 조건(1만 2천 원)에 못 미치지만 조건 금액으로 계산한다. 보유 KB 가 같은 금액에서 1,200원을 줘도 추천한다
+    assert (top.brand, top.amount, top.at_least, top.value, top.owned_value, top.specific) == ("CGV", 12_000, True, 5_000, 1_200, True)
+
+
+def test_관련_카드가_없으면_보유_카드가_후보_브랜드에서_더_주는_일반_카드는_뺀다():
+    state = state_of(KB_MOVIE, catalog=movie_catalog(with_movie_card=False))
+    assert pick_card(state, [], [MOVIE_10500], [], NOW, TODAY) is None      # CGV 에서는 보유 KB 10%(1,050원)가 1.5%보다 많다
+    old = pick_card(state, [], [MOVIE_10500], [], NOW, replace(TODAY, page_related_first=False))
+    assert (old.card_id, old.items[0].brand, old.related) == (12, None, False)   # 예전: 브랜드 없음으로 비교해 보유 혜택을 0원으로 봤다
+
+
+def test_직접_넣은_브랜드에_혜택이_없으면_관련_카드가_아니다():
+    mega = ScheduleItem(1, 1, at(10, 7, 12), at(10, 7, 13), "MOVIE", 10_500, brand="MEGABOX")
+    pick = pick_card(state_of(KB_MOVIE, catalog=movie_catalog()), [], [mega], [], NOW, TODAY)
+    assert (pick.card_id, pick.related) == (12, False)       # 메가박스엔 새 영화 카드 혜택이 없다 (보유 KB 도 0원이라 일반 카드)
+
+
+def test_관련_카드도_1년_손해면_뺀다(monkeypatch):
+    import engine.page as page_module
+    state = state_of(KB_MOVIE, catalog=movie_catalog())
+    year = lambda gain10: (lambda st, pays, ids, when, prm: {i: {"gain": gain10 if i == 10 else 500, "months": 11,
+                                                               "basis": "add", "replaces": None} for i in ids})
+    monkeypatch.setattr(page_module, "yearly_gains", year(-1))
+    assert pick_card(state, [], [MOVIE_10500], [], NOW, Params()) is None   # 일반 카드 12 는 보유 KB 가 CGV 에서 더 줘 후보가 아니다
+    monkeypatch.setattr(page_module, "yearly_gains", year(700))
+    pick = pick_card(state, [], [MOVIE_10500], [], NOW, Params())
+    assert (pick.card_id, pick.yearly_gain) == (10, 700)
+
+
+def test_추천_페이지_문구는_기본이_정해진_틀이다(page_svc, monkeypatch):
+    """2026-11-24 사용자 결정: OpenAI 문장 쓰기(2.8~3초)가 느려 기본은 정해진 틀. OpenAI 키가 있어도 부르지 않는다."""
+    from tests.test_page_copy import GOOD, FakeClient
+    monkeypatch.delenv("SOLPAY_PAGE_COPY_LLM", raising=False)
+    _save_coffee(page_svc)
+    client = FakeClient([json.dumps(GOOD, ensure_ascii=False)])
+    with TestClient(create_app(page_svc, chat_client=client)) as c:
+        body = c.post("/internal/users/1/recommendation-page", json={"at": NOW.isoformat()}).json()
+    assert body["copy_source"] == "template" and client.requests == []
+
+
+# ---------- 무작위 행사 1건 (2026-11-24 사용자 결정: 일정과 맞는 행사가 없으면 받을 수 있는 행사 1건, 같은 날 같은 행사) ----------
+from datetime import date as _date
+
+FUEL_ITEM = ScheduleItem(1, 1, at(10, 7, 19), at(10, 7, 20), "FUEL", 50_000)
+
+
+def two_promos():
+    star = Promotion(2, "스타벅스", *OCT, frozenset({STAR}), issuer="SHINHAN", rate=0.10, max_amount=2_000, kind="myshop",
+                     title="스타벅스 마이샵 10%")
+    return PROMOS + [star]
+
+
+def test_맞는_행사가_없으면_받을_수_있는_행사_1건을_무작위로():
+    page = build_page(state_of(), habit_payments(), [FUEL_ITEM], [], PROMOS, NOW, TODAY)
+    (offer,) = page.offers
+    assert (offer.promotion_id, offer.related, offer.item_id, offer.benefit_text, offer.until, offer.card_id) == (
+        1, False, 0, "500원", _date(2026, 10, 31), 1)
+    d = page.to_dict(page_catalog(), TODAY)["merchant"]["offers"][0]
+    assert (d["related"], d["window_from"], d["window_to"], d["until"], d["benefit_text"]) == (False, None, None, "2026-10-31", "500원")
+    assert page.tabs == ["card", "merchant"]
+
+
+def test_무작위_행사는_같은_날_같은_행사():
+    same_day = {build_page(state_of(), [], [], [], two_promos(), NOW + timedelta(hours=h), TODAY).offers[0].promotion_id
+                for h in (0, 1, 5)}
+    assert len(same_day) == 1
+    days = {build_page(state_of(), [], [], [], two_promos(), NOW + timedelta(days=d), TODAY).offers[0].promotion_id
+            for d in range(10)}
+    assert days == {1, 2}                                       # 날마다 바뀔 수 있다
+    star = build_page(state_of(), [], [], [], two_promos()[1:], NOW, TODAY).offers[0]
+    assert (star.benefit_text, star.kind) == ("10%(최대 2,000원)", "myshop")
+
+
+def test_무작위_행사는_받을_수_없거나_확인이_필요한_행사를_뺀다():
+    kb_only = Promotion(3, "메가MGC커피", *OCT, frozenset({MEGA}), issuer="KB", amount=500, title="KB 전용")
+    check = Promotion(4, "메가MGC커피", *OCT, frozenset({MEGA}), issuer="SHINHAN", amount=500, needs_check=True, title="응모")
+    ended = Promotion(5, "메가MGC커피", OCT[0], datetime(2026, 10, 5, tzinfo=KST), frozenset({MEGA}), issuer="SHINHAN", amount=500)
+    unknown = Promotion(6, "어딘가", *OCT, frozenset({999}), issuer="SHINHAN", amount=500)
+    page = build_page(state_of(), [], [], [], [kb_only, check, ended, unknown], NOW, TODAY)
+    assert page.offers == () and page.tabs == []
+    off = build_page(state_of(), [], [], [], PROMOS, NOW, replace(TODAY, page_random_promotions=0))
+    assert off.offers == ()
+
+
+def test_일정_행사가_있으면_무작위를_섞지_않는다():
+    page = build_page(state_of(), habit_payments(), [coffee()], [], two_promos(), NOW, TODAY)
+    assert page.offers and all(o.related and o.item_id == 1 for o in page.offers)
+
+
+def test_카드날_규칙에서_행사가_없으면_카드는_그대로():
+    three_days = replace(TODAY, page_card_every_time=False)
+    yesterday_cafe = [{"at": NOW - timedelta(days=1), "card_id": 9, "trigger": CYCLE}]   # 카드날 아님, 주유 카드 8 은 막히지 않음
+    page = build_page(state_of(), habit_payments(), [FUEL_ITEM], yesterday_cafe, PROMOS, NOW, three_days)
+    assert page.card is not None and page.trigger == FALLBACK and [o.related for o in page.offers] == [False]
+
+
+def test_무작위_행사_문구는_정해진_틀():
+    from engine.chat.page_copy import facts_of, template_copy
+    d = build_page(state_of(), habit_payments(), [FUEL_ITEM], [], PROMOS, NOW, TODAY).to_dict(page_catalog(), TODAY)
+    m = template_copy(facts_of(d))["merchant"]
+    assert (m["title"], m["summary"]) == ("오늘 진행 중인 행사예요", "오늘 일정에 맞는 행사가 없어 지금 진행 중인 메가MGC커피 행사를 보여드려요.")
+    assert m["offers"] == [{"amount_label": "이벤트 500원", "reasons": ["메가커피 500원 할인", "10월 31일까지 · Discount Plan+로 결제"]}]
+
+
+def _save_fuel(svc):
+    svc.put_schedule(1, date(2026, 10, 7), [{"start": time(19), "end": time(20), "category": "FUEL", "amount": 50_000}], NOW)
+
+
+def test_무작위_행사는_결제_화면에_쓰지_않는다(page_svc):
+    _save_fuel(page_svc)
+    page = page_svc.recommendation_page(1, NOW)
+    assert page["merchant"]["offers"][0]["related"] is False and (1, date(2026, 10, 7)) not in page_svc.popups
+    assert page["merchant"]["copy"]["title"] == "오늘 진행 중인 행사예요"
+
+
+def test_OpenAI_를_켜도_무작위_행사_문구는_정해진_틀(page_svc):
+    from engine.chat.page_copy import CopySettings, PageCopyWriter
+    from tests.test_page_copy import FakeClient
+    _save_fuel(page_svc)
+    client = FakeClient(["{}", "{}", "{}"])
+    page = page_svc.recommendation_page(1, NOW, PageCopyWriter(client, CopySettings()))
+    assert '"merchant": null' in client.requests[0]["messages"][1]["content"]       # OpenAI 에 보낸 사실에 행사가 없다
+    assert page["merchant"]["copy"]["title"] == "오늘 진행 중인 행사예요"
+    assert page["merchant"]["offers"][0]["copy"]["amount_label"] == "이벤트 500원"
+
+
+def test_무작위_행사는_최소_결제_금액을_밝힌다():
+    """최종 검토: 받을 수 있는지는 최소 결제 금액으로 보니, 그 조건을 문구와 응답(min_amount)에 함께 준다."""
+    from engine.chat.page_copy import facts_of, template_copy
+    promo = Promotion(7, "메가MGC커피", *OCT, frozenset({MEGA}), issuer="SHINHAN", amount=3_000, min_amount=20_000,
+                      kind="myshop", title="마이샵 혜택")
+    page = build_page(state_of(), habit_payments(), [FUEL_ITEM], [], [promo], NOW, TODAY)
+    (offer,) = page.offers
+    assert (offer.min_amount, offer.amount) == (20_000, 20_000)
+    d = page.to_dict(page_catalog(), TODAY)
+    assert d["merchant"]["offers"][0]["min_amount"] == 20_000
+    m = template_copy(facts_of(d))["merchant"]
+    assert m["offers"][0]["reasons"] == ["마이샵 혜택", "20,000원 이상 결제 시", "10월 31일까지 · Discount Plan+로 결제"]
+
+
+def test_일정_없이_건너뛰면_무작위_행사_문구는_평소_소비로_말한다():
+    from engine.chat.page_copy import facts_of, template_copy
+    d = build_page(state_of(), [], [], [], PROMOS, NOW, TODAY).to_dict(page_catalog(), TODAY)
+    assert d["source"] == "pattern"
+    m = template_copy(facts_of(d))["merchant"]
+    assert m["summary"] == "평소 결제에 맞는 행사가 없어 지금 진행 중인 메가MGC커피 행사를 보여드려요."
