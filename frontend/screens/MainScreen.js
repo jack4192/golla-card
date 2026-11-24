@@ -555,14 +555,13 @@ export default function MainScreen({
     const history = toChatHistory(chatMessages);
     setChatBusy(true);
     setChatMessages(items => [...items, { id: 'q' + id, role: 'user', text: q }, { id, role: 'bot', pending: true, text: '답변을 준비하고 있어요…' }]);
-    // blocks: 답 아래 표를 앱이 그린다, detail_button: '자세히' 버튼이 있어 안내 문장이 필요 없다 (2026-11-24)
-    api.aiChat({ message: q, history, screen: { name: tab, blocks: true, detail_button: true } })
+    api.aiChat({ message: q, history, screen: { name: tab, blocks: true } })   // blocks: 답 아래 표를 앱이 그린다 (2026-11-24)
       .then(data => {
         if (!data?.reply) return { text: localAnswer(q), offline: true };
         const draft = data.rule_draft?.draft_id != null
           ? { id: data.rule_draft.draft_id, summary: data.rule_draft.summary || '', state: 'pending' }
           : null;
-        return { text: data.reply, draft, blocks: data.blocks, canDetail: !!data.log?.tools?.length && !data.log?.detail };
+        return { text: data.reply, draft, blocks: data.blocks };
       })
       .catch(() => ({ text: localAnswer(q), offline: true }))
       .then(answer => {
@@ -1089,10 +1088,6 @@ export default function MainScreen({
                       onAddSchedule={addScheduleFromChat}
                       onDeleteRules={deleteRulesFromChat}
                     />}
-                  {!!item.canDetail && !chatBusy && <TouchableOpacity accessibilityRole="button" accessibilityLabel="더 자세히 설명 듣기"
-                      style={[styles.quickButton, styles.chatDetailButton]} onPress={() => askBot('자세히')}>
-                      <Text style={styles.quickButtonText}>자세히</Text>
-                    </TouchableOpacity>}
                   {!!item.offline && <Text style={styles.chatNote}>AI 챗봇에 연결하지 못해 기본 안내로 답했어요.</Text>}
                   {!!item.draft && <View style={styles.chatDraft}>
                       {!!item.draft.summary && <Text style={styles.chatBubbleText}>{item.draft.summary}</Text>}
@@ -2019,10 +2014,6 @@ const styles = StyleSheet.create({
   },
   chatBubbleWide: {     // 답 아래 표가 있으면 표가 좁아지지 않게 (2026-11-24)
     width: '88%'
-  },
-  chatDetailButton: {   // 말풍선 아래 '자세히' 버튼 (2026-11-24 3단계)
-    alignSelf: 'flex-start',
-    marginTop: 8
   },
   chatNote: {
     marginTop: 6,
