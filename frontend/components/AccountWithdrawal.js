@@ -1,8 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { reloadAppAsync } from 'expo';
 import { deleteDemoData } from '../utils/privacyData';
 import { waitForWalletWrites } from '../utils/wallet';
+import { SERVER_MODE, api } from '../utils/api';
+import { canSubmitWithdrawal, withdrawalCopy } from '../utils/withdrawalCore';
+
+// 서버 모드는 비밀번호를 다시 확인하고 서버에서 바로 완전 삭제한 뒤 이 기기 기록을 지운다 (2026-11-24 사용자 결정)
+const COPY = withdrawalCopy(SERVER_MODE);
 const QUESTIONS = [{
   title: '1. 탈퇴를 결정한 가장 큰 이유는 무엇인가요?',
   options: ['카드 추천이 기대만큼 도움이 되지 않아요', '앱을 자주 사용하지 않아요', '응답하지 않을게요']
@@ -45,6 +50,8 @@ export default function AccountWithdrawal() {
   const lock = useRef(false);
   const mounted = useRef(true);
   const didDelete = useRef(false);
+  const serverDone = useRef(false);   // 서버 계정을 이미 지웠으면 다시 시도할 때 기기 정리만 한다
+  const [password, setPassword] = useState('');
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -63,6 +70,8 @@ export default function AccountWithdrawal() {
     setAttempted(false);
     setDeleted(false);
     didDelete.current = false;
+    serverDone.current = false;
+    setPassword('');
     setOpen(true);
   };
   const submit = async () => {
@@ -70,8 +79,19 @@ export default function AccountWithdrawal() {
     lock.current = true;
     setBusy(true);
     setError('');
-    setAttempted(true);
     try {
+      if (SERVER_MODE && !serverDone.current) {
+        // 서버 단계 실패(비밀번호 틀림·시연용 계정·연결 오류)는 고쳐서 다시 하거나 그만둘 수 있게 attempted 를 켜지 않는다
+        try {
+          await api.withdraw(password);
+        } catch (problem) {
+          if (mounted.current) setError(problem?.message || '탈퇴를 처리하지 못했어요. 다시 시도해주세요.');
+          return;
+        }
+        serverDone.current = true;
+        if (mounted.current) setPassword('');
+      }
+      setAttempted(true);
       if (didDelete.current) {
         await restartApp();
       } else {
@@ -146,7 +166,7 @@ export default function AccountWithdrawal() {
                   </TouchableOpacity>
                 </> : <>
                   <Text style={s.hint}>
-                    {deleted ? '이 기기의 계정 기록을 삭제했어요. 로그인 화면으로 이동합니다.' : '탈퇴하면 이 기기에 저장된 로그인 정보, 동의, 일과·일정, 카드 추천·등록 설정이 삭제됩니다. 삭제한 데이터는 복원할 수 없습니다.'}
+                    {deleted ? COPY.done : COPY.confirm}
                   </Text>
 
                   {!deleted && <Text style={s.hint}>
@@ -154,13 +174,19 @@ export default function AccountWithdrawal() {
                       회원 탈퇴는 아닙니다.
                     </Text>}
 
+                  {COPY.needsPassword && !deleted && !serverDone.current && <TextInput value={password} onChangeText={setPassword}
+                      secureTextEntry autoCapitalize="none" autoCorrect={false} textContentType="password" editable={!busy}
+                      placeholder="비밀번호 입력" placeholderTextColor="#8A97AB" accessibilityLabel="탈퇴 확인 비밀번호"
+                      onSubmitEditing={submit} style={s.password} />}
+
                   {!!error && <Text accessibilityRole="alert" style={s.error}>
                       {error}
                     </Text>}
 
                   {busy && <ActivityIndicator color="#C43D4F" />}
 
-                  <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={submit} style={[s.danger, busy && s.disabled]}>
+                  <TouchableOpacity accessibilityRole="button" disabled={!canSubmitWithdrawal({ serverMode: SERVER_MODE, password, busy, serverDone: serverDone.current || deleted })}
+                    onPress={submit} style={[s.danger, !canSubmitWithdrawal({ serverMode: SERVER_MODE, password, busy, serverDone: serverDone.current || deleted }) && s.disabled]}>
                     <Text style={s.white}>
                       {busy ? '처리 중…' : deleted ? '첫 화면으로 이동' : attempted ? '탈퇴 처리 다시 시도' : '회원 탈퇴 확정'}
                     </Text>
@@ -291,6 +317,16 @@ const s = StyleSheet.create({
   },
   disabled: {
     opacity: 0.4
+  },
+  password: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: '#D5DCE8',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    fontSize: 15,
+    color: '#1B2433',
+    backgroundColor: '#FFFFFF'
   },
   error: {
     color: "#C53D56",
