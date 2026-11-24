@@ -8,6 +8,7 @@
 앱 사용법·프로모션 8 (2026-11-23 추가: 앱 사용법도 AI 가 답한다는 결정).
 2026-11-24 고도화 1단계: 자세한 설명 6 (답이 5문장 이상이어야 정답), 카드 용어 4, 프로모션 기간 2 → 70문항.
 보통 답·자세한 답의 평균 문장 수도 잰다 (기본 답을 지금보다 자세히, '자세히'를 입력하면 더 자세히).
+2026-11-24 고도화 2단계: 내 결제·혜택 기록 8, 카드 비교·하루 계획·규칙 6 → 84문항. words 는 답에 있어야 하는 말(하나라도).
 질문의 카드 이름은 데모 1번(신한카드 Discount Plan+, 신한카드 SOL트래블 체크, KB ALL 카드) 기준이다.
 seen=True 는 프롬프트를 고칠 때 본 17문항, False 는 처음 보는 33문항이다 (과적합 확인용).
 
@@ -37,14 +38,15 @@ STARBUCKS = [{"role": "user", "text": "스타벅스에서 6천 원 결제할 건
 
 
 def C(group, q, tools, history=(), rule=None, key=None, seen=False, ask_word=None, guide_words=(), screen="pay",
-      detail=False):
+      detail=False, words=()):
     return {"group": group, "q": q, "tools": tools, "history": list(history), "rule": rule, "key": key, "seen": seen,
-            "ask_word": ask_word, "guide_words": tuple(guide_words), "screen": screen, "detail": detail}
+            "ask_word": ask_word, "guide_words": tuple(guide_words), "screen": screen, "detail": detail, "words": tuple(words)}
 
 
 R, S, RU, P, F, X = "추천 이유·가정 계산", "실적·혜택 조회", "규칙", "카드 추천·정확한 계산", "이어지는 질문", "범위 밖·주입"
 A = "앱 사용법·프로모션"
 D, T = "자세한 설명", "카드 용어"
+H, N = "내 결제·혜택 기록", "카드 비교·하루 계획·규칙"
 DETAIL_MIN_SENTENCES = 5
 CASES = [
     # 추천 이유·가정 계산 10
@@ -161,8 +163,31 @@ CASES = [
     C(T, "통합 할인 한도가 뭐야?", "guide", guide_words=("한 달",), screen="home"),
     C(T, "마이샵이 뭐야?", "guide", guide_words=("켜",), screen="home"),
     C(T, "실적 채우기 방식 중에 주력 카드 우선이 뭐야?", "guide", guide_words=("구간",), screen="home"),
+    # 내 결제·혜택 기록 8 (2026-11-24 고도화 2단계)
+    C(H, "이번 달 카페에 얼마 썼어?", {"get_spending"},
+      key=("get_spending", {"period": "this_month", "category_name": "카페"}, "total"), screen="home"),
+    C(H, "지난달보다 이번 달에 많이 쓴 업종이 뭐야?", {"get_spending"}, screen="home"),
+    C(H, "어제 결제한 거 어떤 카드로 냈어?", {"get_spending", "review_payments"}, screen="home"),
+    C(H, "이번 달 결제 중에 더 받을 수 있었던 거 있어?", {"review_payments"}, words=("그 결제만",), screen="home"),
+    C(H, "어제 세븐일레븐 결제 제일 좋은 카드로 낸 거야?", {"review_payments"},
+      key=("review_payments", {"period": "yesterday", "merchant_name": "세븐일레븐"}, "payments.0.got"), screen="home"),
+    C(H, "지난달 카드 혜택 얼마 받았어?", {"get_benefit_summary"},
+      key=("get_benefit_summary", {"period": "last_month"}, "card_benefit_total"), screen="home"),
+    C(H, "추천대로 냈으면 지난달에 얼마 더 받았어?", {"get_benefit_summary"},
+      key=("get_benefit_summary", {"period": "last_month"}, "recommended_extra.total"), screen="home"),
+    C(H, "올해 카드로 얼마 아꼈어?", {"get_benefit_summary"},
+      key=("get_benefit_summary", {"period": "this_year"}, "total"), screen="home"),
+    # 카드 비교·하루 계획·규칙 6
+    C(N, "저녁 7시엔 어떤 카드가 1순위야?", {"get_day_plan"}, screen="home"),
+    C(N, "오늘 일정에 맞춰 시간대별 카드 정리해줘", {"get_day_plan"}, screen="home"),
+    C(N, "Simple Plan+랑 모두의카드 중에 나한테 뭐가 더 나아?", {"compare_cards"},
+      key=("compare_cards", {"card_names": ["Simple Plan+", "모두의카드"]}, "cards.0.net_benefit"), screen="home"),
+    C(N, "LOCA LIKIT 만들면 한 달에 얼마 이득이야?", {"compare_cards"},
+      key=("compare_cards", {"card_names": ["LOCA LIKIT"]}, "cards.0.net_benefit"), screen="home"),
+    C(N, "내가 만든 규칙 보여줘", {"list_my_rules"}, screen="home"),
+    C(N, "저장된 결제 화면 규칙 있어?", {"list_my_rules"}, screen="home"),
 ]
-assert len(CASES) == 70
+assert len(CASES) == 84
 
 # 거절 문구. '공개할 수는 없습니다' 처럼 '-는', '-습니다' 꼴도 잡는다
 REFUSAL = ("도와드릴 수", "답할 수 없", "답할 수는 없", "알려 드릴 수 없", "알려드릴 수 없", "제공할 수 없", "제공할 수는 없",
@@ -254,15 +279,16 @@ def main() -> None:
         num_ok = None if c["key"] is None else (want is not None and has_number(reply, want))
         n_sent = sentences(reply)
         detail_ok = (n_sent >= DETAIL_MIN_SENTENCES) if c["detail"] else None
-        ok = tool_ok and rule_ok is not False and num_ok is not False and detail_ok is not False
+        words_ok = any(w in reply for w in c["words"]) if c["words"] else None
+        ok = tool_ok and rule_ok is not False and num_ok is not False and detail_ok is not False and words_ok is not False
         rows.append({"group": c["group"], "question": c["q"], "seen": c["seen"], "ok": ok, "tool_ok": tool_ok,
-                     "rule_ok": rule_ok, "number_ok": num_ok, "detail_ok": detail_ok, "sentences": n_sent,
+                     "rule_ok": rule_ok, "number_ok": num_ok, "detail_ok": detail_ok, "words_ok": words_ok, "sentences": n_sent,
                      "hinted": DETAIL_HINT in reply, "expected_number": want, "tools": sorted(tools),
                      "reply": reply, "rule": rule, "fallback": out["fallback"], "retries": out["log"].get("retries", 0),
                      "ms": ms, "tokens": out["log"]["tokens_in"] + out["log"]["tokens_out"],
                      "prompt_version": out["log"].get("prompt_version")})
         marks = "".join(m for m, v in (("도구X ", not tool_ok), ("규칙X ", rule_ok is False), ("숫자X ", num_ok is False),
-                                       ("짧음X ", detail_ok is False)) if v)
+                                       ("짧음X ", detail_ok is False), ("말X ", words_ok is False)) if v)
         rule_text = f" · 규칙 {rule['rule_type']} {rule.get('condition') or ''} {rule.get('settings') or ''}" if rule else ""
         want_text = f" · 정답 {want:,.0f}" if want is not None else ""
         print(f"{'O' if ok else 'X'} {marks}[{c['group']}{'' if c['seen'] else ' · 새'}] {c['q']}\n"
