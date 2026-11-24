@@ -22,9 +22,9 @@ def _sum(payments, start, end, keep=lambda p: True):
 
 # ---------- 데이터 없이 ----------
 
-def test_도구_15개와_지시문():
+def test_2단계_도구와_지시문():
     names = [t["function"]["name"] for t in TOOL_SPECS]
-    assert len(names) == 15 and all(n in names for n in NEW)
+    assert len(names) >= 15 and all(n in names for n in NEW)     # 3단계에서 초안 도구 2개를 더해 17개
     text = prompts.system_prompt(AT, ["KB ALL 카드"])
     for n in NEW:
         assert n in text, n

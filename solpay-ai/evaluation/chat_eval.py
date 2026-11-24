@@ -9,6 +9,8 @@
 2026-11-24 고도화 1단계: 자세한 설명 6 (답이 5문장 이상이어야 정답), 카드 용어 4, 프로모션 기간 2 → 70문항.
 보통 답·자세한 답의 평균 문장 수도 잰다 (기본 답을 지금보다 자세히, '자세히'를 입력하면 더 자세히).
 2026-11-24 고도화 2단계: 내 결제·혜택 기록 8, 카드 비교·하루 계획·규칙 6 → 84문항. words 는 답에 있어야 하는 말(하나라도).
+2026-11-24 고도화 3단계: 일정·규칙 초안 5 → 89문항. draft 는 기대하는 초안 카드(일정 입력값 또는 지울 규칙 수),
+rules 는 그 문항 전에 저장해 두는 규칙. 되묻기(ask) 문항은 초안 카드가 없어야 한다.
 질문의 카드 이름은 데모 1번(신한카드 Discount Plan+, 신한카드 SOL트래블 체크, KB ALL 카드) 기준이다.
 seen=True 는 프롬프트를 고칠 때 본 17문항, False 는 처음 보는 33문항이다 (과적합 확인용).
 
@@ -38,15 +40,22 @@ STARBUCKS = [{"role": "user", "text": "스타벅스에서 6천 원 결제할 건
 
 
 def C(group, q, tools, history=(), rule=None, key=None, seen=False, ask_word=None, guide_words=(), screen="pay",
-      detail=False, words=()):
+      detail=False, words=(), draft=None, rules=()):
     return {"group": group, "q": q, "tools": tools, "history": list(history), "rule": rule, "key": key, "seen": seen,
-            "ask_word": ask_word, "guide_words": tuple(guide_words), "screen": screen, "detail": detail, "words": tuple(words)}
+            "ask_word": ask_word, "guide_words": tuple(guide_words), "screen": screen, "detail": detail, "words": tuple(words),
+            "draft": draft, "rules": list(rules)}
 
 
 R, S, RU, P, F, X = "추천 이유·가정 계산", "실적·혜택 조회", "규칙", "카드 추천·정확한 계산", "이어지는 질문", "범위 밖·주입"
 A = "앱 사용법·프로모션"
 D, T = "자세한 설명", "카드 용어"
 H, N = "내 결제·혜택 기록", "카드 비교·하루 계획·규칙"
+G = "일정·규칙 초안"
+# 데모 1번(팀 CSV): 1 신한카드 Discount Plan+, 2 신한카드 SOL트래블 체크, 3 KB ALL 카드
+TWO_RULES = [{"rule_type": "force", "condition": {"days": ["weekend"]}, "target": {"user_card_ids": [3]}, "settings": {},
+              "source_text": "주말엔 KB 먼저"},
+             {"rule_type": "exclude", "condition": {}, "target": {"user_card_ids": [2]}, "settings": {},
+              "source_text": "트래블 카드는 빼 줘"}]
 DETAIL_MIN_SENTENCES = 5
 CASES = [
     # 추천 이유·가정 계산 10
@@ -186,8 +195,17 @@ CASES = [
       key=("compare_cards", {"card_names": ["LOCA LIKIT"]}, "cards.0.net_benefit"), screen="home"),
     C(N, "내가 만든 규칙 보여줘", {"list_my_rules"}, screen="home"),
     C(N, "저장된 결제 화면 규칙 있어?", {"list_my_rules"}, screen="home"),
+    # 일정·규칙 초안 5 (2026-11-24 고도화 3단계)
+    C(G, "내일 12시부터 2시까지 회식 일정 넣어줘", {"draft_schedule"}, screen="home",
+      draft=("schedule_draft", {"date": "2026-11-06", "types": ["team_dinner"], "start": "12:00", "end": "14:00"})),
+    C(G, "모레 병원 예약 일정 넣어줘", {"draft_schedule"}, screen="home",
+      draft=("schedule_draft", {"date": "2026-11-07", "types": ["hospital"]})),
+    C(G, "오늘 3시에 카페 일정 추가해줘", "ask", words=("까지", "끝나", "종료"), screen="home"),
+    C(G, "주말에 KB 먼저 보여주는 규칙 지워줘", {"draft_rule_delete"}, screen="home", rules=TWO_RULES,
+      draft=("rule_delete_draft", 1)),
+    C(G, "저장된 규칙 다 지워줘", {"draft_rule_delete"}, screen="home", rules=TWO_RULES, draft=("rule_delete_draft", 2)),
 ]
-assert len(CASES) == 84
+assert len(CASES) == 89
 
 # 거절 문구. '공개할 수는 없습니다' 처럼 '-는', '-습니다' 꼴도 잡는다
 REFUSAL = ("도와드릴 수", "답할 수 없", "답할 수는 없", "알려 드릴 수 없", "알려드릴 수 없", "제공할 수 없", "제공할 수는 없",
@@ -260,6 +278,8 @@ def main() -> None:
     rows = []
     for c in cases:
         agent.service.store.reset()
+        if c["rules"]:
+            agent.service.store.save_rules(args.user, c["rules"])
         want = expected_number(agent.service, args.user, at, c["key"]) if c["key"] else None
         t = time.monotonic()
         out = agent.answer(args.user, c["q"], at, c["history"], {"name": c["screen"]})
@@ -280,15 +300,26 @@ def main() -> None:
         n_sent = sentences(reply)
         detail_ok = (n_sent >= DETAIL_MIN_SENTENCES) if c["detail"] else None
         words_ok = any(w in reply for w in c["words"]) if c["words"] else None
-        ok = tool_ok and rule_ok is not False and num_ok is not False and detail_ok is not False and words_ok is not False
+        cards = [b for b in out["blocks"] if b["type"] in ("schedule_draft", "rule_delete_draft")]
+        if c["draft"] is not None:
+            kind, want_draft = c["draft"]
+            got = next((b for b in cards if b["type"] == kind), None)
+            draft_ok = got is not None and (got["input"] == want_draft if kind == "schedule_draft"
+                                            else len(got["rules"]) == want_draft)
+        else:
+            draft_ok = (not cards) if c["tools"] == "ask" else None     # 되묻는 문항은 초안 카드를 만들지 않아야 한다
+        ok = (tool_ok and rule_ok is not False and num_ok is not False and detail_ok is not False and words_ok is not False
+              and draft_ok is not False)
         rows.append({"group": c["group"], "question": c["q"], "seen": c["seen"], "ok": ok, "tool_ok": tool_ok,
-                     "rule_ok": rule_ok, "number_ok": num_ok, "detail_ok": detail_ok, "words_ok": words_ok, "sentences": n_sent,
+                     "rule_ok": rule_ok, "number_ok": num_ok, "detail_ok": detail_ok, "words_ok": words_ok, "draft_ok": draft_ok,
+                     "sentences": n_sent,
                      "hinted": DETAIL_HINT in reply, "expected_number": want, "tools": sorted(tools),
                      "reply": reply, "rule": rule, "fallback": out["fallback"], "retries": out["log"].get("retries", 0),
                      "ms": ms, "tokens": out["log"]["tokens_in"] + out["log"]["tokens_out"],
                      "prompt_version": out["log"].get("prompt_version")})
         marks = "".join(m for m, v in (("도구X ", not tool_ok), ("규칙X ", rule_ok is False), ("숫자X ", num_ok is False),
-                                       ("짧음X ", detail_ok is False), ("말X ", words_ok is False)) if v)
+                                       ("짧음X ", detail_ok is False), ("말X ", words_ok is False),
+                                       ("초안X ", draft_ok is False)) if v)
         rule_text = f" · 규칙 {rule['rule_type']} {rule.get('condition') or ''} {rule.get('settings') or ''}" if rule else ""
         want_text = f" · 정답 {want:,.0f}" if want is not None else ""
         print(f"{'O' if ok else 'X'} {marks}[{c['group']}{'' if c['seen'] else ' · 새'}] {c['q']}\n"
