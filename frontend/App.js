@@ -116,8 +116,9 @@ async function readDemoAccount() {
   }
 }
 
-// 화면 미리보기: 개발 중이거나 웹(Vercel 데모)일 때만 보여줍니다. 실제 휴대폰 앱 배포본에는 나오지 않습니다.
-const PREVIEW_ENABLED = __DEV__ || Platform.OS === 'web';
+// 화면 미리보기(개발 메뉴): 개발 중(__DEV__)에만 보여줍니다. 배포한 웹(Amplify 등, 사용자 모드)에는 나오지 않습니다.
+//   배포 웹에서도 보려면 빌드 때 EXPO_PUBLIC_DEV_MENU=on (2026-11-25, 웹을 바탕화면 앱처럼 쓰려고 바꿈)
+const PREVIEW_ENABLED = __DEV__ || (Platform.OS === 'web' && process.env.EXPO_PUBLIC_DEV_MENU === 'on');
 
 function readPreviewCardCodes() {
   if (!PREVIEW_ENABLED || Platform.OS !== 'web') return [];

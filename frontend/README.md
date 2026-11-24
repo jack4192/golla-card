@@ -17,11 +17,15 @@ Expo Go에서 터미널의 QR 코드를 스캔하면 모바일에서 열 수 있
 npx expo export --platform web
 ```
 
-빌드 결과는 `dist/`에 생성됩니다. Windows에서 AWS Amplify용 ZIP이 필요하면 `웹배포_실행.cmd`를 실행하세요. 이 명령은 `solpay-web-ready.zip`을 생성합니다. Android 개발 빌드 설정은 `eas.json`에 있습니다.
+빌드 결과는 `dist/`에 생성됩니다.
+
+- 배포한 웹(빌드 결과)에는 '화면 미리보기' 개발 메뉴가 나오지 않습니다. 배포 웹에서도 보려면 빌드할 때 `EXPO_PUBLIC_DEV_MENU=on` 을 넣으세요.
+- 아이폰 바탕화면에 앱처럼 두기: 사파리로 배포 주소(https) 열기 → 공유 → **홈 화면에 추가**. 아이콘·이름·전체 화면 설정은 `public/`(index.html, manifest.json, 아이콘)에 있습니다.
+- 서버에 붙이려면 빌드 때 `EXPO_PUBLIC_API_URL=https://<백엔드 주소>` (https 웹에서는 https 서버만 부를 수 있음). Windows에서 AWS Amplify용 ZIP이 필요하면 `웹배포_실행.cmd`를 실행하세요. 이 명령은 `solpay-web-ready.zip`을 생성합니다. Android 개발 빌드 설정은 `eas.json`에 있습니다.
 
 ## 데이터와 인증
 
-- 회원가입은 로컬 저장소를 사용합니다. 이메일과 전화번호의 중복 여부는 저장된 가입 기록으로 확인합니다. 웹에서는 같은 탭의 세션에 로그인 데이터가 유지됩니다.
+- 회원가입은 로컬 저장소를 사용합니다. 이메일과 전화번호의 중복 여부는 저장된 가입 기록으로 확인합니다. 웹에서도 로그인 데이터는 브라우저(localStorage)에 남아, 탭이나 바탕화면 웹앱을 닫았다 열어도 로그인이 유지됩니다(로그아웃하면 지워짐).
 - 백엔드 연동(서버 모드): `.\scripts\start-with-backend.ps1` 로 실행하면 `EXPO_PUBLIC_API_URL`이 설정되어 로그인·회원가입·중복 확인·로그아웃을 Spring 백엔드로 처리합니다. 그냥 `npx expo start`나 Vercel 빌드는 기존 데모 모드로 동작합니다. API 호출 코드는 `utils/api.js`에 있습니다.
 - 테스트 로그인은 `demo@example.com`과 `Demo1234!`를 사용합니다. 신규 가입 비밀번호는 영문·숫자·특수문자를 포함한 8자 이상이어야 합니다.
 - 카드 조회에는 40종 카탈로그를 사용합니다. 카드 이미지 매칭 기록과 카드사 출처를 확인한 별도 조사 자료는 `data/`에 있습니다.
