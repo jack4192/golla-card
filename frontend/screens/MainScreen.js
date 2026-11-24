@@ -1,4 +1,4 @@
-import BenefitReport from '../components/BenefitReport';
+import BenefitReport, { benefitFontFamily } from '../components/BenefitReport';
 import { CARD_CATALOG_40, findCatalog40Product } from '../data/cardCatalog40';
 import PromotionOffer from '../components/PromotionOffer';
 import { usePromotions } from '../utils/promotions';
@@ -676,7 +676,7 @@ export default function MainScreen({
   const renderBenefits = () => <>
 
       {summary && <BenefitReport offers={allBenefits} date={kstToday()} />}
-      <Text accessibilityRole="header" style={styles.sectionTitle}>혜택 둘러보기</Text>
+      <Text accessibilityRole="header" style={[styles.sectionTitle, styles.benefitsHeading]}>혜택 둘러보기</Text>
       {appNotice && summary && <View style={styles.noticeStrip}>
         <Ionicons name="notifications-outline" size={16} color="#2C60C2" />
         <Text style={styles.noticeStripText}>이번 달 혜택 {summary?.active ?? 0}건</Text>
@@ -857,9 +857,12 @@ export default function MainScreen({
     </>;
   return <SafeAreaView style={styles.root}><RecommendationLaunchPopup onClosed={refreshAi} selectedWalletCard={currentCard} allowAutomaticAds={tab === 'home' && allowAutomaticAds} onViewPromotions={() => selectTab('benefits')} promotions={activeNow} emptyText={emptyPromotionText(promotions.status)} openRequest={adRequest} enabled={(tab === 'home' || tab === 'benefits') && !settingsOpen && !exitOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
       {!settingsOpen && tab !== 'payment' && <View style={[styles.topBar, tab === 'cards' && styles.walletTopBar]}>
-          <View>
+          <View style={styles.headerBrand}>
+            {tab === 'schedule' && <TouchableOpacity accessibilityRole="button" accessibilityLabel="홈으로 돌아가기"
+              style={styles.iconCircle} onPress={() => selectTab('home')}>
+              <Ionicons name="arrow-back" size={21} color="#244E9C" accessible={false} />
+            </TouchableOpacity>}
             <Text style={[styles.brand,{color:tab === 'cards' ? "#FFFFFF" : "#134CCA",fontSize:27}]}>SOL·Pay</Text>
-
           </View>
 
           <View style={styles.headerActions}>
@@ -884,7 +887,10 @@ export default function MainScreen({
           onSelectCard={onSelectCard}
           onClose={() => selectTab(schedulePayment?.returnTab || 'home')}
           onOpenCards={() => selectTab('cards')}
-        /> : tab === 'cards' ? renderCards() : <ScrollView key={tab} style={styles.mainScroll} contentContainerStyle={[styles.pageContent, styles.chatClearance]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" scrollEnabled={!cardDragging}>
+        /> : tab === 'cards' ? renderCards() : <ScrollView key={tab}
+          style={[styles.mainScroll, Platform.OS === 'web' && cardDragging && styles.scrollLocked]}
+          scrollEnabled={!cardDragging} contentContainerStyle={[styles.pageContent, styles.chatClearance]}
+          showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {tab === 'home' && <>{renderSchedule(true)}{renderYearEndTile()}{renderHomeHighlights()}</>}
             {tab === 'benefits' && renderBenefits()}
             {tab === 'schedule' && renderSchedule()}
@@ -1321,12 +1327,12 @@ const styles = StyleSheet.create({
   chatAvatar:{position:'absolute',left:-20,top:1,width:100,height:56},
   tileLogoArea:{height:64,justifyContent:'center',alignItems:'center',backgroundColor:'#FFFFFF'},
   tileLogo:{width:'92%',maxWidth:132,height:48},
-  tileBrandLabel:{fontSize:12,color:'#536C88',textAlign:'center',marginTop:5},
+  tileBrandLabel:{fontFamily:benefitFontFamily,fontSize:12,color:'#536C88',textAlign:'center',marginTop:5},
   tileCentered:{textAlign:'center',marginTop:6},
   walletTopBar:{backgroundColor:'#0B1940'},
   homeLinkIcon:{height:38,width:38,borderRadius:12,backgroundColor:'#EDF4FF',alignItems:'center',justifyContent:'center'},
   homeLink:{flexDirection:'row',alignItems:'center',minHeight:54,gap:14},
-  homeLinkTitle:{flex:1,fontSize:17,fontWeight:'700',color:'#13223B'},
+  homeLinkTitle:{flex:1,fontFamily:benefitFontFamily,fontSize:16,lineHeight:23,fontWeight:'600',color:'#13223B'},
   root: {
     flex: 1,
     backgroundColor: "#FFFFFF"
@@ -1346,6 +1352,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     paddingVertical: 16
   },
+  headerBrand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   brand: {
     fontSize: 25,
     fontWeight: "800",
@@ -1373,6 +1380,7 @@ const styles = StyleSheet.create({
   mainArea: {
     flex: 1
   },
+  scrollLocked: { overflowY: 'hidden' },
   mainScroll: {
     flex: 1
   },
@@ -1455,6 +1463,10 @@ const styles = StyleSheet.create({
     fontSize: 19,
     fontWeight: "800",
     lineHeight: 28
+  },
+  benefitsHeading: {
+    fontFamily: benefitFontFamily,
+    fontWeight: '700',
   },
   moreRow: {
     flexDirection: 'row',
@@ -1563,8 +1575,9 @@ const styles = StyleSheet.create({
   tileMerchant: {
     flex: 1,
     color: '#23314B',
+    fontFamily: benefitFontFamily,
     fontSize: 12,
-    fontWeight: '800'
+    fontWeight: '600'
   },
   smallCategory: {
     color: '#5A7BC2',
@@ -1577,9 +1590,10 @@ const styles = StyleSheet.create({
   },
   tileAmount: {
     color: '#2462E5',
+    fontFamily: benefitFontFamily,
     fontSize: 17,
-    lineHeight: 23,
-    fontWeight: "800",
+    lineHeight: 24,
+    fontWeight: '700',
     marginTop: 11
   },
   tileCondition: {
@@ -1598,8 +1612,9 @@ const styles = StyleSheet.create({
     marginTop: 10
   },
   tileStatus: {
+    fontFamily: benefitFontFamily,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '500',
     color: '#74829A'
   },
   demoLabel: {
@@ -1739,8 +1754,9 @@ const styles = StyleSheet.create({
   },
   filterText: {
     color: '#65728B',
+    fontFamily: benefitFontFamily,
     fontSize: 12,
-    fontWeight: '700'
+    fontWeight: '600'
   },
   filterTextActive: {
     color: "#FFFFFF"
@@ -1748,8 +1764,9 @@ const styles = StyleSheet.create({
   filteredCount: {
     marginLeft: 'auto',
     color: '#7B8AA3',
+    fontFamily: benefitFontFamily,
     fontSize: 12,
-    fontWeight: '800'
+    fontWeight: '600'
   },
   benefitGrid: {
     flexDirection: 'row',
@@ -2194,9 +2211,10 @@ const styles = StyleSheet.create({
     marginTop: 13
   },
   noticeStripText: {
+    fontFamily: benefitFontFamily,
     fontSize: 12,
     color: '#315FAD',
-    fontWeight: '700',
+    fontWeight: '600',
     flex: 1
   },
 });

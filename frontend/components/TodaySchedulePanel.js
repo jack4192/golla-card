@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AppState, Image, PanResponder, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, AppState, Easing, Image, PanResponder, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import CardBenefitFlip from './CardBenefitFlip';
+import ActualBenefitCalc from './ActualBenefitCalc';
 import { Ionicons } from '@expo/vector-icons';
 import { findCatalog40Product } from '../data/cardCatalog40';
 import { CSV_CARD_CATALOG } from '../data/cardCatalogCsv';
@@ -68,6 +70,32 @@ function scheduleLanes(rows) {
     lane[row.key] = index;
   });
   return { lane, count: Math.max(1, ends.length) };
+}
+
+// 미리보기 중 '현재시간' 버튼(수정사항2 글자): 결제가 막혀 있으니 '여기를 누르면 돌아가요' 하고 깜빡인다 (2026-11-24)
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+function PulsingNowButton({ onPress }) {
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(pulse, { toValue: 1, duration: 550, easing: Easing.inOut(Easing.quad), useNativeDriver: false }),
+      Animated.timing(pulse, { toValue: 0, duration: 550, easing: Easing.inOut(Easing.quad), useNativeDriver: false }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+  const animated = {
+    transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }) }],
+    backgroundColor: pulse.interpolate({ inputRange: [0, 1], outputRange: ['#FFFFFF', '#1D55D9'] }),
+    borderColor: pulse.interpolate({ inputRange: [0, 1], outputRange: ['#BFD3FA', '#1D55D9'] }),
+  };
+  const textColor = pulse.interpolate({ inputRange: [0, 1], outputRange: ['#1D55D9', '#FFFFFF'] });
+  return <AnimatedTouchable accessibilityRole="button" accessibilityLabel="현재 시각으로 돌아가기"
+    accessibilityHint="미리보기를 끝내고 지금 시각 카드로 돌아가요. 그래야 결제할 수 있어요"
+    style={[styles.homeNowButton, animated]} onPress={onPress} hitSlop={8}>
+    <Animated.Text style={[styles.homeNowButtonIcon, { color: textColor }]}>↻</Animated.Text>
+    <Animated.Text style={[styles.homeNowButtonText, { color: textColor }]}>현재시간</Animated.Text>
+  </AnimatedTouchable>;
 }
 
 function HomeScheduleRibbon({ start, clockTime, nowMinute, viewMinute, onScrub, onNow, dots = [], changeDots = [], cardSpans = [], rows, selected, onSelect, emptyMessage }) {
@@ -142,11 +170,15 @@ function HomeScheduleRibbon({ start, clockTime, nowMinute, viewMinute, onScrub, 
   const scheduleSummary = rows.map(row => `${scheduleLabel(row.label)} ${row.timeCaption}`).join(', ');
 
   return <View style={styles.homeRibbon}>
-    {scrubbing && <TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 시각으로 돌아가기"
-      style={styles.homeNowButton} onPress={onNow} hitSlop={8}>
-      <Ionicons name="refresh-outline" size={14} color="#1D55D9" />
-      <Text style={styles.homeNowButtonText}>현재시간</Text>
-    </TouchableOpacity>}
+    {/* 제목과 흰 점 설명: 처음 보는 사람도 무엇인지 알게 (2026-11-24) */}
+    <View style={styles.homeRibbonHead}>
+      <Text accessibilityRole="header" style={styles.homeRibbonTitle}>오늘의 카드 시간표</Text>
+      {changeDots.length > 0 && <View style={styles.homeLegend} accessible accessibilityLabel="흰 점은 카드가 바뀌는 시각">
+        <View style={styles.homeLegendDot} />
+        <Text style={styles.homeLegendText}>카드가 바뀌는 시각</Text>
+      </View>}
+    </View>
+    {scrubbing && <PulsingNowButton onPress={onNow} />}
     <View ref={axisRef} style={[styles.homeAxis, { height: BAR_TOP + barH + 12 }]} onLayout={event => {
       setAxisWidth(event.nativeEvent.layout.width);
       measureAxis();
@@ -177,6 +209,17 @@ function HomeScheduleRibbon({ start, clockTime, nowMinute, viewMinute, onScrub, 
     </View>
     {!rows.length && <Text style={styles.homeEmptyCaption}>{emptyMessage}</Text>}
   </View>;
+}
+
+// '지금 갖고 있는 카드가 적합합니다' 아래 한 줄 이유 (2026-11-24). 순서: 그 시각 AI 배치 안내 → 카드 대표 혜택 → 기본 문구
+const cleanBenefit = name => String(name || '').replace(/^(?:DAY|NIGHT|WEEKEND|주말)\s+/i, '').trim();
+function whyThisCard({ card, segmentNote, catalog }) {
+  if (segmentNote) return segmentNote.replace(/!$/, '');
+  const top = (catalog?.benefits || []).map(benefit => cleanBenefit(benefit.name)).filter(Boolean);
+  const unique = [...new Set(top)].slice(0, 2);
+  if (unique.length) return `${unique.join(' · ')} 등 혜택이 있어 평소 결제에 두루 좋은 카드예요`;
+  if (catalog?.description) return catalog.description;
+  return `${card?.name || '이 카드'}로 결제하면 이번 달 실적을 채우는 데 도움이 돼요`;
 }
 
 const toScheduleProduct = card => ({
@@ -262,6 +305,7 @@ export default function TodaySchedulePanel({
   // 홈 시간 표시줄 (2026-11-23 설계서 home-day-timeline): 옮긴 시각(분, null 이면 지금),
   //   하루 배치 구간(null 이면 읽는 중, [] 이면 실패·없음), 오늘 결제(결제 점)
   const [viewMinute, setViewMinute] = useState(null);
+  const [calculatorCardId, setCalculatorCardId] = useState(null);
   const [daySegments, setDaySegments] = useState(() => aiMemory.daySegments);
   useEffect(() => { aiMemory.daySegments = daySegments; }, [daySegments]);
   const [todayPayments, setTodayPayments] = useState([]);
@@ -468,7 +512,7 @@ export default function TodaySchedulePanel({
   // 하루 배치: 날짜·지갑 카드·그날 일정이 바뀌거나 AI 쪽 상태가 바뀌면(aiRefresh) 다시 묻는다 (기록 없음)
   const dayScheduleKey = timeline.filter(row => row.startDate).map(row => `${row.key}@${row.time}`).join('|');
   useEffect(() => {
-    if (!home || !SERVER_MODE || disabled || !cards.length) return undefined;
+    if (!SERVER_MODE || disabled || !cards.length) return undefined;   // 홈·오늘의 일정 모두 (일정별 '왜 이 카드' 안내에도 쓴다)
     let stopped = false;
     // 다시 물을 때 지난 배치를 지우지 않는다: 지우면 카드가 바뀌는 점이 잠깐 사라졌다가 늦게 뜬다
     loadDayPlacement(cards).then(segments => { if (!stopped) setDaySegments(segments || []); })
@@ -609,13 +653,16 @@ export default function TodaySchedulePanel({
             {reasonLine.text}
           </Text>
         </View>}
+        {/* 큰 카드: 누르면 뒤집혀 '이 거래의 예상 혜택' (결제 화면과 같은 계산, 2026-11-24). 카드 그림만 뒤집힌다 */}
         {artwork && <View style={styles.homeCardStage}>
           <View pointerEvents="none" style={styles.homeCardHalo} />
-          <Image source={artwork} resizeMode="contain" fadeDuration={0}
-            style={[styles.homeArtwork, styles.homeScheduledArtwork]}
-            accessibilityLabel={card.name + ' 상품 이미지'} />
+          <CardBenefitFlip card={card} cards={cards} artwork={artwork} artworkStyle={[styles.homeArtwork, styles.homeScheduledArtwork]}
+            onOpenCalculator={card && !scrubbing ? () => setCalculatorCardId(card.id) : undefined} />
         </View>}
         <Text style={[styles.homeCardName, card && styles.homeCardCaption]}>{card?.name || '등록된 카드가 없습니다'}</Text>
+        {/* 업종·금액을 직접 넣어 이 카드 혜택 계산 (2026-11-24) */}
+        {card && !scrubbing && calculatorCardId === card.id &&
+          <ActualBenefitCalc key={card.id} card={card} cards={cards} onClose={() => setCalculatorCardId(null)} />}
         {scrubPayment && <Text style={styles.homeScrubPayment} numberOfLines={1}>{paymentLine(scrubPayment)}</Text>}
       </View>
       {card && <TouchableOpacity accessibilityRole="button" accessibilityLabel="이 카드로 결제"
@@ -625,7 +672,7 @@ export default function TodaySchedulePanel({
         <Ionicons name="qr-code-outline" size={19} color="#FFFFFF" />
         <Text style={styles.white}>이 카드로 결제</Text>
       </TouchableOpacity>}
-      {card && scrubbing && <Text style={styles.homePayHint}>미리보기 중에는 결제할 수 없어요</Text>}
+      {card && scrubbing && <Text style={styles.homePayHint}>미리보기 중에는 결제할 수 없어요 · 위의 <Text style={styles.homePayHintStrong}>'현재시간'</Text>을 누르면 결제할 수 있어요</Text>}
       {/* 카드가 있으면 '다른 카드로 변경' 대신 내 카드 목록(누르면 결제 카드 변경, ☰로 순서 변경) */}
       {card && cardList ? cardList : <TouchableOpacity accessibilityRole="button" accessibilityLabel={cardAction}
         style={card ? styles.homeChangeCard : styles.primary} onPress={onOpenCards}>
@@ -735,6 +782,15 @@ export default function TodaySchedulePanel({
                   </TouchableOpacity>}
                 </View> : selectedCard && <View style={styles.recommendation}>
                   <Text style={styles.blue}>{autoOn ? '지금 갖고 있는 카드가 적합합니다.' : AUTO_OFF_NOTE}</Text>
+                  {autoOn && <Text style={styles.whyText}>{whyThisCard({
+                    card: selectedCard,
+                    catalog: findCatalog40Product(selectedCard),
+                    segmentNote: (() => {
+                      if (!SERVER_MODE || !daySegments || !row.startDate) return '';
+                      const at = scrubbedCard({ segments: daySegments, minute: row.startDate.getHours() * 60 + row.startDate.getMinutes(), walletCards: cards, fallbackCard: null });
+                      return at.card && at.card.id === selectedCard.id ? at.note : '';
+                    })(),
+                  })}</Text>}
                   <View style={styles.cardPreview}>
                     {!!selectedProduct?.image && <Image source={selectedProduct.image} resizeMode="contain" fadeDuration={0} style={styles.productImage} />}
                     <Text style={[styles.title, styles.entryText]}>{selectedCard.name}</Text>
@@ -781,6 +837,11 @@ const styles = StyleSheet.create({
   home:{gap:14},
   homeCard:{alignItems:'center',gap:8,padding:20,borderRadius:22,backgroundColor:'#F1F6FE'},
   homeCardScheduled:{padding:12,gap:10,borderRadius:28,borderWidth:1,borderColor:'#DDE9FF',backgroundColor:'#F5F8FF'},
+  homeRibbonHead:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8,paddingHorizontal:16,marginBottom:6,minHeight:24},
+  homeRibbonTitle:{fontSize:15,fontWeight:'800',color:'#13254A'},
+  homeLegend:{flexDirection:'row',alignItems:'center',gap:6},
+  homeLegendDot:{width:12,height:12,borderRadius:6,borderWidth:3,borderColor:'#5A93F2',backgroundColor:'#FFFFFF'},
+  homeLegendText:{fontSize:12,fontWeight:'700',color:'#4A5A75'},
   homeRibbon:{
     width:'100%',paddingTop:10,paddingBottom:8,borderRadius:19,borderWidth:1,
     borderColor:'#E8EFFF',backgroundColor:'#FFFFFF'
@@ -805,6 +866,7 @@ const styles = StyleSheet.create({
     borderRadius:14,backgroundColor:'#EEF4FF'
   },
   homeReasonPreview:{backgroundColor:'#F1EDFF'},
+  whyText:{fontSize:13,lineHeight:19,fontWeight:'600',color:'#3A4B66'},
   homeReasonText:{flex:1,fontSize:13,lineHeight:19,fontWeight:'600',color:'#3A4B66'},
   homeReasonSchedule:{fontWeight:'800',color:'#13254A'},
   homeEmptyCaption:{marginTop:5,paddingHorizontal:10,fontSize:12,lineHeight:17,textAlign:'center',color:'#526783'},
@@ -817,9 +879,11 @@ const styles = StyleSheet.create({
   homeNowText:{fontSize:11,fontWeight:'800',color:'#FFFFFF',fontVariant:['tabular-nums']},
   homeNowPreview:{backgroundColor:'#5B3FC4'},
   homeNowButton:{
-    position:'absolute',top:6,right:8,zIndex:10,flexDirection:'row',alignItems:'center',gap:3,height:26,
+    position:'absolute',top:40,right:8,zIndex:10,flexDirection:'row',alignItems:'center',gap:3,height:26,
     paddingHorizontal:9,borderRadius:13,borderWidth:1,borderColor:'#BFD3FA',backgroundColor:'#FFFFFF'
   },
+  homeNowButtonIcon:{fontSize:14,fontWeight:'900'},
+  homePayHintStrong:{fontWeight:'900',color:'#1D55D9'},
   homeNowButtonText:{fontSize:12,fontWeight:'800',color:'#1D55D9'},
   homeAxisTouch:{position:'absolute',left:-12,right:-12,top:0,bottom:-6,zIndex:3,cursor:'pointer'},
   homePayDot:{
