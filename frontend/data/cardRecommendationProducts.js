@@ -1,4 +1,29 @@
 export const CARD_PRODUCTS = {
+  // 2026-11-24 공용 DB 에 더한 신한카드 4장: 신한카드 공식 상품 페이지와 카드 그림 (추천 화면 '카드 신청'·지갑 그림)
+  SH_THE_PET: {
+    image: {
+      uri: 'https://www.shinhancard.com/pconts/static/images/card/plate/BLCDMH_P3_v_f_s.png',
+    },
+    url: 'https://www.shinhancard.com/pconts/html/card/apply/credit/1228839_2207.html',
+  },
+  SH_CJ_ONE_CHECK: {
+    image: {
+      uri: 'https://www.shinhancard.com/pconts/static/images/card/plate/BA9BM9_E5_v_f_s.png',
+    },
+    url: 'https://www.shinhancard.com/pconts/html/card/apply/check/1188363_2206.html',
+  },
+  SH_DEEP_OIL: {
+    image: {
+      uri: 'https://www.shinhancard.com/pconts/static/images/card/plate/BIABE0_E5_v_f_s.webp',
+    },
+    url: 'https://www.shinhancard.com/pconts/html/card/apply/credit/1188274_2207.html',
+  },
+  SH_LG_TWINS_CHECK: {
+    image: {
+      uri: 'https://www.shinhancard.com/pconts/static/images/card/plate/BGMD1B_WA_v_f_s.png',
+    },
+    url: 'https://www.shinhancard.com/pconts/html/card/apply/check/1224553_2206.html',
+  },
   SH_KUKMIN_CREDIT: {
     image: {
       uri: 'https://www.shinhancard.com/pconts/static/images/card/plate/CBSCEY_00_h_f_s.png',

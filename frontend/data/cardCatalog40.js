@@ -40,6 +40,11 @@ const images = {
   '38.webp': require('../assets/card-catalog-40/38.webp'),
   '39.webp': require('../assets/card-catalog-40/39.webp'),
   '40.webp': require('../assets/card-catalog-40/40.webp'),
+  // 2026-11-24 공용 DB 에 더한 신한카드 4장 (41 The PET, 42 CJ ONE 체크, 43 Deep Oil, 44 LG트윈스 체크)
+  '41.webp': require('../assets/card-catalog-40/41.webp'),
+  '42.webp': require('../assets/card-catalog-40/42.webp'),
+  '43.webp': require('../assets/card-catalog-40/43.webp'),
+  '44.webp': require('../assets/card-catalog-40/44.webp'),
 };
 
 export const CARD_CATALOG_40 = cards.map(card => ({
