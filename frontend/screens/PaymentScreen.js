@@ -1,5 +1,6 @@
 import PaymentCardOrder, { orderCards } from '../components/PaymentCardOrder';
 import PaymentBenefitChat from '../components/PaymentBenefitChat';
+import AiNotice from '../components/AiNotice';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
@@ -782,6 +783,7 @@ export default function PaymentScreen({
         </View>
 
       </View>
+      <AiNotice style={s.aiNotice} />
     </ScrollView>
     <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
       <TouchableOpacity activeOpacity={1} accessibilityLabel="카드 선택 닫기" style={s.sheetBackdrop} onPress={() => setPickerOpen(false)}>
@@ -818,6 +820,7 @@ export default function PaymentScreen({
   </>;
 }
 const s = StyleSheet.create({
+  aiNotice: { marginTop: 16 },
   screen: {
     flex: 1,
     backgroundColor: "#F4F7FB"

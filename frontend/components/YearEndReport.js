@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Linking, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SERVER_MODE, api } from '../utils/api';
+import AiNotice from './AiNotice';
 import { CARD_CATALOG_40 } from '../data/cardCatalog40';
 import { officialProduct } from '../screens/RoutinePatternRecommendationScreen';
 import { barRatios, findCatalogCard, missedTags, missedView, monthLabel, peakLine, periodLine, splitLine, topCards, won } from '../utils/yearEndCore';
@@ -199,6 +200,7 @@ export default function YearEndReport({ visible, onClose }) {
           {basisOpen && <View style={s.basisBody}>
             {BASIS.map(line => <Text key={line} style={s.basisText}>{line}</Text>)}
           </View>}
+          <AiNotice />
         </ScrollView>}
     </SafeAreaView>
   </Modal>;
