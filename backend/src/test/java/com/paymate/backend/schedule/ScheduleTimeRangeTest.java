@@ -26,7 +26,7 @@ import org.springframework.context.ApplicationEventPublisher;
 class ScheduleTimeRangeTest {
 
     private final ScheduleRepository repository = mock(ScheduleRepository.class);
-    private final ScheduleService service = new ScheduleService(repository, mock(ApplicationEventPublisher.class));
+    private final ScheduleService service = new ScheduleService(repository, mock(ApplicationEventPublisher.class), "2026-11-24T10:00:00");
 
     private static ScheduleRequest place(String start, String end) throws Exception {
         ScheduleRequest req = new ScheduleRequest();

@@ -13,6 +13,9 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
 
     Optional<Schedule> findByIdAndUserId(Long id, Long userId);
 
+    // 하루 일정 개수 (하루 10개 제한, 2026-11-24)
+    long countByUserIdAndScheduleDate(Long userId, LocalDate scheduleDate);
+
     @Query("""
             select s from Schedule s
              where s.userId = :userId
