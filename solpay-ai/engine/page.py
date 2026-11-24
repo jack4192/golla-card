@@ -79,11 +79,15 @@ def pattern_items(payments: list[Payment], catalog: Catalog, at: datetime, user_
 
 def today_items(schedules: list[ScheduleItem], payments: list[Payment], catalog: Catalog, at: datetime,
                 params: Params, user_id: int) -> tuple[str, list[ScheduleItem]]:
-    """("schedule", 아직 끝나지 않은 일정) 또는 ("pattern", 평소 소비 항목)."""
+    """("schedule", 아직 끝나지 않은 일정) → 없으면 ("schedule", 오늘 이미 지난 일정) → 그것도 없으면 ("pattern", 평소 소비 항목).
+    2026-11-24 사용자 결정: 신청할 카드 추천이라 지난 일정이어도 그 일정으로 고른다 (12~13시 동물병원을 18시에 넣어도
+    평소 소비로 넘어가 관계없는 카드를 추천하지 않게). schedules 는 그날 일정만 온다 (store.context)."""
     tail = timedelta(minutes=params.schedule_tail_min)
     remaining = [s for s in schedules if s.end + tail >= at]
     if remaining:
         return "schedule", remaining
+    if schedules:
+        return "schedule", list(schedules)
     return "pattern", pattern_items(payments, catalog, at, user_id)
 
 
