@@ -1,0 +1,51 @@
+# v2.1 = v2 + 개인 루틴 (2026-11-23 사용자 결정, '보통')
+#
+# v2 는 업종을 직업·나이대 확률로 결제마다 새로 뽑아 "평일 8시 반엔 꼭 커피" 같은 개인 루틴이 없었다.
+# 배경 사용자 절반에게 직업에 맞는 루틴 1~2개를 주고, 해당 요일마다 keep_prob 확률로 정해진 시각 ±30분에 그 업종 결제를 한다.
+# 결제 수와 월 지출은 v2 와 비슷하게 둔다: 그날의 같은 종류 결제(예: 다른 시각의 카페)를 루틴으로 옮기고, 없으면 금액이 비슷한
+# 일반 결제를 바꾼다. 둘 다 없으면 루틴 결제를 새로 만들고, 그만큼 뒤의 날 같은 종류·비슷한 금액 결제를 뺀다. 데모 5명은 그대로.
+# 루틴은 따로 뽑은 난수(seed, user_id, routines.seed)로 정해서 루틴이 없는 사용자의 결제는 v2 와 똑같다.
+routines:
+  seed: 2101
+  share: 0.5                  # 배경 사용자 중 루틴이 있는 비율
+  count: { 1: 0.5, 2: 0.5 }   # 루틴 개수 비율
+  keep_prob: [0.6, 0.9]       # 해당 요일에 루틴을 지키는 확률 (루틴마다 고르게 뽑음)
+  jitter_min: 30              # 정해진 시각 ±30분 (고르게)
+  same_merchant: 0.85         # 늘 가는 가게 한 곳으로 갈 확률. 아니면 평소처럼 고른다
+  search_hours: 24            # 바꿀 일반 결제를 찾는 범위 (그날 전체)
+  similar_amount_ratio: 3.0   # 같은 종류가 없으면 금액이 이 배수 안인 결제만 바꾸거나 뺀다 (월 지출 유지)
+
+  # time: 사용자마다 이 범위에서 정해진 시각을 하나 고른다 (5분 단위)
+  # before_commute: 그날 출근 시각보다 이만큼(분, 범위에서 한 번 고름) 앞 (교대근무처럼 주마다 출근 시각이 바뀌는 경우)
+  templates:
+    COMMUTE_COFFEE: { name: 출근길 커피,     days: weekday, kind: CAFE,     time: ["07:40", "09:20"] }
+    COMMUTE_CVS:    { name: 출근길 편의점,   days: weekday, kind: CVS,      time: ["07:30", "09:00"] }
+    COMMUTE_BAKERY: { name: 출근길 빵집,     days: weekday, kind: BAKERY,   time: ["07:30", "09:00"] }
+    SCHOOL_CVS:     { name: 등굣길 편의점,   days: weekday, kind: CVS,      time: ["08:30", "10:00"] }
+    LUNCH_REST:     { name: 점심 식당,       days: weekday, kind: REST,     time: ["11:40", "12:50"] }
+    LUNCH_FASTFOOD: { name: 점심 패스트푸드, days: weekday, kind: FASTFOOD, time: ["11:50", "13:00"] }
+    LUNCH_COFFEE:   { name: 점심 후 커피,    days: weekday, kind: CAFE,     time: ["12:40", "13:40"] }
+    MORNING_CAFE:   { name: 오전 카페,       days: weekday, kind: CAFE,     time: ["09:30", "11:00"] }
+    MORNING_SUPER:  { name: 오전 장보기,     days: weekday, kind: SUPER,    time: ["10:00", "11:30"] }
+    MORNING_BAKERY: { name: 오전 빵집,       days: weekday, kind: BAKERY,   time: ["09:00", "10:30"] }
+    AFTERNOON_CAFE: { name: 오후 카페,       days: weekday, kind: CAFE,     time: ["14:00", "16:30"] }
+    HOME_CVS:       { name: 퇴근길 편의점,   days: weekday, kind: CVS,      time: ["18:30", "20:30"] }
+    HOME_SUPER:     { name: 퇴근길 장보기,   days: weekday, kind: SUPER,    time: ["18:30", "20:00"] }
+    EVENING_SUPER:  { name: 저녁 장보기,     days: weekday, kind: SUPER,    time: ["17:30", "19:30"] }
+    LATE_CVS:       { name: 늦은 밤 편의점,  days: weekday, kind: CVS,      time: ["21:30", "23:00"] }
+    WEEKEND_BRUNCH: { name: 주말 브런치 카페, days: weekend, kind: CAFE,    time: ["10:30", "12:00"] }
+    PRE_SHIFT_CVS:  { name: 출근 전 편의점,  days: weekday, kind: CVS,      before_commute: [10, 40] }
+    PRE_SHIFT_CAFE: { name: 출근 전 커피,    days: weekday, kind: CAFE,     before_commute: [10, 40] }
+
+  # 직업별로 고를 루틴과 상대 가중치. 루틴 2개는 시각 범위가 겹치지 않게 고른다
+  by_archetype:
+    OFFICE:    { COMMUTE_COFFEE: 3, COMMUTE_CVS: 1, COMMUTE_BAKERY: 1, LUNCH_REST: 2, LUNCH_COFFEE: 2, HOME_CVS: 1, WEEKEND_BRUNCH: 1 }
+    FAMILY:    { COMMUTE_COFFEE: 2, LUNCH_REST: 2, LUNCH_COFFEE: 1, HOME_SUPER: 3, HOME_CVS: 1, WEEKEND_BRUNCH: 1 }
+    NIGHTOWL:  { COMMUTE_COFFEE: 3, LUNCH_REST: 2, LUNCH_COFFEE: 1, LATE_CVS: 3 }
+    STUDENT:   { SCHOOL_CVS: 2, LUNCH_REST: 2, LUNCH_FASTFOOD: 2, AFTERNOON_CAFE: 3, LATE_CVS: 1 }
+    REMOTE:    { MORNING_CAFE: 3, LUNCH_REST: 2, AFTERNOON_CAFE: 2, EVENING_SUPER: 1 }
+    FIELD:     { COMMUTE_COFFEE: 2, COMMUTE_CVS: 2, LUNCH_REST: 3, LUNCH_COFFEE: 1, HOME_CVS: 1 }
+    SELFEMP:   { COMMUTE_COFFEE: 2, LUNCH_REST: 3, LUNCH_COFFEE: 1, HOME_CVS: 1 }
+    SHIFT:     { PRE_SHIFT_CVS: 3, PRE_SHIFT_CAFE: 2 }
+    HOMEMAKER: { MORNING_SUPER: 3, MORNING_BAKERY: 2, AFTERNOON_CAFE: 2, EVENING_SUPER: 1 }
+    RETIRED:   { MORNING_BAKERY: 2, MORNING_SUPER: 2, AFTERNOON_CAFE: 2 }

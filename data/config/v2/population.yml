@@ -1,0 +1,57 @@
+# v2 배경 사용자 1000명 (2026-11-22 사용자 결정). 기본 population.yml 위에 겹쳐 쓴다.
+# 직업 10개 × 나이대 20~60대, 26칸, 칸마다 30명 이상. 나머지는 흔한 칸(사무직·자영업 등)에 더 줬다.
+cells:
+  - { archetype: OFFICE,    age_band: 20s, n: 60 }
+  - { archetype: OFFICE,    age_band: 30s, n: 70 }
+  - { archetype: OFFICE,    age_band: 40s, n: 60 }
+  - { archetype: OFFICE,    age_band: 50s, n: 45 }
+  - { archetype: STUDENT,   age_band: 20s, n: 60 }
+  - { archetype: FAMILY,    age_band: 30s, n: 45 }
+  - { archetype: FAMILY,    age_band: 40s, n: 45 }
+  - { archetype: NIGHTOWL,  age_band: 20s, n: 30 }
+  - { archetype: NIGHTOWL,  age_band: 30s, n: 30 }
+  - { archetype: REMOTE,    age_band: 20s, n: 30 }
+  - { archetype: REMOTE,    age_band: 30s, n: 35 }
+  - { archetype: REMOTE,    age_band: 40s, n: 30 }
+  - { archetype: HOMEMAKER, age_band: 40s, n: 30 }
+  - { archetype: HOMEMAKER, age_band: 50s, n: 35 }
+  - { archetype: HOMEMAKER, age_band: 60s, n: 30 }
+  - { archetype: SELFEMP,   age_band: 30s, n: 30 }
+  - { archetype: SELFEMP,   age_band: 40s, n: 40 }
+  - { archetype: SELFEMP,   age_band: 50s, n: 40 }
+  - { archetype: SELFEMP,   age_band: 60s, n: 30 }
+  - { archetype: SHIFT,     age_band: 20s, n: 30 }
+  - { archetype: SHIFT,     age_band: 30s, n: 30 }
+  - { archetype: SHIFT,     age_band: 40s, n: 30 }
+  - { archetype: FIELD,     age_band: 30s, n: 30 }
+  - { archetype: FIELD,     age_band: 40s, n: 35 }
+  - { archetype: FIELD,     age_band: 50s, n: 30 }
+  - { archetype: RETIRED,   age_band: 60s, n: 40 }
+
+# v2 는 cells 로만 만든다 (v1 의 50대 추가 인원은 쓰지 않음)
+extra_users: []
+
+# 회사 동네가 없는 유형
+no_work_zone: [REMOTE, HOME50, HOMEMAKER, RETIRED]
+# 회사 동네 규칙: home = 집 동네(가게가 집 근처), 목록 = 그중 하나 (병원·공단). 없으면 기본 회사 동네 후보
+work_zone_rule:
+  SELFEMP: home
+  SHIFT: [GASAN, PANGYO, SINCHON, GANGNAM]
+
+age_band: { HOMEMAKER: [40s, 50s, 60s], SELFEMP: [30s, 40s, 50s, 60s], SHIFT: [20s, 30s, 40s], FIELD: [30s, 40s, 50s], RETIRED: [60s] }
+
+cards:
+  credit_weight: { HOMEMAKER: 1.2, SELFEMP: 1.3, SHIFT: 1.0, FIELD: 1.2, RETIRED: 1.2 }
+  # 보유 카드 수 분포 (2026-11-22 사용자 결정 '2~5장, 나이·직업별'). 평균 약 3.3장
+  count_dist:
+    student: { 2: 0.60, 3: 0.40 }
+    20s:     { 2: 0.35, 3: 0.45, 4: 0.20 }
+    30s_50s: { 2: 0.10, 3: 0.35, 4: 0.35, 5: 0.20 }
+    60s:     { 2: 0.25, 3: 0.40, 4: 0.25, 5: 0.10 }
+
+# 사용자별 지출 격차 (v2 보정, 2026-11-22). v1 값 그대로면 소비가 큰 직업·나이대(자영업·맞벌이·40~50대)가 많아
+# 월 700만 원 이상이 3%(v1 0.6%)가 되므로 퍼짐과 상한을 줄여 v1 배경 사용자의 월 지출 분포(중앙 130만, 상위 1% 588만)에 맞춘다.
+spend_level:
+  count:  { median: 0.46, sigma: 0.60, range: [0.25, 1.5] }
+  amount: { median: 0.65, sigma: 0.60, range: [0.40, 1.5] }
+  correlation: 0.3

@@ -1,0 +1,3 @@
+# v2 (2026-11-22): 사업자 카드는 자영업자에게만 배정한다
+eligibility:
+  KB_BIZ_PRIME: [SELFEMP]
