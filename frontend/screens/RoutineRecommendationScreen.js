@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, AppState, Image, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import PromotionOffer from '../components/PromotionOffer';
-import AiNotice from '../components/AiNotice';
 import { resolveWalletProduct } from '../components/WalletProductCard';
 import { CardReveal, officialProduct } from './RoutinePatternRecommendationScreen';
 import { dateKey, eventEndDate, readEvents, readProfile } from '../utils/routineData';
@@ -152,7 +151,7 @@ export default function RoutineRecommendationScreen({
   const cardLoading = !promotionTab && Boolean(recommendations?.cardLoading);
   const loadingView = <View style={s.aiLoading}>
     <ActivityIndicator color="#104FE7" size="large" />
-    {cardLoading && <Text style={s.caption}>AI가 추천 카드를 고르고 있어요</Text>}
+    {cardLoading && <Text style={s.caption}>추천 카드를 고르고 있어요</Text>}
   </View>;
   const matches = selected?.matches.filter(item => item.status !== 'blocked') || [];
   const match = matches.sort((a, b) => b.weight - a.weight)[0];
@@ -248,7 +247,6 @@ export default function RoutineRecommendationScreen({
         <TouchableOpacity disabled={busy} onPress={apply} style={s.primary}><Text style={s.white}>카드 상품 보기</Text></TouchableOpacity>
       </View> : cardFallback()}
       {!!error && <Text style={s.error}>{error}</Text>}
-      <AiNotice />
     </ScrollView>;
   }
   return <ScrollView style={s.screen} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
@@ -328,7 +326,6 @@ export default function RoutineRecommendationScreen({
         <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={next} style={[s.secondary, busy && s.dim]}>
           <Text style={s.secondaryText}>홈으로 가기</Text>
         </TouchableOpacity>
-        <AiNotice />
       </View>
     </ScrollView>;
 }

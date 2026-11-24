@@ -1,6 +1,5 @@
 import PaymentCardOrder, { orderCards } from '../components/PaymentCardOrder';
 import PaymentBenefitChat from '../components/PaymentBenefitChat';
-import AiNotice from '../components/AiNotice';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
@@ -639,16 +638,16 @@ export default function PaymentScreen({
                 {placement.status === 'loading' && <ActivityIndicator size="small" color="#245DE5" />}
               </View>
 
-              {placement.status === 'loading' && <Text style={s.aiText}>AI가 카드 순서를 정하고 있어요.</Text>}
-              {placement.status === 'failed' && <Text style={s.aiText}>AI 추천을 불러오지 못해 지갑 순서대로 보여 드려요.</Text>}
-              {placement.status === 'ready' && !!ai?.fallback && <Text style={s.aiText}>AI 응답이 없어 지갑 순서대로 보여 드려요.</Text>}
-              {placement.status === 'ready' && !ai?.fallback && !aiTop && <Text style={s.aiText}>AI가 순서를 정할 수 있는 카드가 아직 없어요.</Text>}
+              {placement.status === 'loading' && <Text style={s.aiText}>카드 순서를 정하고 있어요.</Text>}
+              {placement.status === 'failed' && <Text style={s.aiText}>추천을 불러오지 못해 지갑 순서대로 보여 드려요.</Text>}
+              {placement.status === 'ready' && !!ai?.fallback && <Text style={s.aiText}>추천 응답이 없어 지갑 순서대로 보여 드려요.</Text>}
+              {placement.status === 'ready' && !ai?.fallback && !aiTop && <Text style={s.aiText}>순서를 정할 수 있는 카드가 아직 없어요.</Text>}
               {placement.status === 'ready' && !!aiTop && selected.id === aiTop.id && <Text style={s.aiText}>
-                  {ai.message || 'AI가 이 카드를 맨 앞에 뒀어요.'}
+                  {ai.message || '지금 결제에 맞는 카드를 맨 앞에 뒀어요.'}
                 </Text>}
               {placement.status === 'ready' && !!aiTop && selected.id !== aiTop.id && <>
                   <Text style={s.aiText}>
-                    AI가 맨 앞에 둔 카드는 {aiTop.name}예요.
+                    맨 앞에 둔 추천 카드는 {aiTop.name}예요.
                   </Text>
                   <TouchableOpacity accessibilityRole="button" onPress={() => choose(aiTop)} style={s.aiButton}>
                     <Text style={s.link}>이 카드로 바꾸기</Text>
@@ -696,7 +695,7 @@ export default function PaymentScreen({
               {aiRows
                 ? (scenario.aiExample ? exampleBasisLine(scenario.basis)
                   : scheduleScenario ? '일정 업종에 맞춘 결제 예시예요. ' : '')
-                  + '이번 달 실적·한도와 진행 중인 행사를 반영해 AI가 계산했어요.'
+                  + '이번 달 실적·한도와 진행 중인 행사를 반영해 계산했어요.'
                 : scheduleScenario
                 ? '일정 업종에 맞춘 결제 예시예요. 실제 혜택은 가맹점·실적·잔여 한도에 따라 달라요.'
                 : '전월 실적 기록이 없으면 40만 원으로 계산한 예시예요.'}
@@ -756,7 +755,7 @@ export default function PaymentScreen({
                 ? '오늘 일정의 업종과 관련된 혜택이 있는 보유 카드예요.'
                 : '결제 카드를 바꿨어요. 바꾸기 전과 같은 일정·금액으로 혜택을 확인할 수 있어요.'
               : aiTop && selected.id === aiTop.id
-                ? 'AI가 지금 결제에 맞춰 맨 앞에 둔 카드(' + selected.name + ')로 결제해요.' + (ai.message ? ' ' + ai.message : '')
+                ? '지금 결제에 맞춰 맨 앞에 둔 카드(' + selected.name + ')로 결제해요.' + (ai.message ? ' ' + ai.message : '')
                 : '지갑에서 선택한 카드(' + selected.name + ')로 결제해요.'}
           </Text>
 
@@ -783,7 +782,6 @@ export default function PaymentScreen({
         </View>
 
       </View>
-      <AiNotice style={s.aiNotice} />
     </ScrollView>
     <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
       <TouchableOpacity activeOpacity={1} accessibilityLabel="카드 선택 닫기" style={s.sheetBackdrop} onPress={() => setPickerOpen(false)}>
@@ -821,7 +819,6 @@ export default function PaymentScreen({
   </>;
 }
 const s = StyleSheet.create({
-  aiNotice: { marginTop: 16 },
   screen: {
     flex: 1,
     backgroundColor: "#F4F7FB"

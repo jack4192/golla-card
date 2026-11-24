@@ -5,7 +5,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Linking, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SERVER_MODE, api } from '../utils/api';
-import AiNotice from './AiNotice';
 import { CARD_CATALOG_40 } from '../data/cardCatalog40';
 import { officialProduct } from '../screens/RoutinePatternRecommendationScreen';
 import { barRatios, findCatalogCard, missedTags, missedView, monthLabel, peakLine, periodLine, splitLine, topCards, won } from '../utils/yearEndCore';
@@ -13,7 +12,7 @@ import { barRatios, findCatalogCard, missedTags, missedView, monthLabel, peakLin
 const BAR_HEIGHT = 56;
 const BASIS = [
   '받은 혜택은 결제할 때 기록된 카드 혜택과 가맹점 행사 금액을 더한 값이에요.',
-  '놓친 혜택은 AI가 올해 결제는 그대로 두고, 그 카드가 있었다면 매장 결제에 어떤 카드를 냈을지 다시 골라 계산한 값이에요. 전월 실적은 달마다 다시 세고, 연회비는 기간만큼 뺐어요.',
+  '놓친 혜택은 올해 결제는 그대로 두고, 그 카드가 있었다면 매장 결제에 어떤 카드를 냈을지 다시 골라 계산한 값이에요. 전월 실적은 달마다 다시 세고, 연회비는 기간만큼 뺐어요.',
   '"대신"은 가진 카드 하나를 그 카드로 바꿨다고 본 금액이고, "더해서"는 지금 카드에 그 카드를 더해 함께 썼다고 본 금액이에요.',
 ];
 
@@ -60,7 +59,7 @@ function MissedSection({ missed, onRetry }) {
     </View>
     {missed.state === 'loading' && <View style={s.center}>
       <ActivityIndicator color="#1459F5" />
-      <Text style={s.mutedText}>AI가 올해 결제를 다시 계산하고 있어요</Text>
+      <Text style={s.mutedText}>올해 결제를 다시 계산하고 있어요</Text>
     </View>}
     {missed.state === 'error' && <Retry text="놓친 혜택을 불러오지 못했어요" onPress={onRetry} />}
     {missed.state === 'empty' && <View style={s.goodFit}>
@@ -200,7 +199,6 @@ export default function YearEndReport({ visible, onClose }) {
           {basisOpen && <View style={s.basisBody}>
             {BASIS.map(line => <Text key={line} style={s.basisText}>{line}</Text>)}
           </View>}
-          <AiNotice />
         </ScrollView>}
     </SafeAreaView>
   </Modal>;
