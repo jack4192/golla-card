@@ -16,3 +16,5 @@ data/out/
 
 # 카카오 로컬 API 수집 결과 (이용약관 확인 전까지 올리지 않음)
 data/cache/
+
+.idea
