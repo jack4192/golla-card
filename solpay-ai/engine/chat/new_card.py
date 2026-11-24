@@ -28,8 +28,9 @@ def _prev(key: tuple[int, int]) -> tuple[int, int]:
     return (y - 1, 12) if m == 1 else (y, m - 1)
 
 
-def recommend_new_cards(state, payments: list[Payment], at: datetime, months: int = 3, top: int = 3) -> dict:
-    """at 이 속한 달 직전 months 개월(다 끝난 달)로 계산한다. 결제가 있는 달만 평균에 넣는다."""
+def recommend_new_cards(state, payments: list[Payment], at: datetime, months: int = 3, top: int = 3, cards=None) -> dict:
+    """at 이 속한 달 직전 months 개월(다 끝난 달)로 계산한다. 결제가 있는 달만 평균에 넣는다.
+    cards: 주면 그 카드들만 그 순서대로 계산한다 (챗봇 카드 지정 비교 compare_cards, 2026-11-24). 없으면 미보유 신한카드 상위 top 장."""
     catalog = state.catalog
     keys = _month_keys(at, months)
     by_month: dict[tuple[int, int], list[Payment]] = defaultdict(list)
@@ -39,7 +40,7 @@ def recommend_new_cards(state, payments: list[Payment], at: datetime, months: in
     if not used:
         return {"months": [], "cards": [], "note": "최근 결제가 없어 계산할 수 없습니다"}
     rows = []
-    for card in candidates(state):
+    for card in (cards if cards is not None else candidates(state)):
         total, by_cat = 0, Counter()
         prev_perf = sum(p.amount for p in by_month.get(_prev(used[0]), []))
         for key in used:
@@ -59,6 +60,8 @@ def recommend_new_cards(state, payments: list[Payment], at: datetime, months: in
             "top_categories": [{"category": c, "category_name": catalog.category_name(c), "benefit": int(round(v / len(used), -1))}
                                for c, v in by_cat.most_common(3) if v > 0],
         })
-    rows.sort(key=lambda r: (-r["net_benefit"], r["card_id"]))
+    if cards is None:
+        rows.sort(key=lambda r: (-r["net_benefit"], r["card_id"]))
+        rows = rows[:top]
     spend = int(round(sum(p.amount for k in used for p in by_month[k]) / len(used), -1))
-    return {"months": [f"{y}-{m:02d}" for y, m in used], "monthly_spend": spend, "cards": rows[:top]}
+    return {"months": [f"{y}-{m:02d}" for y, m in used], "monthly_spend": spend, "cards": rows}
