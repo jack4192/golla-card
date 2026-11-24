@@ -13,6 +13,7 @@ import { isCustomCategory, typedCategoryIds } from '../utils/routineData';
 import { loadAiEstimates, loadAiMerchants } from '../utils/aiEstimate';
 import { matchPlace } from '../utils/aiEstimateCore';
 import { SERVER_MODE } from '../utils/api';
+import { withParticle } from '../utils/josaCore';
 
 const MAX_AMOUNT = 10000000;
 const digits = text => String(text || '').replace(/\D/g, '').replace(/^0+/, '').slice(0, 8);
@@ -46,7 +47,7 @@ export default function ActualBenefitCalc({ card, cards, onClose }) {
       const match = matchPlace(where, merchants, typedCategory);
       if (!match) {
         setResult(null);
-        setError(`'${where}'이(가) 어떤 곳인지 알 수 없어요. 가맹점 이름(예: 스타벅스)이나 업종(예: 카페, 주유소)으로 적어 주세요.`);
+        setError(`${withParticle(`'${where}'`, '이')} 어떤 곳인지 알 수 없어요. 가맹점 이름(예: 스타벅스)이나 업종(예: 카페, 주유소)으로 적어 주세요.`);
         return;
       }
       // 앱 계산용 업종 거래 (데모 모드·AI 실패 때). 마트·쇼핑은 입력한 이름으로 대형마트/온라인몰을 가른다
@@ -90,7 +91,7 @@ export default function ActualBenefitCalc({ card, cards, onClose }) {
         <Ionicons name="close" size={20} color="#4A5A75" />
       </TouchableOpacity>
     </View>
-    <Text style={s.caption}>{selected ? selected.name + '로 결제했을 때' : ''}</Text>
+    <Text style={s.caption}>{selected ? withParticle(selected.name, '로') + ' 결제했을 때' : ''}</Text>
 
     <Text style={s.label}>어디서 결제하나요?</Text>
     <TextInput accessibilityLabel="결제할 곳" value={place} maxLength={30} returnKeyType="next"
@@ -114,11 +115,11 @@ export default function ActualBenefitCalc({ card, cards, onClose }) {
       <Text style={s.resultHead}>{result.merchant} · {won(result.amount)} 결제</Text>
       {/* 이 카드 값이 아예 없으면(계산 못 하는 결제) 이유 없는 '조건 확인 필요' 대신 그렇다고 알린다 (PR #11 검토) */}
       <Text style={[s.resultAmount, !known && s.resultUnknown]}>
-        {known ? reward(result.benefit) + ' 혜택' : result.benefit ? '혜택 조건 확인 필요' : '이 결제는 ' + selected.name + '로 계산할 수 없어요'}
+        {known ? reward(result.benefit) + ' 혜택' : result.benefit ? '혜택 조건 확인 필요' : '이 결제는 ' + withParticle(selected.name, '로') + ' 계산할 수 없어요'}
       </Text>
       {!known && !!result.benefit?.reason && <Text style={s.resultNote}>{result.benefit.reason}</Text>}
       {result.better && <Text style={s.better}>
-        내 카드 중 {result.better.card.name}이(가) {reward(result.better.benefit)}로 더 많이 줘요
+        내 카드 중 {withParticle(result.better.card.name, '이')} {withParticle(reward(result.better.benefit), '로')} 더 많이 줘요
       </Text>}
       <Text style={s.basis}>{result.ai ? '이번 달 실적·한도와 진행 중인 행사를 반영했어요.' : '카드 혜택 규칙으로 계산한 값이에요. 실적·한도에 따라 달라질 수 있어요.'}</Text>
     </View>}

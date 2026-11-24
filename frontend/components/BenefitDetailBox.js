@@ -7,6 +7,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { withParticle } from '../utils/josaCore';
 
 const won = value => Number(value || 0).toLocaleString('ko-KR') + '원';
 const reward = row => (Number.isFinite(row?.value)
@@ -42,7 +43,8 @@ export default function BenefitDetailBox({ scenario, selected, baseline, selecte
         {difference > 0 && <Ionicons name="trending-up" size={14} color="#0E7A4F" />}
         <Text style={[s.saveText, difference > 0 ? s.saveTextGood : s.saveTextNeutral]}>
           {difference > 0 ? baseline.name + '보다 ' + won(difference) + ' 더 아껴요!'
-            : difference === 0 ? baseline.name + '와 혜택이 같아요' : baseline.name + '로 결제하면 ' + won(-difference) + ' 더 받을 수 있어요!'}
+            : difference === 0 ? withParticle(baseline.name, '와') + ' 혜택이 같아요'
+            : withParticle(baseline.name, '로') + ' 결제하면 ' + won(-difference) + ' 더 받을 수 있어요!'}
         </Text>
       </View>}
     </View>

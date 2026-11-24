@@ -692,8 +692,9 @@ export default function PaymentScreen({
           // 추천을 불러오는 중·못 불러옴·대체 응답이면 한 줄 알린다 (PR #11 검토: AI 상자와 함께 빠졌던 안내)
           status={scheduleScenario && !scheduleAi ? ''
             : placement.status === 'loading' ? '추천 카드를 정하고 있어요.'
-            : placement.status === 'failed' ? 'AI 추천 서버가 잠시 쉬는 중이라, 지금 고른 카드로 계산했어요.'
-            : placement.status === 'ready' && ai?.fallback ? 'AI가 잠깐 바빠서, 지금 고른 카드로 계산했어요.' : ''}
+            // 실패·기본 순서 모두 같은 안내 (2026-11-25 사용자 결정 '부드럽게, AI 없이' — 수정사항2 결정 5)
+            : placement.status === 'failed' || (placement.status === 'ready' && ai?.fallback)
+              ? '추천이 잠시 늦어져 지금 고른 카드로 계산했어요.' : ''}
           // 상세 내역 (2026-11-24 '상세하지 않다' → 늘 숫자로): 결제 예시, 이 카드 혜택, 실제로 내는 돈, 내 카드별 비교,
           // 이 카드 주요 혜택, AI 안내, 계산 기준·조건
           details={(() => {
