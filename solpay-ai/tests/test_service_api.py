@@ -542,3 +542,39 @@ def test_놓친_혜택은_시작_달의_전달_결제만_실적_준비로_쓴다
     svc.missed_benefit(1, datetime(2026, 3, 20, 12, tzinfo=KST), start=date(2026, 1, 1))
     assert seen["months"] == [(2025, 12), (2026, 1), (2026, 2), (2026, 3)]
     assert seen["kwargs"] == {"count_from": (2026, 1), "months": 3}
+
+
+# ---------- 내부 API 보호 (2026-11-24 점검 문제 7) ----------
+# 사용자 결정: 토큰이 없으면 같은 컴퓨터(127.0.0.1·::1)에서 온 요청만, 개발 화면·시연 API 는 SOLPAY_DEV_TOOLS=on 일 때만.
+# 이 파일의 다른 시험은 conftest 가 SOLPAY_ALLOW_NO_TOKEN=1·SOLPAY_DEV_TOOLS=on 을 켜 둔 상태로 돈다.
+
+def test_토큰이_없으면_다른_컴퓨터에서_온_내부_호출은_막는다(svc, monkeypatch):
+    monkeypatch.delenv("SOLPAY_INTERNAL_TOKEN", raising=False)
+    monkeypatch.delenv("SOLPAY_ALLOW_NO_TOKEN", raising=False)
+    body = {"user_id": 1, "at": "2026-10-07T12:20:00+09:00"}
+    with TestClient(create_app(svc), client=("10.0.0.7", 50000)) as c:
+        assert c.post("/internal/rank", json=body).status_code == 401
+    with TestClient(create_app(svc), client=("127.0.0.1", 50000)) as c:
+        assert c.post("/internal/rank", json=body).status_code == 200
+    with TestClient(create_app(svc), client=("::1", 50000)) as c:
+        assert c.post("/internal/rank", json=body).status_code == 200
+
+
+def test_토큰이_있으면_같은_컴퓨터라도_토큰이_있어야_한다(svc, monkeypatch):
+    monkeypatch.setenv("SOLPAY_INTERNAL_TOKEN", "secret")
+    with TestClient(create_app(svc), client=("127.0.0.1", 50000)) as c:
+        assert c.post("/internal/rank", json={"user_id": 1}).status_code == 401
+
+
+def test_개발_화면과_시연_API는_SOLPAY_DEV_TOOLS_가_켜졌을_때만(svc, monkeypatch):
+    monkeypatch.delenv("SOLPAY_DEV_TOOLS", raising=False)
+    with TestClient(create_app(svc), client=("127.0.0.1", 50000)) as c:
+        for path in ("/dev", "/docs", "/openapi.json", "/redoc"):
+            assert c.get(path).status_code == 404, path
+        assert c.post("/internal/dev/reset").status_code == 404
+        assert c.post("/internal/payments", json={}).status_code == 404
+        assert c.get("/health").status_code == 200
+    monkeypatch.setenv("SOLPAY_DEV_TOOLS", "on")
+    with TestClient(create_app(svc), client=("127.0.0.1", 50000)) as c:
+        assert c.get("/dev").status_code == 200
+        assert c.get("/openapi.json").status_code == 200

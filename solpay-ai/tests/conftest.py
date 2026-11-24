@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -11,6 +12,11 @@ from engine.priors import Priors
 from engine.state import UserState
 
 KST = ZoneInfo("Asia/Seoul")
+
+# 시험은 TestClient(주소 'testclient')로 부르므로 토큰 없는 내부 호출을 허용하고, 개발 화면·시연 API 도 켠다 (2026-11-24 문제 7).
+# 내부 API 보호 자체는 test_service_api.py 의 시험이 이 값을 지우고 확인한다.
+os.environ.setdefault("SOLPAY_ALLOW_NO_TOKEN", "1")
+os.environ.setdefault("SOLPAY_DEV_TOOLS", "on")
 
 
 def benefit(i, category, rate=None, amount=None, min_amount=0, group="G", **kw):
