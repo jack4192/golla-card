@@ -18,3 +18,4 @@ data/out/
 data/cache/
 
 .idea
+node_modules
