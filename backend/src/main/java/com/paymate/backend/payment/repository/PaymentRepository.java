@@ -1,8 +1,10 @@
 package com.paymate.backend.payment.repository;
 
 import com.paymate.backend.card.entity.Card;
+import com.paymate.backend.payment.entity.Payment;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
@@ -12,7 +14,7 @@ import org.springframework.data.repository.query.Param;
  * payments 표에는 사용자 칸이 없어 user_cards 로 내 카드의 결제만 고른다.
  * 결제 번호는 가상 데이터를 만들 때 시간순으로 매겨서(export_db) 번호가 곧 시간 순서다 → 최근 결제 쪽 넘기기는 번호로 한다.
  */
-public interface PaymentRepository extends Repository<Card, Long> {
+public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     String COLUMNS = """
             SELECT p.payment_id                                        AS "paymentId",
