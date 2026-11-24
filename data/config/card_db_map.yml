@@ -43,6 +43,11 @@ card_codes:
   38: LOTTE_LIKIT_FUN_CHECK
   39: LOTTE_LOCA_LIKIT
   40: LOTTE_DIGILOCA_LASVEGAS
+  # 2026-11-24 공용 DB 에 더한 신한카드 4장 (앱 cardCatalog40 과 같은 코드)
+  41: SH_THE_PET
+  42: SH_CJ_ONE_CHECK
+  43: SH_DEEP_OIL
+  44: SH_LG_TWINS_CHECK
 
 # 카드사 이름 → 코드 (데모 화면 색과 엔진의 '자사 카드' 판단에 쓴다)
 issuers:
