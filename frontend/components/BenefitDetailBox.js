@@ -41,25 +41,13 @@ export default function BenefitDetailBox({ scenario, selected, baseline, selecte
       {hasDiff && <View style={[s.save, difference > 0 ? s.saveGood : s.saveNeutral]}>
         {difference > 0 && <Ionicons name="trending-up" size={14} color="#0E7A4F" />}
         <Text style={[s.saveText, difference > 0 ? s.saveTextGood : s.saveTextNeutral]}>
-          {difference > 0 ? '비교 카드보다 ' + won(difference) + ' 더 아껴요!'
-            : difference === 0 ? '두 카드의 혜택이 같아요' : '비교 카드가 ' + won(-difference) + ' 더 유리해요'}
+          {difference > 0 ? baseline.name + '보다 ' + won(difference) + ' 더 아껴요!'
+            : difference === 0 ? baseline.name + '와 혜택이 같아요' : baseline.name + '로 결제하면 ' + won(-difference) + ' 더 받을 수 있어요!'}
         </Text>
       </View>}
     </View>
 
-    {compare && <View style={s.compare}>
-      <View style={[s.tile, s.tileMine]}>
-        <Text style={s.tileLabel}>이 카드</Text>
-        <Text style={s.tileName} numberOfLines={1}>{selected.name}</Text>
-        <Text style={[s.tileValue, s.tileValueMine]}>{known ? reward(selectedBenefit) : '확인 필요'}</Text>
-      </View>
-      <Text style={s.vs}>vs</Text>
-      <View style={s.tile}>
-        <Text style={s.tileLabel}>비교 카드</Text>
-        <Text style={s.tileName} numberOfLines={1}>{baseline.name}</Text>
-        <Text style={s.tileValue}>{Number.isFinite(baseBenefit?.value) ? reward(baseBenefit) : '확인 필요'}</Text>
-      </View>
-    </View>}
+    {/* '이 카드 vs 비교 카드' 두 칸은 뺐다 (2026-11-24 사용자 요청). 비교 결과는 위 배지 한 줄로 */}
 
     {!!exampleLine && <Text style={s.note}>{exampleLine}</Text>}
     {!!why && <View style={s.why}>
