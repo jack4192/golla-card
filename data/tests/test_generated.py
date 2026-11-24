@@ -165,13 +165,17 @@ def test_마트_건당_금액(t):
 def test_혜택_테이블(t):
     b, tiers = t["card_benefits"], t["card_cap_tiers"]
     assert b.benefit_id.is_unique
-    assert len(b) == sum(len(c.benefits) for c in _cards().values())
+    # 2026-11-24 신한카드 4장(41~44)은 원본 CSV 에만 더했다. 생성 데이터는 40장일 때 만들어 그 4장이 없다
+    # (데이터를 다시 만들면 made 거르기를 빼고 원본 전체와 비교한다).
+    made = set(t["card_catalog"].card_id)
+    assert {c.card_id for c in _cards().values()} - made == {41, 42, 43, 44}
+    assert len(b) == sum(len(c.benefits) for c in _cards().values() if c.card_id in made)
     assert set(b.card_id) == set(t["card_catalog"].card_id)
     assert set(tiers.card_id) <= set(t["card_catalog"].card_id)
     assert set(b.category_code) - {"ALL"} <= set(t["merchant_categories"].category_code)
     assert b[["rate", "amount", "per_liter"]].notna().sum(axis=1).eq(1).all()      # 혜택 값은 하나만
     source = t["card_benefits_source"]
-    assert len(source) == len(read_db("benefits"))
+    assert len(source) == read_db("benefits").card_id.isin(made).sum()
     assert set(b.source_benefit_id) == set(source[source.excluded_reason == ""].benefit_id)
     assert set(source.excluded_reason) == {"", "해외"}
     assert t["card_rewards"].empty
