@@ -16,7 +16,7 @@ NOW = at(10, 7, 9)                                   # 2026-10-07(수) 09:00
 # 1년 계산을 끈 값: 오늘 더 받는 금액으로만 고르는 이전 규칙 (이력이 짧을 때도 이 규칙). 1년 이득순은 파일 끝에서 본다
 TODAY = Params(page_yearly=False)
 # 3일 카드날 규칙을 켜면(page_card_every_time=False) 같은 카드 2주 규칙도 함께 켜진다 (2026-11-24)
-RULE_2W = Params(page_yearly=False, page_card_every_time=False)
+RULE_2W = Params(page_yearly=False, page_card_every_time=False, recommend_same_card_days=14)   # 2주 규칙을 켠 경우 (기본은 끔, 2026-11-24)
 
 
 def page_catalog() -> Catalog:
@@ -172,7 +172,7 @@ def test_2주_안에_추천한_카드는_빼고_오늘_기록은_막지_않는�
 
 def test_같은_카드는_2주가_지나면_다시_추천한다():
     # 2026-11-21 사용자 결정: 같은 카드를 다시 추천하지 않는 기간 30일 → 2주
-    assert Params().recommend_same_card_days == 14
+    assert RULE_2W.recommend_same_card_days == 14
     ago = lambda days: [{"at": NOW - timedelta(days=days), "card_id": 9, "trigger": CYCLE}]
     assert pick_card(state_of(), habit_payments(), [coffee()], ago(13), NOW, RULE_2W) is None
     assert pick_card(state_of(), habit_payments(), [coffee()], ago(14), NOW, RULE_2W).card_id == 9
@@ -404,7 +404,8 @@ def test_탭이_비면_OpenAI를_부르지_않는다(page_svc):
     page_svc.store.recommended = [{"at": NOW - timedelta(days=1), "card_id": 8, "trigger": CYCLE},
                                   {"at": NOW - timedelta(days=2), "card_id": 9, "trigger": FALLBACK}]
     page_svc.popup_promotions = []
-    page_svc.engine.params = replace(page_svc.engine.params, page_card_every_time=False)   # 2주 규칙으로 카드를 막는다
+    page_svc.engine.params = replace(page_svc.engine.params, page_card_every_time=False,
+                                     recommend_same_card_days=14)   # 2주 규칙(기본은 끔)을 켜서 카드를 막는다
     _save_coffee(page_svc)
     client = FakeClient([])
     page = page_svc.recommendation_page(1, NOW, PageCopyWriter(client))
@@ -779,3 +780,11 @@ def test_일정_없이_건너뛰면_무작위_행사_문구는_평소_소비로_
     assert d["source"] == "pattern"
     m = template_copy(facts_of(d))["merchant"]
     assert m["summary"] == "평소 결제에 맞는 행사가 없어 지금 진행 중인 메가MGC커피 행사를 보여드려요."
+
+
+def test_2주_규칙은_기본으로_꺼져_있어_같은_카드를_다시_추천한다():
+    # 2026-11-24 사용자 결정 '2주 규칙을 없애줘': 5일 전에 추천한 카드도 3일 카드날 규칙에서 다시 고른다
+    assert Params().recommend_same_card_days == 0
+    three_days = Params(page_yearly=False, page_card_every_time=False)
+    pick = pick_card(state_of(), habit_payments(), [coffee()], [{"at": NOW - timedelta(days=5), "card_id": 9}], NOW, three_days)
+    assert pick is not None and pick.card_id == 9

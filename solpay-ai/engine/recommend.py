@@ -6,7 +6,8 @@
 2) 방문  : 최근 하루 안에 특수 업종에서 결제했고, 그 업종 혜택이 있는 카드가 지난 30일 기준 월 3,000원 이상 이득일 때
 3) 반복  : 최근 4일 중 3일 이상 같은 업종에서 결제했고(예: 편의점), 그 업종 혜택이 있는 카드가 월 3,000원 이상 이득일 때
 4) 정기  : 마지막 추천 뒤 3일이 지났고, 어떤 카드든 월 3,000원 이상 이득일 때
-1)~3)은 3일 간격을 기다리지 않지만 하루에 한 번까지만, 같은 카드는 2주(recommend_same_card_days) 안에 다시 추천하지 않는다.
+1)~3)은 3일 간격을 기다리지 않지만 하루에 한 번까지만. 같은 카드를 다시 추천하지 않는 기간(recommend_same_card_days)은
+2026-11-24 사용자 결정으로 0(끔)이다.
 
 '월 이득' = 지난 30일 결제를, 그 카드를 더 가졌다면 결제마다 가장 좋은 카드로 냈을 때의 혜택 − 지금 카드로 그렇게 냈을 때의
 혜택 − 연회비 ÷ 12. 새 카드의 전월 실적은 그 30일 동안 그 카드로 갔을 결제액으로 본다 (발급 첫 달은 실적 조건 때문에
@@ -214,7 +215,7 @@ def _regular(catalog, gain: int, card: Card | None, params: Params) -> Recommend
 def regular_recommendation(state, payments: list[Payment], history: list[dict], at: datetime,
                            params: Params) -> Recommendation | None:
     """일정 팝업의 카드 추천 (설계서 v4.1): 아직 없는 신한카드 중 월 이득(연회비 반영)이 가장 큰 카드.
-    recommend_min_monthly 원 이상일 때만, 같은 카드는 recommend_same_card_days 일 안에 다시 추천하지 않는다.
+    recommend_min_monthly 원 이상일 때만. 같은 카드를 다시 추천하지 않는 기간(recommend_same_card_days)은 기본 0(끔, 2026-11-24).
     3일 간격은 부르는 쪽(engine.popup)이 확인한다."""
     recent = {h["card_id"] for h in history if at - h["at"] < timedelta(days=params.recommend_same_card_days)}
     pool = [c for c in candidates(state) if c.card_id not in recent]
