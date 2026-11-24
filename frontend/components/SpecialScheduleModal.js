@@ -178,7 +178,6 @@ export default function SpecialScheduleModal({
   onClose,
   onChanged,
   onConfirmed,
-  onEditTimed,
   onRequestAdd,
   readOnly = false
 }) {
@@ -202,7 +201,6 @@ export default function SpecialScheduleModal({
   // 'ok' = 추가·변경·삭제 완료(초록), 'error' = 실패(빨강)
   const [messageTone, setMessageTone] = useState('ok');
   const notify = text => { setMessageTone('ok'); setMessage(text); };
-  const [extraOpen, setExtraOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
   const lock = useRef(false);
@@ -251,7 +249,6 @@ export default function SpecialScheduleModal({
     setTimeMode('range');
     setStart(time.start);
     setEnd(time.end);
-    setExtraOpen(false);
   };
   useEffect(() => {
     if (!visible || !compactEditor) return;
@@ -265,7 +262,6 @@ export default function SpecialScheduleModal({
     setTimeMode(editingEvent.start && editingEvent.end ? 'range' : 'allday');
     setStart(editingEvent.start || time.start);
     setEnd(editingEvent.end || time.end);
-    setExtraOpen(false);
   }, [visible, compactEditor, editing, editingEvent]);
   const disabled = busy || loading || !!loadError || readOnly;
   const canSaveAdd = !disabled && !!placeTitle.trim() && rangeReadyOf(timeMode, start, end);
@@ -326,21 +322,21 @@ export default function SpecialScheduleModal({
     if (!mounted.current) return;
     store(saved);
     if (editing) {
-      onChanged?.();
+      onChanged?.({ saved });
       onClose?.();
       return;
     }
     resetAdd();
     scrollRef.current?.scrollTo({ y: 0, animated: true });
     notify(`${dateHeading(saved.date)}에 '${eventTitle(saved)}' 일정을 추가했어요.`);
-    onChanged?.();
+    onChanged?.({ saved });
   });
   const remove = id => run(async () => {
     await deleteEvent(id);
     if (!mounted.current) return;
     setEvents(previous => previous.filter(event => event.id !== id));
     notify('일정을 삭제했어요.');
-    onChanged?.();
+    onChanged?.({ deletedId: id });
   });
   const confirm = () => run(async () => {
     await confirmToday();
@@ -391,7 +387,7 @@ export default function SpecialScheduleModal({
     setSheet(null);
     clear();
     notify(sheet.kind === 'time' ? '시간을 바꿨어요.' : '일정을 바꿨어요.');
-    onChanged?.();
+    onChanged?.({ saved });
   });
 
   const renderRow = event => <View key={event.id} style={s.row}>
@@ -491,22 +487,8 @@ export default function SpecialScheduleModal({
                 <Text style={s.addEntryLabel}>일정 직접 입력</Text>
                 <TextInput accessibilityLabel="일정 이름 직접 입력" value={placeTitle} editable={!disabled}
                   onChangeText={value => { setPlaceTitle(value); setMessage(''); }} style={[s.input, s.addInput]}
-                  placeholder="예: 병원 예약, 친구 생일 파티" maxLength={ROUTINE_TITLE_LIMIT} />
+                  placeholder="예: 동물병원 예약, 주유소" maxLength={ROUTINE_TITLE_LIMIT} />
               </View>
-              <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: extraOpen }}
-                onPress={() => setExtraOpen(value => !value)} style={s.addExtra}>
-                <Text style={s.blue}>{extraOpen ? '추가 옵션 접기' : '추가 옵션'}</Text>
-                <Ionicons name={extraOpen ? 'chevron-up' : 'chevron-down'} size={14} color="#245DE5" accessible={false} />
-              </TouchableOpacity>
-              {extraOpen && <>
-                <Text style={s.step}>메모 <Text style={s.stepHint}>(선택)</Text></Text>
-                <MemoInput memo={memo} setMemo={setMemo} disabled={disabled} />
-                {adding && !!onEditTimed && <TouchableOpacity accessibilityRole="button" disabled={busy}
-                  style={s.placeLink} onPress={() => { close(); onEditTimed(dateKey()); }}>
-                  <Text style={s.placeLinkTitle}>장소 일정으로 추가</Text>
-                  <Text style={s.placeLinkArrow}>›</Text>
-                </TouchableOpacity>}
-              </>}
               {timeMode === 'range' && !rangeReadyOf(timeMode, start, end) &&
                 <Text style={s.formProblem}>시작과 종료 시간을 확인해주세요.</Text>}
             </>}
@@ -620,7 +602,6 @@ const s = StyleSheet.create({
   addEntry: { alignSelf: 'center', width: '100%', maxWidth: 340, gap: 6 },
   addEntryLabel: { color: '#1854D8', fontSize: 15, fontWeight: '800', textAlign: 'center' },
   addInput: { textAlign: 'center' },
-  addExtra: { flexDirection: 'row', alignSelf: 'center', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 36 },
   addActions: { flexDirection: 'row', alignItems: 'stretch', gap: 6 },
   addCancel: { backgroundColor: '#EDF3FF', borderRadius: 24, paddingHorizontal: 18, minHeight: 52, justifyContent: 'center' },
   addCancelText: { color: '#245DE5', fontSize: 13, fontWeight: '800' },
@@ -962,25 +943,6 @@ const s = StyleSheet.create({
     fontSize: 13,
     color: '#B45309',
     textAlign: 'center'
-  },
-  placeLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#E3EAF4',
-    padding: 18
-  },
-  placeLinkTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#1E395F'
-  },
-  placeLinkArrow: {
-    fontSize: 26,
-    color: '#5A6E89'
   },
   primary: {
     padding: 16,

@@ -8,7 +8,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, AppState, Image, Modal, PanResponder, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Codes, makeDemoCode, protectScreen, realWalletCards } from '../screens/PaymentScreen';
+import { Codes, makeDemoCode, protectScreen, realWalletCards, reward, useBenefitEstimate } from '../screens/PaymentScreen';
+import { loadPlacementPreview } from '../utils/aiPlacement';
 import { SERVER_MODE, api } from '../utils/api';
 import { serverCardLinks } from '../utils/serverCards';
 import { POLL_MS, codeFromServer, receiptFromRecent, shouldPoll } from '../utils/paymentCodeCore';
@@ -17,6 +18,34 @@ const CODE_SECONDS = 60;
 const CLOSE_DISTANCE = 80;
 
 const won = value => Number(value || 0).toLocaleString('ko-KR') + '원';
+
+// 결제 카드 아래 '이 카드를 고른 이유' 한두 줄 (2026-11-24). 홈 카드 뒷면과 같은 AI 미리보기(기록 없음)를 쓴다
+function CardReason({ options, selected }) {
+  const baseline = options.find(item => item.id !== selected?.id) || selected;
+  const [placement, setPlacement] = useState({ status: SERVER_MODE ? 'loading' : 'off', result: null });
+  useEffect(() => {
+    if (!SERVER_MODE || !options.length) return undefined;
+    let stopped = false;
+    loadPlacementPreview(options)
+      .then(result => { if (!stopped) setPlacement({ status: result ? 'ready' : 'off', result }); })
+      .catch(() => { if (!stopped) setPlacement({ status: 'failed', result: null }); });
+    return () => { stopped = true; };
+  }, [options]);
+  const { scenario, selectedBenefit } = useBenefitEstimate({ options, selected, baseline, placement });
+  if (!selected || placement.status === 'loading') return null;
+  const ai = placement.result;
+  const aiTop = ai?.topId && !ai.fallback ? ai.topId === selected.id : false;
+  const message = String(ai?.message || '').trim().replace(/!$/, '');
+  const benefit = Number.isFinite(selectedBenefit?.value) && selectedBenefit.value > 0 && scenario
+    ? scenario.merchant + '에서 ' + reward(selectedBenefit) + ' 혜택' : '';
+  const text = aiTop && message ? message
+    : aiTop ? 'AI가 지금 결제에 가장 잘 맞는 카드로 골랐어요' + (benefit ? ' · ' + benefit : '')
+    : '직접 고른 카드예요' + (benefit ? ' · ' + benefit : '');
+  return <View style={s.reason}>
+    <Ionicons name="bulb-outline" size={14} color="#B26A00" />
+    <Text style={s.reasonText} numberOfLines={2}><Text style={s.reasonHead}>선정 이유 </Text>{text}</Text>
+  </View>;
+}
 
 export default function QuickPaySheet({ visible, cards = [], cardId, context, onSelectCard, onClose, onOpenDetails, onPaid }) {
   const options = useMemo(() => realWalletCards(cards.find(card => card.id === cardId), cards), [cards, cardId]);
@@ -244,6 +273,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
               <Ionicons name={picking ? 'chevron-up' : 'chevron-down'} size={14} color="#245DE5" />
             </View>}
           </TouchableOpacity>
+          {!picking && <CardReason options={options} selected={selected} />}
 
           {/* 카드를 고르는 동안에는 QR 대신 카드 목록을 보여줍니다. */}
           {picking && <ScrollView style={s.pickList} contentContainerStyle={s.pickContent}>
@@ -286,6 +316,9 @@ const s = StyleSheet.create({
   cardName: { fontSize: 15, color: '#14213D', fontWeight: '700' },
   change: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   changeText: { color: '#245DE5', fontSize: 13, fontWeight: '700' },
+  reason: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: -4, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 12, backgroundColor: '#FFF9EC', borderWidth: 1, borderColor: '#F6E3B5' },
+  reasonText: { flex: 1, fontSize: 13, lineHeight: 19, color: '#33445F' },
+  reasonHead: { fontWeight: '800', color: '#B26A00' },
   pickList: { flexGrow: 0, flexShrink: 0, maxHeight: 320 },
   pickContent: { gap: 4 },
   pickRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 8, borderRadius: 12, borderWidth: 1, borderColor: '#E3EAF4' },

@@ -13,7 +13,7 @@ export default class WebErrorBoundary extends React.Component {
     };
   }
   componentDidCatch(error, info) {
-    console.error('SOL-Pay demo rendering failed', error, info);
+    console.error('Pay·Mate demo rendering failed', error, info);
   }
   render() {
     if (!this.state.error) return this.props.children;
