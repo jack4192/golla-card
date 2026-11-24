@@ -176,6 +176,14 @@ export default function PaymentCardOrder({
   const requestMove = (cards, from, to) => {
     if (!canDrag) return;
     saveMove(cards, from, to);
+    // 결제 화면(syncSelection=false, 2026-11-24 사용자 결정 'PR #10: 맨 위가 바뀔 때만 선택'):
+    // 끌어서 맨 위 카드가 실제로 바뀌었을 때만 그 카드를 결제 카드로 고른다. 맨 위가 그대로면 AI·일정이 고른 카드를 지킨다.
+    if (!syncSelection && from !== to) {
+      const next = [...cards];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      if (next[0] && next[0].id !== cards[0]?.id) onSelect?.(next[0].id);
+    }
   };
   const pressOrderButton = () => {
     if (button.action === 'finish') setEditing(false);
@@ -304,6 +312,10 @@ export default function PaymentCardOrder({
           finishDrag();
         },
         onLostPointerCapture: event => {
+          if (drag.current?.pointerId === event.pointerId) finishDrag(true);
+        },
+        // 폰 브라우저가 스크롤 등으로 터치를 가져가면 끌기를 취소한다 (PR #10)
+        onPointerCancel: event => {
           if (drag.current?.pointerId === event.pointerId) finishDrag(true);
         },
       };
