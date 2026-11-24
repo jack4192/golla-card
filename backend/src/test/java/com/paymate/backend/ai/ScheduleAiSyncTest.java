@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
+import org.mockito.Mockito;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -217,6 +218,21 @@ class ScheduleAiSyncTest {
         List<Map<String, Object>> items = sync.itemsFor(7L, DAY);
 
         assertThat(items).extracting(i -> i.get("amount")).containsExactly(5600, 52000, 10000);
+    }
+
+    @Test
+    @DisplayName("같은 업종의 금액 중앙값은 일정이 여러 개거나 다시 넘겨도 한 번만 계산한다 (일정 저장 속도, 2026-11-24)")
+    void medianOnce() {
+        stored(place("GAS", "09:00", "10:00"), place("GAS", "11:00", "12:00"), place("GAS", "14:00", "15:00"));
+        when(schedules.medianAmountOfUser(7L, "GAS")).thenReturn(null);
+        when(schedules.medianAmount("GAS")).thenReturn(52000);
+
+        sync.itemsFor(7L, DAY);
+        List<Map<String, Object>> again = sync.itemsFor(7L, DAY);
+
+        assertThat(again).extracting(i -> i.get("amount")).containsExactly(52000, 52000, 52000);
+        verify(schedules, Mockito.times(1)).medianAmountOfUser(7L, "GAS");
+        verify(schedules, Mockito.times(1)).medianAmount("GAS");
     }
 
     @Test
