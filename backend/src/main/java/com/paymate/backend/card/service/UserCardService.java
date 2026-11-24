@@ -73,6 +73,23 @@ public class UserCardService {
         return saved.getId();
     }
 
+    /*
+     * 내 카드에서 빼기 (2026-11-24 사용자 결정). 남의 카드·없는 카드면 404.
+     * 그 카드의 결제·월 실적·결제 코드·순서 기록은 DB 가 함께 지운다 (외래키 ON DELETE CASCADE).
+     * 시연 결제(app.demo_payments)처럼 카드를 붙잡는 기록이 있으면 지우지 않고 409.
+     */
+    @Transactional
+    public void remove(Long userId, Long userCardId) {
+        UserCard card = userCardRepository.findByIdAndUserId(userCardId, userId)
+                .orElseThrow(() -> new BusinessException(CardErrorCode.USER_CARD_NOT_FOUND));
+        try {
+            userCardRepository.delete(card);
+            userCardRepository.flush();   // 외래키 오류를 여기서 받아 409 로 바꾼다
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(CardErrorCode.CARD_IN_USE);
+        }
+    }
+
     /* 내 카드의 혜택 상세. 남의 카드 번호면 404 */
     @Transactional(readOnly = true)
     public List<BenefitResponse> getBenefits(Long userId, Long userCardId) {
