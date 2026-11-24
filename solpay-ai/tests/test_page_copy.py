@@ -355,7 +355,8 @@ def test_LLM_문구를_쓴다():
     copy, source, log = PageCopyWriter(client, CopySettings()).write(facts_of(page_dict()))
     assert (source, copy, log["retries"]) == ("llm", GOOD, 0)
     req = client.requests[0]
-    assert req["model"] == "gpt-4o-mini" and req["response_format"]["type"] == "json_schema"
+    assert req["model"] == "gpt-6.1-terra" and req["response_format"]["type"] == "json_schema"
+    assert req["reasoning_effort"] == "none" and "temperature" not in req
 
 
 def test_검사에_걸리면_한_번_다시_쓰고_처음_문제를_기록한다():
