@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SERVER_MODE, api } from '../utils/api';
 import { CARD_CATALOG_40 } from '../data/cardCatalog40';
 import { officialProduct } from '../screens/RoutinePatternRecommendationScreen';
-import { barRatios, findCatalogCard, missedTags, missedUsageTip, missedView, monthLabel, peakLine, periodLine, splitLine, topCards, won } from '../utils/yearEndCore';
+import { barRatios, findCatalogCard, missedMessage, missedTags, missedView, monthLabel, peakLine, periodLine, splitLine, topCards, won } from '../utils/yearEndCore';
 
 const BAR_HEIGHT = 56;
 const BASIS = [
@@ -38,7 +38,7 @@ function MissedDetail({ item }) {
   const card = findCatalogCard(CARD_CATALOG_40, item.card_name);
   const product = officialProduct(card?.code);
   return <View style={s.detail}>
-    <Text style={s.message}>추천 카드를 사용했다면 {won(item.gain)}을 아꼈어요. {missedUsageTip(card)}</Text>
+    <Text style={s.message}>{missedMessage(item, card)}</Text>
     <View style={s.tags}>
       {missedTags(item).map(tag => <View key={tag} style={s.tag}><Text style={s.tagText}>{tag}</Text></View>)}
     </View>
