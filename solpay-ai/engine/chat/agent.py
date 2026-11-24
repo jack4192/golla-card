@@ -23,7 +23,7 @@ from engine.privacy import redact
 ROOT = Path(__file__).resolve().parents[2]
 TIMEOUT_REPLY = "지금은 답변이 늦어지고 있어요. 잠시 후 다시 물어봐 주세요."
 TABLE_REPLY = "아래 표를 확인해 주세요."     # 옛 답. 앱이 표를 그리지 않아 쓰지 않는다 (2026-11-24, 대신 block_summary)
-DETAIL_HINT = "더 자세한 설명이 필요하면 '자세히'라고 입력해 주세요."
+# '자세히' 입력·안내 문장·버튼은 2026-11-24 사용자 결정으로 뺐다 ("자세히 별로다, 전부 빼기"). 기본 답 3~6문장은 그대로.
 NO_ANSWER_REPLY = "확인할 수 없는 내용이 있어 답을 드리지 못했어요. 질문을 조금 바꿔 다시 물어봐 주세요."
 
 # 추천 질문 칩 = 시연용 예비 답변 질문 (2026-11-19 결정: 설계서 예시 기준 4개)
@@ -73,22 +73,6 @@ def _norm(text: str) -> str:
     return re.sub(r"[\s?!.,~·]", "", text)
 
 
-# 기본 답은 3~6문장, '자세히'를 입력하면 더 자세히 (2026-11-24 사용자 결정)
-_DETAIL_WORDS = ("자세히", "자세하게")
-_DETAIL_FILLER = re.compile(r"자세히|자세하게|조금|좀|더|다시|한번|한 번|설명|알려|말해|해|줘|주세요|줄래|줄래요|요|봐|주라|부탁")
-
-
-def wants_detail(message: str) -> bool:
-    return any(w in message for w in _DETAIL_WORDS)
-
-
-def detail_only(message: str) -> bool:
-    """'자세히'·'더 자세히 알려줘'처럼 다른 내용 없이 자세히만 말했는지 (앞 질문을 자세히 다시 답한다)."""
-    return wants_detail(message) and not _DETAIL_FILLER.sub("", _norm(message))
-
-
-def _hinted(history: list[dict]) -> bool:
-    return any(h.get("role") == "assistant" and "'자세히'" in str(h.get("text") or "") for h in history)
 
 
 def chip_of(message: str) -> int | None:
@@ -114,22 +98,16 @@ class ChatAgent:
         usage = {"tokens_in": 0, "tokens_out": 0}
         if self.client is None:
             return self._fallback(tb, message, started, usage, "no_api_key")
-        detail = ("again" if detail_only(message) else "ask") if wants_detail(message) else None
         try:
-            reply, retries = self._run(tb, message, history or [], screen, deadline, usage, detail)
+            reply, retries = self._run(tb, message, history or [], screen, deadline, usage)
         except Exception as e:                      # OpenAI 장애·시간 초과·응답 형식 오류
             return self._fallback(tb, message, started, usage, type(e).__name__)
-        # 대화에서 한 번만 (숫자가 없어 검사와 무관). '자세히' 버튼이 있는 앱(screen.detail_button)에는 붙이지 않는다 (2026-11-24 3단계)
-        if (retries < 2 and detail is None and tb.calls and not _hinted(history or [])
-                and not (screen or {}).get("detail_button")):
-            reply = f"{reply}\n\n{DETAIL_HINT}"
-        return self._response(tb, reply, False, started, usage, retries=retries, detail=detail)
+        return self._response(tb, reply, False, started, usage, retries=retries)
 
     # ---------- LLM 반복 ----------
-    def _messages(self, tb: ToolBox, message: str, history: list[dict], screen: dict | None,
-                  detail: str | None = None) -> list[dict]:
+    def _messages(self, tb: ToolBox, message: str, history: list[dict], screen: dict | None) -> list[dict]:
         top = self._top_card(tb, screen)
-        msgs = [{"role": "system", "content": system_prompt(tb.at, tb.card_names(), screen, top, detail)}]
+        msgs = [{"role": "system", "content": system_prompt(tb.at, tb.card_names(), screen, top)}]
         for h in history[-2 * self.settings.history_turns:]:
             role = "assistant" if h.get("role") == "assistant" else "user"
             text = redact(str(h.get("text") or ""))[:1000]
@@ -158,8 +136,8 @@ class ChatAgent:
         return resp.choices[0].message
 
     def _run(self, tb: ToolBox, message: str, history: list[dict], screen: dict | None, deadline: float,
-             usage: dict, detail: str | None = None) -> tuple[str, int]:
-        messages = self._messages(tb, message, history, screen, detail)
+             usage: dict) -> tuple[str, int]:
+        messages = self._messages(tb, message, history, screen)
         reply, budget = self._loop(tb, messages, deadline, usage, self.settings.max_tool_calls)
         facts = lambda: guard.collect_facts(tb.results, message, [h.get("text") for h in history], tb.card_names(),
                                             tb.at.day, tb.at.month, tb.at.year)

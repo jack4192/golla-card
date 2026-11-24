@@ -6,7 +6,7 @@
 
 from datetime import datetime
 
-PROMPT_VERSION = "2026-11-24.5"   # 2026-11-19 .2: 새 카드 추천·규칙 예시 / .3: 애매한 조건, 업종만 말한 결제 / .4: 브랜드는 가맹점으로, 연회비, 장소 조건 / .5: 시각만 말하면 요일 되묻기 / .6: 요일을 말했으면 되묻지 않기
+PROMPT_VERSION = "2026-11-24.6"   # 2026-11-19 .2: 새 카드 추천·규칙 예시 / .3: 애매한 조건, 업종만 말한 결제 / .4: 브랜드는 가맹점으로, 연회비, 장소 조건 / .5: 시각만 말하면 요일 되묻기 / .6: 요일을 말했으면 되묻지 않기
 #                                  2026-11-23 .1: 앱 사용 안내, 진행 중인 프로모션(list_promotions), 홈·탭 화면 문맥 / .2: 남의 카드 연회비도 거절하지 않기 / .3: 마크다운 쓰지 않기, 프로모션은 두세 개만 문장으로
 #                                  / .4: 팀원 PR#3 화면 반영(홈 내 카드 목록, '혜택 자세히 보기' 화면, 시간 직접 입력·전체 초기화, 일정 종류 하나만)
 #                                  2026-11-24 .1: 카드 상세의 '보유 카드로 등록'을 없애고 '카드 신청'(카드사 신청 페이지)으로 안내
@@ -14,6 +14,7 @@ PROMPT_VERSION = "2026-11-24.5"   # 2026-11-19 .2: 새 카드 추천·규칙 예
 #                                  / .3: 앱이 표를 그린다는 표시(screen.blocks)가 오면 [화면] 줄로 카드별 금액 나열을 줄이고 이유 위주
 #                                  / .4: 고도화 2단계 — 결제 요약·지난 결제 다시 보기·받은 혜택·하루 카드 계획·카드 지정 비교·내 규칙 보기 도구
 #                                  / .5: 고도화 3단계 — 일정 초안(draft_schedule)·규칙 지우기 초안(draft_rule_delete)
+#                                  / .6: '자세히' 답변 길이 지시를 뺌 (사용자 결정 "자세히 별로다, 전부 빼기"). 기본 3~6문장은 그대로
 WEEKDAY = "월화수목금토일"
 # 앱 탭 이름 (홈 챗봇이 screen.name 으로 보낸다). 결제 화면(pay)은 따로 다룬다
 SCREEN_NAMES = {"home": "홈", "benefits": "혜택 탭", "schedule": "오늘의 일정 탭", "cards": "카드 탭"}
@@ -145,10 +146,8 @@ SYSTEM = """\
   (적용된 혜택과 할인율, 예상 업종, 기본 카드와 실적, 프로모션 중 질문에 맞는 것).
 - 문맥에 [화면] 줄이 없으면 앱은 표를 보여 주지 않고 답 문장만 보여 준다. 그때 카드를 비교했으면 1~3순위 카드와 금액을 문장에 넣는다.
   카드가 많아도 모두 나열하지 않는다. [화면] 줄이 있으면 그 줄을 따른다.
-- 문맥에 [답변 길이] 자세히 가 있으면 6~10문장을 두세 문단으로 쓰고 문단 사이는 줄을 바꾼다.
-  순서는 결론, 근거가 되는 숫자, 계산 과정(applied 의 할인율·건당 최대·한도 적용 전 금액), 사용자가 할 수 있는 것이다. 이때도 숫자는 도구 결과만 쓴다.
+- 혜택이 어떻게 계산됐는지 물으면 applied 의 할인율·건당 최대·한도 적용 전 금액으로 순서대로 설명한다. 숫자는 도구 결과만 쓴다.
 - 앱 사용법과 용어 설명은 2~4문장. 앱 사용법은 첫 문장에 어디서 하는지(메뉴 경로)를 말한다.
-- '자세히'를 입력하라는 안내 문장은 쓰지 않는다 (앱이 따로 붙인다).
 - 앱은 답을 글자 그대로 보여 준다. 마크다운(**굵게**, #, 1. 2. 같은 번호 목록, - 글머리표)을 쓰지 않고 문장으로만 쓴다.
 
 [금지 사항]
@@ -163,15 +162,7 @@ SYSTEM = """\
 BLOCKS_CONTEXT = ("[화면] 앱이 답 아래에 표(카드 비교·실적·혜택 목록·프로모션 목록)를 함께 보여 준다. 표에 있는 카드별 금액을 "
                   "문장에서 모두 나열하지 말고, 결론 숫자 한두 개와 왜 그런지(적용된 혜택, 실적, 기본 카드)를 중심으로 쓴다.")
 
-DETAIL_CONTEXT = {
-    "ask": "[답변 길이] 자세히: 사용자가 자세한 설명을 원한다.",
-    "again": "[답변 길이] 자세히: 사용자가 바로 앞 답을 더 자세히 듣고 싶어 한다. 바로 앞 질문에 필요한 도구를 이번에도 불러 "
-             "숫자를 얻고, 앞 답보다 자세히 쓴다.",
-}
-
-
-def context_block(at: datetime, card_names: list[str], screen: dict | None, top_card: str | None,
-                  detail: str | None = None) -> str:
+def context_block(at: datetime, card_names: list[str], screen: dict | None, top_card: str | None) -> str:
     lines = [f"[문맥] 오늘은 {at:%Y-%m-%d} ({WEEKDAY[at.weekday()]}요일) {at:%H:%M} 이다.",
              "사용자의 보유 카드: " + ", ".join(card_names) + "."]
     if screen and screen.get("name") == "pay":
@@ -186,12 +177,8 @@ def context_block(at: datetime, card_names: list[str], screen: dict | None, top_
         lines.append(f"사용자는 {SCREEN_NAMES[screen['name']]} 화면에서 챗봇을 열었다.")
     if screen and screen.get("blocks"):
         lines.append(BLOCKS_CONTEXT)
-    if detail in DETAIL_CONTEXT:
-        lines.append(DETAIL_CONTEXT[detail])
     return "\n".join(lines)
 
 
-def system_prompt(at: datetime, card_names: list[str], screen: dict | None = None, top_card: str | None = None,
-                  detail: str | None = None) -> str:
-    """detail: None(보통) / "ask"(질문에 '자세히') / "again"('자세히'만 와서 앞 질문을 자세히)."""
-    return SYSTEM + "\n" + context_block(at, card_names, screen, top_card, detail)
+def system_prompt(at: datetime, card_names: list[str], screen: dict | None = None, top_card: str | None = None) -> str:
+    return SYSTEM + "\n" + context_block(at, card_names, screen, top_card)
