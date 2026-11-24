@@ -32,8 +32,9 @@ function BenefitBack({ card, cards, showAiMessage }) {
   if (!selected) return <Text style={s.backNote}>등록된 카드가 없어요.</Text>;
   if (placement.status === 'loading' || !scenario || !selectedBenefit) return <ActivityIndicator color="#FFFFFF" />;
   const known = Number.isFinite(selectedBenefit.value);
-  const aiTop = showAiMessage && placement.result?.topId === selected.id;
-  const aiMessage = aiTop ? String(placement.result?.message || '').trim() : '';
+  const ai = placement.result;
+  const aiTop = showAiMessage && ai?.topId === selected.id && !ai?.fallback;
+  const aiMessage = aiTop ? String(ai?.message || '').trim() : '';
   if (aiMessage) {
     return <View style={s.aiRow}>
       <View style={s.aiBadge}><Text style={s.aiBadgeText}>AI 추천</Text></View>
@@ -68,7 +69,8 @@ export default function CardBenefitFlip({ card, cards, artwork, artworkStyle, sh
         .start(() => { busy.current = false; });
     });
   };
-  const rotateY = turn.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '90deg'] });
+  // 가로로 줄였다 펴서 뒤집는다 (2D). 3D 회전(rotateY+perspective)은 아이폰에서 카드 반쪽이 뒤 배경 원에 가려 보였다 (2026-11-24)
+  const scaleX = turn.interpolate({ inputRange: [0, 1], outputRange: [1, 0.02] });
   const showBack = side === 'back';
   // 그림 칸 안에서 카드가 실제로 그려지는 크기 (resizeMode contain)
   const cardSize = box ? (() => {
@@ -78,7 +80,7 @@ export default function CardBenefitFlip({ card, cards, artwork, artworkStyle, sh
 
   return <>
     <View style={artworkStyle} onLayout={event => { const { width, height } = event.nativeEvent.layout; setBox({ width, height }); }}>
-      <Animated.View style={[StyleSheet.absoluteFill, s.center, { transform: [{ perspective: 900 }, { rotateY }] }]}>
+      <Animated.View style={[StyleSheet.absoluteFill, s.center, s.raise, { transform: [{ scaleX }] }]}>
         <TouchableOpacity accessibilityRole="button" activeOpacity={0.95} onPress={flip} style={[StyleSheet.absoluteFill, s.center]}
           accessibilityLabel={showBack ? '예상 혜택 보는 중. 누르면 카드로 돌아가요' : (card?.name || '카드') + '. 누르면 예상 혜택을 보여 줘요'}>
           <Image source={artwork} resizeMode="contain" fadeDuration={0} style={[s.fill, showBack && s.invisible]} accessible={false} />
@@ -101,6 +103,7 @@ export default function CardBenefitFlip({ card, cards, artwork, artworkStyle, sh
 
 const s = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
+  raise: { zIndex: 2, elevation: 2 },
   fill: { width: '100%', height: '100%' },
   invisible: { opacity: 0 },
   // 뒷면: 카드 색이 비치는 어두운 투명 유리 (2026-11-24, 흰 막은 탁해 보여 바꿈)
