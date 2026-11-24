@@ -1,9 +1,40 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, AppState, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { API_BASE_URL, SERVER_MODE, api } from '../utils/api';
+import { toPromotionOffer } from '../utils/aiRecommendCore';
 import { selectDailyPromotion } from '../utils/promotionsCore';
 import PromotionOffer from './PromotionOffer';
 import RoutineRecommendationScreen from '../screens/RoutineRecommendationScreen';
 import { hideAdForSevenDays, takeAutomaticAd } from '../utils/recommendationPopup';
+
+function PromotionPopupBody({ promotions, emptyText, onBrowse }) {
+  const [loading, setLoading] = useState(SERVER_MODE);
+  const [recommendation, setRecommendation] = useState(null);
+  const [reduced, setReduced] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    AccessibilityInfo.isReduceMotionEnabled().then(value => {
+      if (active) setReduced(value);
+    }).catch(() => {});
+    if (SERVER_MODE) {
+      api.aiRecommendationPage()
+        .then(page => { if (active) setRecommendation(toPromotionOffer(page, API_BASE_URL)); })
+        .catch(() => {})
+        .finally(() => { if (active) setLoading(false); });
+    }
+    return () => { active = false; };
+  }, []);
+
+  const offer = recommendation?.offer || selectDailyPromotion(promotions);
+  const description = recommendation?.description || (offer ? `오늘 진행 중인 ${offer.merchant} 행사를 보여드려요.` : '');
+  return <ScrollView contentContainerStyle={s.promoBody}>
+    {loading ? <ActivityIndicator color="#245DE5" /> : offer
+      ? <PromotionOffer key={offer.id} offer={offer} reason={recommendation?.reason} description={description}
+          onBrowse={onBrowse} recommendation reduced={reduced} />
+      : <Text style={s.promoText}>{emptyText}</Text>}
+  </ScrollView>;
+}
 
 export default function RecommendationLaunchPopup({
   enabled, allowAutomaticAds, selectedWalletCard, openRequest, promotions, onViewPromotions, onClosed,
@@ -73,10 +104,9 @@ export default function RecommendationLaunchPopup({
   };
   const shown = Boolean(kind && enabled && foreground);
   const promotion = kind === 'promotion';
-  const offer = promotion ? selectDailyPromotion(promotions) : null;
   return <Modal visible={shown} transparent animationType="fade" onRequestClose={close}>
       {shown && <View style={s.overlay}>
-          <View style={[s.sheet, promotion && s.promoSheet]}>
+          <View style={s.sheet}>
             <View style={s.header}>
               <Text style={s.title}>
                 {promotion ? '오늘의 프로모션' : '오늘의 카드 추천'}
@@ -88,10 +118,8 @@ export default function RecommendationLaunchPopup({
             </View>
 
             <View style={s.content}>
-              {promotion ? <ScrollView contentContainerStyle={s.promoBody}>
-                {offer ? <PromotionOffer key={offer.id} offer={offer} onBrowse={() => { close(); onViewPromotions(); }} />
-                  : <Text style={s.promoText}>{emptyText}</Text>}
-              </ScrollView> : <RoutineRecommendationScreen
+              {promotion ? <PromotionPopupBody promotions={promotions} emptyText={emptyText}
+                onBrowse={() => { close(); onViewPromotions(); }} /> : <RoutineRecommendationScreen
                 presentation={ad.automatic ? 'card-ad' : 'popup'}
                 onNext={close}
                 selectedWalletCard={selectedWalletCard}
@@ -120,7 +148,6 @@ export default function RecommendationLaunchPopup({
     </Modal>;
 }
 const s = StyleSheet.create({
-  promoSheet: {height:'72%',maxHeight:600},
   promoBody: {gap:12,padding:18},
   promoText: {fontSize:13,lineHeight:20,color:'#526783'},
   overlay: {

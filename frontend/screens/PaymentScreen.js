@@ -19,7 +19,7 @@ import { SERVER_MODE } from '../utils/api';
 import { loadPlacement } from '../utils/aiPlacement';
 import { useAutoPlacement } from '../utils/autoPlacement';
 import { loadAiEstimates } from '../utils/aiEstimate';
-import { chooseEstimateScenario, exampleBasisLine, exampleNote, exampleScenario } from '../utils/aiEstimateCore';
+import { chooseEstimateScenario, exampleScenario } from '../utils/aiEstimateCore';
 import { scheduleAiPaymentExample } from '../utils/scheduleAiCore';
 const SCENARIOS = [{
   id: 'coffee',
@@ -51,8 +51,8 @@ const SCENARIOS = [{
   category: /음식점|외식|식당|요식/,
   brand: /음식점/
 }];
-const won = value => Number(value || 0).toLocaleString('ko-KR') + '원';
-const reward = row => Number.isFinite(row?.value) ? Number(row.value).toLocaleString('ko-KR') + (row.unit === 'KRW' ? '원' : row.unit === 'POINT' ? 'P' : ' ' + row.unit) : '혜택 조건 확인 필요';
+export const won = value => Number(value || 0).toLocaleString('ko-KR') + '원';
+export const reward = row => Number.isFinite(row?.value) ? Number(row.value).toLocaleString('ko-KR') + (row.unit === 'KRW' ? '원' : row.unit === 'POINT' ? 'P' : ' ' + row.unit) : '혜택 조건 확인 필요';
 const catalogOf = card => CSV_CARD_CATALOG.find(item => item.code === (card.catalogCode || card.code || card.id) || card.id === 'solmate' && item.code === 'SH_SOLMATE_SOL_PLAN_CHECK' || item.name === card.name);
 
 // 실제 상품 정보와 해당 상품 이미지가 확인된 카드만 사용합니다.
@@ -312,43 +312,9 @@ export async function protectScreen() {
     await Promise.allSettled(tasks);
   };
 }
-export default function PaymentScreen({
-  card,
-  cards = [],
-  schedule,
-  onSelectCard,
-  onClose,
-  onOpenCards,
-  navigation
-}) {
-  const options = useMemo(() => realWalletCards(card, cards), [card, cards]);
-  const initialId = options.find(item => item.id === card?.id)?.id || options[0]?.id;
-  const [selectedId, setSelectedId] = useState(initialId);
-  const [baselineId, setBaselineId] = useState(options.find(item => item.id !== initialId)?.id || initialId);
-  const [scenarioId, setScenarioId] = useState('coffee');
-  const [assume, setAssume] = useState(true);
-  const [payment, setPayment] = useState(null);
-  const [generating, setGenerating] = useState(false);
-  const [now, setNow] = useState(Date.now());
-  const [active, setActive] = useState(!AppState.currentState || AppState.currentState === 'active');
-  const [error, setError] = useState('');
-  const [receipt, setReceipt] = useState(null);
-  const [imageError, setImageError] = useState(false);
-  const [imageRetry, setImageRetry] = useState(0);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  // AI 카드 배치 (서버 모드). status: off(데모 모드) / loading / ready / failed
-  const [placement, setPlacement] = useState({ status: SERVER_MODE ? 'loading' : 'off', result: null });
-  const userPicked = useRef(false);   // 사용자가 직접 카드를 고르면 AI 가 다시 바꾸지 않는다
-  // 카드 자동 배치 ON/OFF (홈 '내 지갑' 스위치와 같은 값). OFF 면 목록·결제 카드를 AI 로 바꾸지 않는다
-  const auto = useAutoPlacement();
-  const autoOnRef = useRef(auto.on);
-  autoOnRef.current = auto.on;
-  const mounted = useRef(true);
-  const sequence = useRef(0);
-  const current = useRef(null);
-  const notified = useRef(null);
-  const selected = options.find(item => item.id === selectedId) || options[0];
-  const baseline = options.find(item => item.id === baselineId) || options[0];
+// '이 거래의 예상 혜택' 계산 (결제 화면 + 홈 카드 뒷면이 같이 쓴다, 2026-11-24 결제 화면에서 떼어 냄).
+//   options: 지갑 카드, selected: 혜택을 볼 카드, baseline: 비교 카드, placement: AI 배치 { status, result }
+export function useBenefitEstimate({ options, selected, baseline, schedule = null, placement, scenarioId = 'coffee', assume = true }) {
   const scheduleScenario = useMemo(() => makeSchedulePaymentScenario(schedule), [schedule]);
   const fixedScenario = SCENARIOS.find(item => item.id === scenarioId) || SCENARIOS[0];
   // 서버 모드: 예상 혜택 거래를 AI 배치 문구 속 거래(rank.example)로 바꾼다 (2026-11-23).
@@ -384,11 +350,53 @@ export default function PaymentScreen({
     const transactionDate = new Date();
     return options.map(card => ({ card, benefit: aiRows?.[card.id] || estimatePayment(card, scenario, assume, transactionDate) }));
   }, [options, scenario, assume, aiRows]);
-  // 행사 문구의 '약 N원'과 상자 금액이 왜 다른지 알려 주는 한 줄 (AI 예시 거래일 때만)
-  const exampleLine = scenario.aiExample ? exampleNote(aiExample, placement.result?.message) : '';
   const selectedBenefit = estimates.find(row => row.card.id === selected?.id)?.benefit;
   const baseBenefit = estimates.find(row => row.card.id === baseline?.id)?.benefit;
   const difference = selected?.id === baseline?.id ? null : comparePayment(selectedBenefit, baseBenefit);
+  return { scheduleScenario, scheduleAi, scenario, contextKey, estimates, selectedBenefit, baseBenefit, difference };
+}
+
+export default function PaymentScreen({
+  card,
+  cards = [],
+  schedule,
+  onSelectCard,
+  onClose,
+  onOpenCards,
+  navigation
+}) {
+  const options = useMemo(() => realWalletCards(card, cards), [card, cards]);
+  const initialId = options.find(item => item.id === card?.id)?.id || options[0]?.id;
+  const [selectedId, setSelectedId] = useState(initialId);
+  const [baselineId, setBaselineId] = useState(options.find(item => item.id !== initialId)?.id || initialId);
+  const [scenarioId, setScenarioId] = useState('coffee');
+  const [assume, setAssume] = useState(true);
+  const [payment, setPayment] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  const [active, setActive] = useState(!AppState.currentState || AppState.currentState === 'active');
+  const [error, setError] = useState('');
+  const [receipt, setReceipt] = useState(null);
+  const [imageError, setImageError] = useState(false);
+  const [imageRetry, setImageRetry] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [cardDragActive, setCardDragActive] = useState(false);
+  // AI 카드 배치 (서버 모드). status: off(데모 모드) / loading / ready / failed
+  const [placement, setPlacement] = useState({ status: SERVER_MODE ? 'loading' : 'off', result: null });
+  const userPicked = useRef(false);   // 사용자가 직접 카드를 고르면 AI 가 다시 바꾸지 않는다
+  // 카드 자동 배치 ON/OFF (홈 '내 지갑' 스위치와 같은 값). OFF 면 목록·결제 카드를 AI 로 바꾸지 않는다
+  const auto = useAutoPlacement();
+  const autoOnRef = useRef(auto.on);
+  autoOnRef.current = auto.on;
+  const mounted = useRef(true);
+  const sequence = useRef(0);
+  const current = useRef(null);
+  const notified = useRef(null);
+  const selected = options.find(item => item.id === selectedId) || options[0];
+  const baseline = options.find(item => item.id === baselineId) || options[0];
+  // 예상 혜택 계산은 홈 카드 뒷면과 같이 쓴다 (useBenefitEstimate, 2026-11-24)
+  const { scheduleScenario, scheduleAi, scenario, contextKey, estimates, selectedBenefit, baseBenefit, difference }
+    = useBenefitEstimate({ options, selected, baseline, schedule, placement, scenarioId, assume });
   const estimateGroups = [
     {
       label: '할인·캐시백',
@@ -582,7 +590,8 @@ export default function PaymentScreen({
       </View>;
   }
   return <>
-    <ScrollView style={s.screen} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+    <ScrollView style={[s.screen, Platform.OS === 'web' && cardDragActive && s.scrollLocked]}
+      scrollEnabled={!cardDragActive} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
       <View style={s.container}>
         <View style={s.header}>
           <TouchableOpacity accessibilityRole="button" onPress={close}>
@@ -655,52 +664,6 @@ export default function PaymentScreen({
                 </>}
             </View>}
 
-          <View style={s.benefitBox}>
-            {/* 머리: 제목 + 거래 예시 */}
-            <View style={s.bxHead}>
-              <Text style={s.bxEyebrow}>이 거래의 예상 혜택</Text>
-              <View style={s.bxChip}>
-                <Text style={s.bxChipText}>{scenario.merchant} · {won(scenario.amount)}</Text>
-              </View>
-            </View>
-
-            {!!selectedBenefit.name && <Text style={s.bxName}>{selectedBenefit.name}</Text>}
-
-            {/* 금액이 확인되면 크게, 아니면 작은 상태 배지 + 이유 */}
-            {Number.isFinite(selectedBenefit.value)
-              ? <Text style={s.bxAmount}>{reward(selectedBenefit)}</Text>
-              : <View style={s.bxStatusRow}>
-                  <View style={s.bxStatus}><Text style={s.bxStatusText}>조건 확인 필요</Text></View>
-                  {!!selectedBenefit.reason && <Text style={s.bxReason}>{selectedBenefit.reason}</Text>}
-                </View>}
-
-            {selected.id !== baseline.id && <>
-                <View style={s.bxDivider} />
-                <View style={s.bxCompareRow}>
-                  <View style={s.flex}>
-                    <Text style={s.bxSmall}>비교 카드</Text>
-                    <Text style={s.bxCompareName} numberOfLines={1}>{baseline.name}</Text>
-                  </View>
-                  <Text style={s.bxCompareValue}>{Number.isFinite(baseBenefit.value) ? reward(baseBenefit) : '조건 확인 필요'}</Text>
-                </View>
-                {difference !== null && <Text style={[s.bxDiff, difference > 0 ? s.bxDiffGood : s.bxDiffNeutral]}>
-                    {difference > 0 ? '비교 카드보다 ' + won(difference) + ' 더 아낄 수 있어요'
-                      : difference === 0 ? '두 카드의 혜택이 같아요'
-                      : '비교 카드가 ' + won(-difference) + ' 더 유리해요'}
-                  </Text>}
-              </>}
-
-            {!!exampleLine && <Text style={s.bxNote}>{exampleLine}</Text>}
-            <Text style={s.bxFoot}>
-              {aiRows
-                ? (scenario.aiExample ? exampleBasisLine(scenario.basis)
-                  : scheduleScenario ? '일정 업종에 맞춘 결제 예시예요. ' : '')
-                  + '이번 달 실적·한도와 진행 중인 행사를 반영해 계산했어요.'
-                : scheduleScenario
-                ? '일정 업종에 맞춘 결제 예시예요. 실제 혜택은 가맹점·실적·잔여 한도에 따라 달라요.'
-                : '전월 실적 기록이 없으면 40만 원으로 계산한 예시예요.'}
-            </Text>
-          </View>
         </View>
 
         {receipt && <View style={s.box}>
@@ -741,9 +704,9 @@ export default function PaymentScreen({
           아래에서 카드 선택 이유와 상세 혜택을 확인하세요 ↓
         </Text>
 
-        {/* 결제 화면은 AI·일정이 고른 카드를 지켜야 해서 맨 위 카드를 자동으로 고르지 않습니다(syncSelection=false). */}
         <PaymentCardOrder cards={options} selectedId={selected.id} syncSelection={false}
           onSelect={id => { const item = options.find(option => option.id === id); if (item) choose(item); }}
+          onDragActiveChange={setCardDragActive}
           aiOrder={!auto.on || ai?.fallback ? null : ai?.order} />
 
         <View style={s.box}>
@@ -819,6 +782,7 @@ export default function PaymentScreen({
   </>;
 }
 const s = StyleSheet.create({
+  scrollLocked: { overflowY: 'hidden' },
   screen: {
     flex: 1,
     backgroundColor: "#F4F7FB"
@@ -1046,119 +1010,6 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12
-  },
-  benefitBox: {
-    width: '100%',
-    backgroundColor: "#F3F7FF",
-    borderWidth: 1,
-    borderColor: '#DCE6FA',
-    padding: 16,
-    borderRadius: 16,
-    gap: 8
-  },
-  flex: {
-    flex: 1
-  },
-  bxHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    flexWrap: 'wrap'
-  },
-  bxEyebrow: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#5A6E89'
-  },
-  bxChip: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 3
-  },
-  bxChipText: {
-    fontSize: 12,
-    color: '#435E80',
-    fontWeight: '600'
-  },
-  bxName: {
-    fontSize: 14,
-    lineHeight: 21,
-    fontWeight: '700',
-    color: '#1E395F'
-  },
-  bxAmount: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#245DE5',
-    letterSpacing: -0.5
-  },
-  bxStatusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8
-  },
-  bxStatus: {
-    backgroundColor: '#FFF4E0',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4
-  },
-  bxStatusText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#B45309'
-  },
-  bxReason: {
-    fontSize: 13,
-    color: '#5A6E89'
-  },
-  bxDivider: {
-    height: 1,
-    backgroundColor: '#DCE6FA',
-    marginVertical: 2
-  },
-  bxCompareRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10
-  },
-  bxSmall: {
-    fontSize: 12,
-    color: '#7486A0'
-  },
-  bxCompareName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#29456B'
-  },
-  bxCompareValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#29456B'
-  },
-  bxDiff: {
-    fontSize: 13,
-    fontWeight: '700'
-  },
-  bxDiffGood: {
-    color: '#087D54'
-  },
-  bxDiffNeutral: {
-    color: '#5A6E89'
-  },
-  bxFoot: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: '#7486A0'
-  },
-  bxNote: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: '#435E80',
-    marginBottom: 4
   },
   benefit: {
     fontSize: 25,

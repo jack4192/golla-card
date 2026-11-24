@@ -58,6 +58,7 @@ export default function RoutineRecommendationScreen({
   presentation = 'screen'
 }) {
   const cardAd = presentation === 'card-ad';
+  const cardOnly = presentation === 'popup' || cardAd;
   const [input, setInput] = useState(null);
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -134,18 +135,18 @@ export default function RoutineRecommendationScreen({
     // AI 가 카드를 주면 그것을, 못 주면(결제 내역이 없는 새 가입자 등) 설문 기반 앱 계산을 쓴다 (2026-11-23 결정).
     // AI 를 묻는 동안은 앱 계산 카드를 먼저 보이지 않는다 (카드가 바뀌어 보이지 않게, cardSource).
     const aiCard = aiPage ? toCardRecommendation(aiPage, CARD_CATALOG_40) : null;
-    const aiOffer = aiPage ? toPromotionOffer(aiPage, API_BASE_URL) : null;
+    const aiOffer = !cardOnly && aiPage ? toPromotionOffer(aiPage, API_BASE_URL) : null;
     const source = cardSource({ asksAi, aiState, aiCard });
     const cardPart = source === 'ai' ? { card: aiCard, example: false, ownedBest: null }
       : source === 'loading' ? { card: null, example: false, ownedBest: null, cardLoading: true } : {};
-    return { ...local, ...cardPart, ...(aiOffer && !cardAd ? aiOffer : {}) };
-  }, [input, now, scheduleDate, cardAd, aiPage, aiState, asksAi]);
+    return { ...local, ...cardPart, ...aiOffer };
+  }, [input, now, scheduleDate, cardAd, cardOnly, aiPage, aiState, asksAi]);
   // 탭은 AI 규칙을 따른다: 카드날에만 카드 추천, 행사가 없으면 카드 추천만 (2026-11-23 결정)
-  const tabs = useMemo(() => cardAd ? [0] : visibleTabs(aiPage), [aiPage, cardAd]);
+  const tabs = useMemo(() => cardOnly ? [0] : visibleTabs(aiPage), [aiPage, cardOnly]);
   useEffect(() => {
     if (!tabs.includes(index)) setIndex(tabs[0]);
   }, [tabs, index]);
-  const promotionTab = !cardAd && index === 1;
+  const promotionTab = !cardOnly && index === 1;
   const selected = recommendations?.card;
   const card = promotionTab ? null : selected?.card;
   const cardLoading = !promotionTab && Boolean(recommendations?.cardLoading);
@@ -222,7 +223,7 @@ export default function RoutineRecommendationScreen({
           <Text style={s.link}>다시 불러오기</Text>
         </TouchableOpacity>}
       </View>;
-  const recommendationTabs = !cardAd && <View style={s.pager}>
+  const recommendationTabs = !cardOnly && <View style={s.pager}>
     {tabs.map(position => (
       <TouchableOpacity key={position} accessibilityRole="tab" accessibilityState={{ selected: index === position }}
         disabled={busy} onPress={() => {
@@ -236,10 +237,9 @@ export default function RoutineRecommendationScreen({
     ))}
   </View>;
 
-  if (presentation === 'popup' || cardAd) {
+  if (cardOnly) {
     return <ScrollView style={s.screen} contentContainerStyle={{padding:18,gap:16}}>
-      {recommendationTabs}
-      {loading || cardLoading ? loadingView : promotionTab ? promotionContent() : card ? <View style={[s.hero,{gap:12}]}>
+      {loading || cardLoading ? loadingView : card ? <View style={[s.hero,{gap:12}]}>
         <CardReveal key={card.code} card={card} reduced={reduced} replay={0}/>
         <Text style={s.cardName}>{card.name}</Text>
         {!!reason && <Text style={s.reason}>{reason}</Text>}
