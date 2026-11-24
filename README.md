@@ -51,7 +51,7 @@ AI 연결에서 알아둘 것:
 - API 계약은 [solpay-ai/openapi.json](solpay-ai/openapi.json) 이고, 서버를 켜면 http://127.0.0.1:8001/docs 에서도 볼 수 있다.
 - 주요 API: 카드 배치 `POST /internal/rank`, 결제 기록 `POST /internal/payments`, 하루 일정 `PUT /internal/users/{id}/schedules/{day}`(항목에 선택 칸 `brand`), 일정 직접 입력 분류 `POST /internal/places/classify`, 맞춤 추천 `POST /internal/users/{id}/recommendation-page`, 챗봇 `POST /internal/chat`, 월간 리포트 `GET /internal/users/{id}/monthly-report`, 연말정산 `GET /internal/users/{id}/missed-benefit`, 규칙 `GET·PUT /internal/users/{id}/rules`.
 - 등록한 카드가 없는 사용자는 카드 배치가 오류 없이 빈 목록으로 온다 (`cards=[]`, `reason_code="NO_CARD"`, `recommendation_id=null`).
-- AI 엔진이 0.8초 안에 답하지 못하면 백엔드가 내 카드 순서대로 돌려준다 (`reason_code="FALLBACK"`).
+- AI 엔진이 2초(`AI_RANK_TIMEOUT_MS`, 2026-11-24 예전 0.8초) 안에 답하지 못하면 백엔드가 내 카드 순서대로 돌려준다 (`reason_code="FALLBACK"`).
 - AI 엔진은 백엔드와 같은 DB 를 봐야 한다 (`SOLPAY_STORE=db`). CSV 로 켜면 새로 가입한 사용자를 몰라 404 가 난다.
 
 ## 실행

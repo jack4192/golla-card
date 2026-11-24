@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
@@ -73,5 +74,14 @@ class ErrorFormatApiTest {
         Claims claims = jwt.getClaims(jwt.createAccessToken(1L, "test1@example.com", "USER"));
         long lifetime = claims.getExpiration().getTime() - claims.getIssuedAt().getTime();
         assertThat(lifetime).isEqualTo(12L * 60 * 60 * 1000);
+    }
+
+    @Value("${ai.rank-timeout-ms}")
+    private long rankTimeoutMs;
+
+    @Test
+    @DisplayName("결제 화면 카드 순서는 AI 를 기본 2초까지 기다린다 (공용 RDS 첫 계산 0.9~1.9초, 2026-11-24 사용자 결정, 예전 0.8초)")
+    void rankTimeout() {
+        assertThat(rankTimeoutMs).isEqualTo(2000L);
     }
 }

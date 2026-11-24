@@ -44,7 +44,7 @@ public class AiController {
     // ---------- 결제 화면 ----------
 
     /**
-     * 결제 화면 카드 순서와 안내 문구. AI 가 0.8초 안에 답하지 못하면 기본 순서(reason_code=FALLBACK).
+     * 결제 화면 카드 순서와 안내 문구. AI 가 제한 시간(기본 2초) 안에 답하지 못하면 기본 순서(reason_code=FALLBACK).
      * 홈 일정 카드 미리보기는 record=false (같은 계산, 추천 기록 없음).
      */
     @PostMapping("/rank")
