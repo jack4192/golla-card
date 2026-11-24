@@ -28,6 +28,9 @@ import { getActiveWalletCard } from '../data/cards';
 import { applyUrl } from '../utils/autoPlacementCore';
 import { SERVER_MODE, api } from '../utils/api';
 import { suggestionsFor, toChatHistory } from '../utils/homeChat';
+import { chatBlockViews } from '../utils/chatBlocks';
+import { serverCardLinks } from '../utils/serverCards';
+import ChatBlocks from '../components/ChatBlocks';
 import { useCardCatalog } from '../utils/serverCatalog';
 import { catalogActionState, removeConfirmText, walletCardForCatalog } from '../utils/catalogCardCore';
 const NAV = [{
@@ -554,13 +557,13 @@ export default function MainScreen({
     const history = toChatHistory(chatMessages);
     setChatBusy(true);
     setChatMessages(items => [...items, { id: 'q' + id, role: 'user', text: q }, { id, role: 'bot', pending: true, text: '답변을 준비하고 있어요…' }]);
-    api.aiChat({ message: q, history, screen: { name: tab } })
+    api.aiChat({ message: q, history, screen: { name: tab, blocks: true } })   // blocks: 답 아래 표를 앱이 그린다 (2026-11-24)
       .then(data => {
         if (!data?.reply) return { text: localAnswer(q), offline: true };
         const draft = data.rule_draft?.draft_id != null
           ? { id: data.rule_draft.draft_id, summary: data.rule_draft.summary || '', state: 'pending' }
           : null;
-        return { text: data.reply, draft };
+        return { text: data.reply, draft, blocks: data.blocks };
       })
       .catch(() => ({ text: localAnswer(q), offline: true }))
       .then(answer => {
@@ -1080,10 +1083,14 @@ export default function MainScreen({
             <ScrollView ref={chatScroll} onContentSizeChange={() => chatScroll.current?.scrollToEnd({ animated: true })} style={{
             flex: 1
           }} contentContainerStyle={styles.messages}>
-              {chatMessages.map((item, index) => <View key={item.id ?? index} style={[styles.chatBubble, item.role === 'user' && styles.chatUserBubble]}>
+              {chatMessages.map((item, index) => <View key={item.id ?? index} style={[styles.chatBubble, item.role === 'user' && styles.chatUserBubble, !!item.blocks?.length && styles.chatBubbleWide]}>
                   <Text style={[styles.chatBubbleText, item.role === 'user' && styles.chatUserText]}>
                     {item.text}
                   </Text>
+                  {!!item.blocks && <ChatBlocks
+                      views={chatBlockViews(item.blocks, serverCardLinks())}
+                      onPay={walletId => { setChatVisible(false); openPaySheet({ cardId: walletId }); }}
+                    />}
                   {!!item.offline && <Text style={styles.chatNote}>AI 챗봇에 연결하지 못해 기본 안내로 답했어요.</Text>}
                   {!!item.draft && <View style={styles.chatDraft}>
                       {!!item.draft.summary && <Text style={styles.chatBubbleText}>{item.draft.summary}</Text>}
@@ -2007,6 +2014,9 @@ const styles = StyleSheet.create({
   chatUserBubble: {
     alignSelf: 'flex-end',
     backgroundColor: "#245DE5"
+  },
+  chatBubbleWide: {     // 답 아래 표가 있으면 표가 좁아지지 않게 (2026-11-24)
+    width: '88%'
   },
   chatNote: {
     marginTop: 6,
