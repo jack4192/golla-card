@@ -7,6 +7,7 @@ import com.paymate.backend.common.exception.BusinessException;
 import com.paymate.backend.common.security.AuthUser;
 import com.paymate.backend.user.entity.User;
 import com.paymate.backend.user.repository.UserRepository;
+import com.paymate.backend.user.service.UserService;
 import com.paymate.backend.util.JWTUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,7 +25,10 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public TokenResponse login(LoginRequest req) {
-        User user = userRepository.findByEmail(req.getEmail().trim())
+        // 소문자로 찾고, 예전에 대문자로 저장된 계정도 찾는다 (2026-11-24)
+        String email = UserService.normalizeEmail(req.getEmail());
+        User user = userRepository.findByEmail(email)
+                .or(() -> userRepository.findFirstByEmailIgnoreCaseOrderByIdAsc(email))
                 .orElseThrow(() -> new BusinessException(AuthErrorCode.INVALID_CREDENTIALS));
 
         if (!passwordEncoder.matches(req.getPassword(), user.getPasswordHash())) {

@@ -6,6 +6,7 @@ import com.paymate.backend.user.dto.UserResponse;
 import com.paymate.backend.user.entity.User;
 import com.paymate.backend.user.exception.UserErrorCode;
 import com.paymate.backend.user.repository.UserRepository;
+import java.util.Locale;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -55,7 +56,12 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public boolean isEmailAvailable(String email) {
-        return !userRepository.existsByEmail(email.trim());
+        return !userRepository.existsByEmailIgnoreCase(normalizeEmail(email));
+    }
+
+    /** 이메일은 앞뒤 공백을 빼고 소문자로 통일한다 (2026-11-24 점검 문제 5). */
+    public static String normalizeEmail(String email) {
+        return email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
     }
 
     @Transactional(readOnly = true)
@@ -65,10 +71,13 @@ public class UserService {
 
     @Transactional
     public void signup(SignupRequest req) {
-        String email = req.getEmail().trim();            // 공백만 제거 (대소문자는 구분)
+        String email = normalizeEmail(req.getEmail());   // 공백 제거·소문자 통일 (2026-11-24)
         String phone = normalizePhone(req.getPhone());   // 010-1234-5678 형태로 통일
 
-        if (userRepository.existsByEmail(email)) {
+        if (!PasswordPolicy.isValid(req.getPassword())) {
+            throw new BusinessException(UserErrorCode.INVALID_PASSWORD);
+        }
+        if (userRepository.existsByEmailIgnoreCase(email)) {
             throw new BusinessException(UserErrorCode.DUPLICATE_EMAIL);
         }
         if (userRepository.existsByPhone(phone)) {
