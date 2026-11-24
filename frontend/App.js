@@ -1063,6 +1063,7 @@ export default function App() {
               onRemoveCard={handleRemoveCard}
               onLogout={handleLogout}
               onConsentChange={setConsent}
+              onOpenPrivacy={openPrivacy}
               allowAutomaticAds={allowAutomaticAds}
               scheduleDisabled={Boolean(previewScreen) || privacyOpen}
               onEditRoutine={openRoutine}
@@ -1108,43 +1109,14 @@ export default function App() {
     </TouchableOpacity>
   );
 
-  const showAccountActions = !previewScreen && ['Login', 'Main'].includes(currentScreen);
-
+  // 맨 위 줄의 '데이터 관리'·'카드 등록·추천' 버튼은 뺐다 (2026-11-24 사용자 요청).
+  // 데이터 관리는 설정 탭 '앱 정보'로 옮겼고, 카드 추천은 일정 패널의 혜택 보기로 들어간다.
   return (
     // iPhone 노치·홈 인디케이터에 가려지지 않도록 전체를 안전 영역 안에 둡니다.
     <SafeAreaView style={styles.container}>
-      {(showAccountActions || (!previewScreen && (showInlinePreviewButton || !!walletWarning))) && <View style={styles.accountBanner}>
+      {!previewScreen && (showInlinePreviewButton || !!walletWarning) && <View style={styles.accountBanner}>
         <View style={showInlinePreviewButton && styles.bannerActions}>
-          {showAccountActions && (
-              <TouchableOpacity
-                disabled={privacyBusy}
-                style={styles.privacyButton}
-                onPress={openPrivacy}
-              >
-                <Text style={styles.previewCloseText}>
-                  데이터 관리
-                </Text>
-              </TouchableOpacity>
-            )}
-
-          {!previewScreen && authenticated && currentScreen === 'Main' && (
-            <TouchableOpacity
-              style={styles.privacyButton}
-              onPress={() => {
-                if (!actionBusy.current) {
-                  setRoutineMode('edit');
-                  setRecommendBack('home');
-                  navigate('RoutineRecommendation');
-                }
-              }}
-            >
-              <Text style={styles.previewCloseText}>
-                카드 등록·추천
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {!previewScreen && inlinePreviewButton}
+          {inlinePreviewButton}
         </View>
 
         {!!walletWarning && !previewScreen && (
