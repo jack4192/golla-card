@@ -102,9 +102,13 @@ def _card_item(i: dict, show_amount: bool = True) -> dict:
            "benefit": i["benefit"], "benefit_type": TYPE_WORDS.get(i.get("benefit_type"), "혜택")}
     if i["min_prev"] > 0:
         out["min_prev_perf"] = i["min_prev"]
+    if i.get("at_least"):                              # 일정 금액을 혜택의 최소 결제 금액으로 올려 계산했다 (2026-11-24)
+        out["at_least"] = True
     if not show_amount:
         return out
-    return {**out, "new_card_benefit": i["value"], "current_best_benefit": i["owned_value"], "extra": i["gain"]}
+    # 관련 업종 카드는 보유 카드보다 더 주지 않을 수 있어 '더 받는 금액'은 0원보다 클 때만 넣는다
+    return {**out, "new_card_benefit": i["value"], "current_best_benefit": i["owned_value"],
+            **({"extra": i["gain"]} if i["gain"] > 0 else {})}
 
 
 def facts_of(page: dict) -> dict:
@@ -117,7 +121,9 @@ def facts_of(page: dict) -> dict:
         # 첫 달 안내(first_month_note)는 추천 이유에 자리가 없어 재료에서 뺀다. 응답에는 그대로 있어 화면이 따로 보여 줄 수 있다
         card = {"card_name": c["card_name"], "annual_fee": c["annual_fee"],
                 "keyword": c.get("keyword") or items[0]["keyword"],  # 화면의 큰 글씨 (오늘 일정에서 받는 혜택)
-                "show_amount": show, **({"extra_today": c["gain"]} if show else {}), "items": items}
+                "show_amount": show, **({"extra_today": c["gain"]} if show and c["gain"] > 0 else {}), "items": items}
+        if not c["items"][0].get("specific", True):     # 대표 혜택이 일정 업종 전용이 아니다 (모든 가맹점 혜택, 2026-11-24)
+            card["general"] = True
         if c.get("yearly_gain") is not None:           # 지난 결제에 이 카드가 있었다면 더 받았을 금액 (연회비 뺌)
             card["yearly_extra"], card["yearly_months"] = c["yearly_gain"], c["yearly_months"]
             if c.get("replaces"):
@@ -134,7 +140,12 @@ def facts_of(page: dict) -> dict:
                                 **({"card_benefit": o["card_value"],
                                     "card_benefit_type": TYPE_WORDS.get(o.get("card_benefit_type"), "혜택")}
                                    if o["card_value"] else {}),
-                                "total": o["total"]}
+                                "total": o["total"],
+                                # 일정과 무관하게 무작위로 띄운 행사 (2026-11-24): 행사 자체 혜택·끝 날짜·화면 이름
+                                **({"related": False, "benefit_text": o["benefit_text"], "until": o["until"],
+                                    "name": o.get("display_name") or o["brand"],
+                                    **({"min_amount": o["min_amount"]} if o.get("min_amount") else {})}
+                                   if o.get("related") is False else {})}
                                for o in page["merchant"]["offers"]]}
     basis = "오늘 일정" if page["source"] == "schedule" else PATTERN_BASIS
     return {"basis": basis, "card": card, "merchant": merchant}
@@ -149,6 +160,13 @@ def amount_line(card: dict) -> str:
     """큰 글씨(키워드) 아래 한 줄: '13:00 음식점 9,800원 → 980원 할인'. 금액을 숨기는 카드는 '13:00 음식점 9,800원 결제 시'."""
     top = card["items"][0]
     when, where = top["time"][:5], _short(top["category"])
+    if top.get("at_least") and card.get("show_amount", True):    # 최소 결제 금액으로 계산한 관련 업종 혜택 (2026-11-24)
+        got = f"{top['new_card_benefit']:,}원 {top['benefit_type']}"
+        return _fit(f"{when} {where} {top['amount']:,}원 이상 결제 시 → {got}", LIMITS["card_amount_label"],
+                    f"{when} {top['amount']:,}원 이상 → {got}")
+    if top.get("at_least"):
+        return _fit(f"{when} {where} {top['amount']:,}원 이상 결제 시", LIMITS["card_amount_label"],
+                    f"{when} {top['amount']:,}원 이상 결제 시")
     if not card.get("show_amount", True):
         return _fit(f"{when} {where} {top['amount']:,}원 결제 시", LIMITS["card_amount_label"], f"{when} {top['amount']:,}원 결제 시")
     got = f"{top['new_card_benefit']:,}원 {top['benefit_type']}"
@@ -171,6 +189,12 @@ def fixed_reasons(card: dict) -> list[str]:
     fee = f"연회비 {card['annual_fee']:,}원" if card["annual_fee"] else "연회비 없음"
     min_prev = max((i.get("min_prev_perf", 0) for i in card["items"]), default=0)
     lines.append(f"{fee}, 전월 실적 {min_prev:,}원 이상일 때" if min_prev else fee)
+    if card.get("general"):          # 일정 업종 전용 혜택이 아니라고 맨 앞에 밝힌다 (2026-11-24). 조건 줄은 남기고 4줄에 맞춘다
+        lines.insert(0, f"{_short(card['items'][0]['category'])} 전용 혜택은 아니에요")
+        if len(lines) > CARD_REASONS and len(card["items"]) > 1:
+            del lines[1]             # '함께 받는 혜택' 줄을 먼저 뺀다 (1년 줄과 '대신 썼을 때' 줄은 함께 있어야 뜻이 맞다)
+        while len(lines) > CARD_REASONS:
+            del lines[-2]
     return lines
 
 
@@ -200,12 +224,21 @@ def template_copy(facts: dict) -> dict:
         c = facts["card"]
         keyword, hour = c["keyword"], int(c["items"][0]["time"][:2])
         get = _josa(keyword, "을", "를")
+        if c.get("general"):                            # 일정 업종 전용 혜택이 없는 일반 카드 (2026-11-24 사용자 결정: 밝히기)
+            where = _short(c["items"][0]["category"])
+            summary = (f"평소 {hour}시쯤 {where} 결제에 쓸 {where} 전용 혜택은 없지만, {keyword}{get} 받을 수 있어요." if pattern
+                       else f"오늘 {hour}시 {where} 일정에 쓸 {where} 전용 혜택은 없지만, {keyword}{get} 받을 수 있어요.")
+            summary = _fit(summary, LIMITS["summary"], f"{where} 전용 혜택은 없지만, {keyword}{get} 받을 수 있어요.")
+        else:
+            summary = (f"평소 {hour}시쯤 결제에 {keyword}{get} 받을 수 있어요." if pattern
+                       else f"오늘 {hour}시 일정에 {keyword}{get} 받을 수 있어요.")
         card = {"title": _fit(f"{_daypart(hour)}엔 {keyword}", LIMITS["title"], keyword),
-                "summary": (f"평소 {hour}시쯤 결제에 {keyword}{get} 받을 수 있어요." if pattern
-                            else f"오늘 {hour}시 일정에 {keyword}{get} 받을 수 있어요."),
+                "summary": summary,
                 "amount_label": c["amount_line"], "reasons": list(c["fixed_reasons"])}
     merchant = None
-    if facts.get("merchant"):
+    if facts.get("merchant") and facts["merchant"]["offers"][0].get("related") is False:
+        merchant = random_merchant_copy(facts["merchant"]["offers"], pattern)
+    elif facts.get("merchant"):
         offers = facts["merchant"]["offers"]
         first = offers[0]
         rows = []
@@ -223,6 +256,29 @@ def template_copy(facts: dict) -> dict:
                                     LIMITS["summary"], f"{first['brand']}에서 결제하면 {first['total']:,}원 혜택을 받을 수 있어요."),
                     "offers": rows}
     return {"card": card, "merchant": merchant}
+
+
+def _month_day(iso: str) -> str:
+    _, m, d = iso[:10].split("-")
+    return f"{int(m)}월 {int(d)}일"
+
+
+def random_merchant_copy(offers: list[dict], pattern: bool = False) -> dict:
+    """일정과 무관하게 무작위로 띄운 행사의 정해진 문구 (2026-11-24 사용자 결정: 일정과 관계없다고 밝히고, 금액은 행사 자체 혜택).
+    최소 결제 금액이 있으면 '○원 이상 결제 시' 줄을 넣는다. 일정 없이 건너뛰었으면(평소 소비) '평소 결제에 맞는 행사가 없어'.
+    OpenAI 를 켜도 이 문구를 쓴다 (일정과 엮어 쓰지 않게)."""
+    first = offers[0]
+    rows = [{"amount_label": _fit(f"{o['kind']} {o['benefit_text']}", LIMITS["amount_label"], o["benefit_text"]),
+             "reasons": [_fit(o["promotion"], LIMITS["reason"], f"{o['name']} {o['kind']}"),
+                         *([f"{o['min_amount']:,}원 이상 결제 시"] if o.get("min_amount") else []),
+                         _fit(f"{_month_day(o['until'])}까지 · {_ro(o['card_name'])} 결제", LIMITS["reason"],
+                              f"{_month_day(o['until'])}까지")]}
+            for o in offers]
+    basis = "평소 결제에" if pattern else "오늘 일정에"
+    return {"title": "오늘 진행 중인 행사예요",
+            "summary": _fit(f"{basis} 맞는 행사가 없어 지금 진행 중인 {first['name']} 행사를 보여드려요.", LIMITS["summary"],
+                            f"{basis} 맞는 행사가 없어 지금 진행 중인 행사를 보여드려요."),
+            "offers": rows}
 
 
 # ---------- 검사 ----------

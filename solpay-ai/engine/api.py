@@ -240,7 +240,10 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         app.state.service = service or build_service()
         client = openai_client() if chat_client is _DEFAULT else chat_client
         app.state.chat = ChatAgent(app.state.service, client)
-        app.state.page_writer = PageCopyWriter(client, CopySettings.from_env())
+        # 추천 페이지 문구는 기본이 정해진 틀이다 (2026-11-24 사용자 결정: OpenAI 문장 쓰기 2.8~3초가 화면을 늦춘다).
+        # SOLPAY_PAGE_COPY_LLM=1 일 때만 OpenAI 가 쓴다
+        app.state.page_writer = (PageCopyWriter(client, CopySettings.from_env())
+                                 if os.environ.get("SOLPAY_PAGE_COPY_LLM") == "1" else None)
         app.state.report_writer = ReportCopyWriter(client, CopySettings.from_env(ReportCopyWriter.settings_env))
         from engine.chat.place_llm import PlaceLLM
         app.state.place_llm = PlaceLLM(client)
@@ -352,7 +355,8 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         """맞춤 추천 페이지 (일정 저장·건너뛰기 뒤). tabs: card(아직 없는 신한카드) / merchant(프로모션 가맹점).
         더 주는 새 카드가 있으면 매번 카드 탭(2주 안에 추천한 카드도 다시), 행사가 있으면 가맹점 탭 (2026-11-24).
         Params.page_card_every_time=False 면 예전처럼 카드날(마지막 카드 추천 3일 뒤)에만 카드 탭. 비면 페이지를 건너뛴다.
-        카드·금액은 엔진 계산, 문구는 OpenAI (실패하면 정해진 문구 copy_source=template, 탭이 비면 none). 같은 날 다시 부르면 cached=true."""
+        카드·금액은 엔진 계산, 문구는 정해진 틀(copy_source=template, 2026-11-24). SOLPAY_PAGE_COPY_LLM=1 이면 OpenAI
+        (실패하면 정해진 틀, 탭이 비면 none). 일정 행사가 없으면 받을 수 있는 행사 1건을 무작위로. 같은 날 다시 부르면 cached=true."""
         try:
             return svc.recommendation_page(user_id, _kst(body.at),
                                            request.app.state.page_writer)
