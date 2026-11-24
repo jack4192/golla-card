@@ -128,7 +128,7 @@ EXPO_PUBLIC_API_URL=http://localhost:8080 npx expo start --go --clear
 ./run_demo.sh
 ```
 
-결제 화면은 http://localhost:8000/pay, 가상 POS 는 http://localhost:8000/pos 이다. 시연 순서는 [demo/README.md](demo/README.md) 에 있다.
+가상 POS 는 http://localhost:8000/pos 이다 (결제 데모 화면 /pay 는 2026-11-24 에 뺐다). 시연 순서는 [demo/README.md](demo/README.md) 에 있다.
 
 ### 로컬 DB
 

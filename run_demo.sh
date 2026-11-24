@@ -38,7 +38,7 @@ done
 DEMO_PID=$!
 
 echo ""
-echo "결제 화면: http://localhost:$DEMO_PORT/pay"
+echo "결제 화면(/pay)은 뺐습니다. 앱의 QR 결제 창 코드를 가상 POS 에서 찍으세요."
 echo "가상 POS:  http://localhost:$DEMO_PORT/pos"
 echo "끄려면 Ctrl+C"
 wait
