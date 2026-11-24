@@ -68,7 +68,7 @@ def test_said_time_and_day():
 def test_tools_never_take_user_id():
     for spec in TOOL_SPECS:
         assert "user_id" not in spec["function"]["parameters"]["properties"]
-    assert len(TOOL_SPECS) == 9      # 2026-11-23 결정: 프로모션 조회(list_promotions)를 더해 9개
+    assert len(TOOL_SPECS) == 15     # 2026-11-23 프로모션 조회로 9개, 2026-11-24 고도화 2단계 6개를 더해 15개
 
 
 # ---------- 실제 데이터 ----------
