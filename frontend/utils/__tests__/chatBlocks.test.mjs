@@ -144,3 +144,33 @@ test('카드 지정 비교는 새 카드 목록 표를 다시 쓰고 제목을 �
   assert.equal(v.title, demo.compare_cards[0].title);
   assert.equal(v.rows.length, 2);
 });
+
+// ---------- 고도화 3단계: 초안 카드 (2026-11-24) ----------
+import { withoutRules } from '../chatBlocks.js';
+
+test('일정 초안: 요약과 saveEvent 에 그대로 넘길 입력', () => {
+  const [situation, place] = chatBlockViews(demo.draft_schedule, links);
+  assert.equal(situation.kind, 'scheduleDraft');
+  assert.equal(situation.summary, '11월 6일(금) 12:00~14:00 회식·모임');
+  assert.deepEqual(situation.input, { date: '2026-11-06', types: ['team_dinner'], start: '12:00', end: '14:00' });
+  assert.deepEqual(place.input, { date: '2026-11-05', category: 'cafe', start: '15:00', end: '16:00', title: '' });
+});
+
+test('규칙 지우기 초안: 지울 규칙 요약', () => {
+  const [v] = chatBlockViews(demo.draft_rule_delete, links);
+  assert.equal(v.kind, 'ruleDelete');
+  assert.equal(v.summary, '주말에는 KB ALL 카드를 먼저 보여 드려요');
+  assert.equal(v.rules.length, 1);
+});
+
+test('규칙 지우기: rule_id 가 없으면 규칙 내용으로, 있으면 번호로 찾아 빼고 rule_id 는 떼어 저장', () => {
+  const drafts = demo.draft_rule_delete[0].rules;
+  const left = withoutRules(demo.saved_rules, drafts);
+  assert.equal(left.length, 1);
+  assert.equal(left[0].rule_type, 'exclude');
+  const withIds = demo.saved_rules.map((rule, i) => ({ ...rule, rule_id: 11 + i }));
+  const byId = withoutRules(withIds, [{ ...drafts[0], rule_id: 11 }]);
+  assert.deepEqual(byId.map(r => r.rule_type), ['exclude']);
+  assert.ok(byId.every(r => !('rule_id' in r)));
+  assert.equal(withoutRules(withIds, [{ rule_id: 99, rule: { rule_type: 'none' } }]).length, 2);   // 이미 지워진 규칙
+});

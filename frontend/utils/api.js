@@ -194,6 +194,9 @@ export const api = {
   aiMissedBenefit: () => request('/api/ai/missed-benefit?thisYear=true', { auth: true, timeout: AI_CHAT_TIMEOUT_MS }),
   // 맞춤 추천 페이지: { tabs, card, merchant: { offers } } (AI 가 카드날·행사 여부로 탭을 정한다)
   aiRecommendationPage: () => request('/api/ai/recommendation-page', { method: 'POST', auth: true, timeout: AI_CHAT_TIMEOUT_MS }),
+  // 저장된 규칙 목록 읽기·통째로 저장 (챗봇 규칙 지우기 초안, 2026-11-24)
+  aiRules: () => request('/api/ai/rules', { auth: true }),
+  aiSaveRules: rules => request('/api/ai/rules', { method: 'PUT', auth: true, body: rules }),
   aiConfirmRuleDraft: draftId => request('/api/ai/rules/drafts/' + encodeURIComponent(draftId) + '/confirm', { method: 'POST', auth: true }),
   aiCancelRuleDraft: draftId => request('/api/ai/rules/drafts/' + encodeURIComponent(draftId) + '/cancel', { method: 'POST', auth: true }),
 };

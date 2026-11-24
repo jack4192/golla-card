@@ -6,6 +6,7 @@ import { chatHistory } from '../utils/aiPlacementCore';
 import { chatBlockViews } from '../utils/chatBlocks';
 import { serverCardLinks } from '../utils/serverCards';
 import ChatBlocks from './ChatBlocks';
+import { addScheduleFromChat, deleteRulesFromChat } from '../utils/chatActions';
 
 const avatar = require('../assets/chatbot-avatar.png');
 const prompts = ['왜 이 카드예요?', '혜택 적용 조건', '다른 카드와 비교'];
@@ -77,13 +78,14 @@ export default function PaymentBenefitChat({ transaction, selected, baseline, di
     setBusy(true);
     setMessages(previous => [...previous, { id, question, pending: true, text: '답변을 준비하고 있어요…' }]);
     // blocks: true → 앱이 답 아래에 표를 그린다 (AI 는 문장에서 카드별 금액 나열을 줄인다, 2026-11-24)
-    api.aiChat({ message: question, history, screen: { name: 'pay', recommendation_id: recommendationId, blocks: true } })
+    api.aiChat({ message: question, history, screen: { name: 'pay', recommendation_id: recommendationId, blocks: true, detail_button: true } })
       .then(data => {
         if (!data?.reply) return { ...local(), offline: true };
         const draft = data.rule_draft?.draft_id != null
           ? { id: data.rule_draft.draft_id, summary: data.rule_draft.summary || '', state: 'pending' }
           : null;
-        return { text: data.reply, ai: true, draft, blocks: data.blocks };
+        // '자세히' 버튼: 도구를 쓴 보통 답에만 (2026-11-24 3단계)
+        return { text: data.reply, ai: true, draft, blocks: data.blocks, canDetail: !!data.log?.tools?.length && !data.log?.detail };
       })
       .catch(() => ({ ...local(), offline: true }))
       .then(answer => {
@@ -138,7 +140,13 @@ export default function PaymentBenefitChat({ transaction, selected, baseline, di
                   views={chatBlockViews(message.blocks, serverCardLinks())}
                   payLabel="이 카드로 결제 카드 바꾸기"
                   onPay={onSelectCard ? walletId => { onSelectCard(walletId); setVisible(false); } : null}
+                  onAddSchedule={addScheduleFromChat}
+                  onDeleteRules={deleteRulesFromChat}
                 />}
+                {!!message.canDetail && !busy && <Pressable accessibilityRole="button" accessibilityLabel="더 자세히 설명 듣기"
+                  onPress={() => ask('자세히')} style={[s.prompt, s.detailButton]}>
+                  <Text style={s.amount}>자세히</Text>
+                </Pressable>}
                 {!!message.detail && <Text style={s.hint}>{message.detail}</Text>}
                 {message.rows?.map(row => <View key={row.id} style={s.row}>
                   <View style={s.rowCard}>
@@ -223,6 +231,7 @@ const s = StyleSheet.create({
   send: { width: 42, height: 42, backgroundColor: '#1756DF', alignItems: 'center', justifyContent: 'center', borderRadius: 21 },
   sendDisabled: { opacity: 0.5 },
   draft: { backgroundColor: '#FFF', borderRadius: 10, padding: 10, gap: 8 },
+  detailButton: { alignSelf: 'flex-start', minHeight: 34 },
   draftButtons: { flexDirection: 'row', gap: 6 },
   draftSave: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 20, backgroundColor: '#1756DF' },
   draftSaveText: { color: '#FFF', fontSize: 13, fontWeight: '800' },
