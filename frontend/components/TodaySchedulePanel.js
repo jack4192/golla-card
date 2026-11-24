@@ -44,6 +44,8 @@ const dayTicks = [0, 6, 12, 18, 24];
 const chartPercent = ratio => `${ratio * 100}%`;
 const scheduleLabel = label => label.replace(/^\p{Extended_Pictographic}\uFE0F?\s+/u, '');
 const bubbleWidth = 92;
+// 자동 배치를 껐을 때 홈·오늘의 일정 탭 안내 (2026-11-24 수정사항)
+const AUTO_OFF_NOTE = '자동 배치가 꺼져 있어 1순위 카드로 결제해요';
 const dotTapPx = 12;      // 결제 점을 누른 것으로 보는 거리
 
 // 표시줄 세로 배치 (2026-11-24 '24시간 바에 일정' 디자인): 말풍선 → 시각 글자 → 두꺼운 바(일정 블록) → 다른 카드 구간 선
@@ -78,9 +80,9 @@ function HomeScheduleRibbon({ start, clockTime, nowMinute, viewMinute, onScrub, 
   // 일정 상태: 끝남(회색) · 진행 중(진한 파랑) · 예정(연한 파랑)
   const stateOf = row => row.inProgress ? 'now' : minuteOfRow(row.endDate) <= nowMinute ? 'past' : 'next';
   const bubbleText = scrubbing ? `${timeLabel(viewMinute)} 미리보기` : `지금 ${clockTime}`;
-  // 말풍선이 표시줄 밖으로 나가지 않게 (옮겼을 때는 오른쪽 위 '지금' 버튼 자리도 비운다)
+  // 말풍선이 표시줄 밖으로 나가지 않게 (옮겼을 때는 오른쪽 위 '현재시간' 버튼 자리도 비운다)
   const bubbleLeft = axisWidth > 0
-    ? Math.min(Math.max(cursor * axisWidth - bubbleWidth / 2, -22), axisWidth - bubbleWidth + (scrubbing ? -46 : 22))
+    ? Math.min(Math.max(cursor * axisWidth - bubbleWidth / 2, -22), axisWidth - bubbleWidth + (scrubbing ? -78 : 22))
     : null;
 
   // 일정 블록 자리: 가로는 시각, 세로는 겹침 줄
@@ -143,7 +145,7 @@ function HomeScheduleRibbon({ start, clockTime, nowMinute, viewMinute, onScrub, 
     {scrubbing && <TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 시각으로 돌아가기"
       style={styles.homeNowButton} onPress={onNow} hitSlop={8}>
       <Ionicons name="refresh-outline" size={14} color="#1D55D9" />
-      <Text style={styles.homeNowButtonText}>지금</Text>
+      <Text style={styles.homeNowButtonText}>현재시간</Text>
     </TouchableOpacity>}
     <View ref={axisRef} style={[styles.homeAxis, { height: BAR_TOP + barH + 12 }]} onLayout={event => {
       setAxisWidth(event.nativeEvent.layout.width);
@@ -230,7 +232,10 @@ export default function TodaySchedulePanel({
   selectedCard,
   home = false,
   disabled = false,
-  aiRefresh = 0
+  aiRefresh = 0,
+  // 카드 자동 배치 ON/OFF (홈 스위치와 같은 값). 2026-11-24 수정사항: 끄면 일정·시각과 상관없이 늘 1순위 카드(selectedCard)로
+  // 보이고 결제한다 (표시줄은 두되 카드가 바뀌는 점 없음, 오늘의 일정 탭도 1순위 카드)
+  autoOn = true
 }) {
   const [day, setDay] = useState(dateKey);
   const [clock, setClock] = useState(() => new Date());
@@ -500,7 +505,8 @@ export default function TodaySchedulePanel({
     // 홈에서는 하루 일정을 모두 24시간 바 위 블록으로 보인다 (2026-11-24: 일정 카드 목록 대신)
     const chosenSchedule = selection?.scope === day ? dayRows.find(row => row.key === selection.key) : null;
     const selectedSchedule = chosenSchedule ?? defaultSchedule;
-    const recommended = selectedSchedule?.match ? selectedSchedule : null;
+    // 자동 배치를 끄면 일정 카드로 바꾸지 않는다 (늘 1순위 카드)
+    const recommended = autoOn && selectedSchedule?.match ? selectedSchedule : null;
     // 동그라미를 옮겼으면 큰 카드만 그 시각의 AI 1순위 카드로 바뀐다 ('내 카드' 목록은 그대로, 결제는 지금에서만)
     const nowMinute = minuteOfDay(clock);
     const scrubbing = viewMinute != null;
@@ -509,6 +515,7 @@ export default function TodaySchedulePanel({
     // 일정이 없는 시각은 서버 모드면 AI 하루 배치 구간 카드, 데모 모드면 결제 카드.
     // 미리보기와 노란 점(카드가 바뀌는 시각)이 같은 계산을 쓴다 → 일정 목록 카드와 노란 점이 어긋나지 않는다
     const cardAtMinute = minute => {
+      if (!autoOn) return { card: selectedCard, note: '' };
       const at = new Date(dayStart.getTime() + minute * 60 * 1000);
       const row = timeline.find(item => item.match && item.startDate && item.startDate <= at && at < item.endDate);
       if (row) return { card: row.match.card, note: row.match.label };
@@ -517,8 +524,8 @@ export default function TodaySchedulePanel({
     };
     let scrubbed = null;
     if (scrubbing) {
-      scrubbed = SERVER_MODE && daySegments == null
-        ? { card: selectedCard, note: '이 시각 AI 카드를 불러오는 중이에요' }
+      scrubbed = SERVER_MODE && autoOn && daySegments == null
+        ? { card: selectedCard, note: '이 시각 카드를 불러오는 중이에요' }
         : cardAtMinute(viewMinute);
     }
     const minuteOf = date => Math.round((date - dayStart) / 60000);
@@ -526,7 +533,7 @@ export default function TodaySchedulePanel({
       ...timeline.filter(row => row.match && row.startDate && row.endDate).flatMap(row => [minuteOf(row.startDate), minuteOf(row.endDate)]),
       ...(SERVER_MODE ? (daySegments || []).flatMap(segment => [segment.startMin, segment.endMin]) : []),
     ];
-    const changeDots = disabled || (SERVER_MODE && daySegments == null) ? []
+    const changeDots = disabled || !autoOn || (SERVER_MODE && daySegments == null) ? []
       : cardChangeDots(changeBoundaries, minute => cardAtMinute(minute).card?.id ?? null);
     // 하루를 카드가 바뀌는 시각으로 나눠, 가장 오래 쓰는 카드(평소 카드)와 다른 카드를 쓰는 구간만 캡슐로 보인다
     const cardSpans = (() => {
@@ -572,6 +579,10 @@ export default function TodaySchedulePanel({
         text: recommended ? reasonText(recommended.match.card, recommended.match.label) : card ? cardReason : reasonText(null),
       };
     }
+    // 자동 배치를 끄면 일정·시각과 상관없이 한 줄 안내 (일정 이름·시각은 그대로 앞에 둔다)
+    if (!autoOn && card) {
+      reasonLine = { icon: 'information-circle-outline', head: reasonLine?.head || '', text: AUTO_OFF_NOTE };
+    }
     // 미리보기 카드 그림: 결제 카드와 같은 방식(resolveWalletProduct), 글자 주소면 { uri } 로
     const scrubImage = scrubbing ? resolveWalletProduct(scrubbed.card)?.image || scrubbed.card?.image : null;
     const artwork = scrubbing ? (typeof scrubImage === 'string' ? { uri: scrubImage } : scrubImage)
@@ -594,8 +605,8 @@ export default function TodaySchedulePanel({
         {reasonLine && <View accessibilityLiveRegion="polite" style={[styles.homeReason, scrubbing && styles.homeReasonPreview]}>
           <Ionicons name={reasonLine.icon} size={16} color={scrubbing ? '#5B3FC4' : '#1D55D9'} />
           <Text numberOfLines={2} style={styles.homeReasonText}>
-            <Text style={styles.homeReasonSchedule}>{reasonLine.head}</Text>
-            {' · '}{reasonLine.text}
+            {!!reasonLine.head && <><Text style={styles.homeReasonSchedule}>{reasonLine.head}</Text>{' · '}</>}
+            {reasonLine.text}
           </Text>
         </View>}
         {artwork && <View style={styles.homeCardStage}>
@@ -655,7 +666,8 @@ export default function TodaySchedulePanel({
           </View> : <View style={styles.timeline}>
             {timeline.map(row => {
               const expanded = activeKey === row.key;
-              const match = row.match;
+              // 자동 배치를 끄면 일정에 맞는 카드 대신 1순위 카드(selectedCard)를 보이고 그 카드로 결제한다
+              const match = autoOn ? row.match : null;
               const rowContent = <>
                 <View style={styles.entryIcon}><Ionicons name={row.icon} size={21} color="#2059C7"/></View>
                 <View style={styles.entryText}>
@@ -722,7 +734,7 @@ export default function TodaySchedulePanel({
                     <Ionicons name="chevron-forward" size={17} color="#FFFFFF"/>
                   </TouchableOpacity>}
                 </View> : selectedCard && <View style={styles.recommendation}>
-                  <Text style={styles.blue}>지금 갖고 있는 카드가 적합합니다.</Text>
+                  <Text style={styles.blue}>{autoOn ? '지금 갖고 있는 카드가 적합합니다.' : AUTO_OFF_NOTE}</Text>
                   <View style={styles.cardPreview}>
                     {!!selectedProduct?.image && <Image source={selectedProduct.image} resizeMode="contain" fadeDuration={0} style={styles.productImage} />}
                     <Text style={[styles.title, styles.entryText]}>{selectedCard.name}</Text>

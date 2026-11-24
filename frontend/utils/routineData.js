@@ -4,6 +4,7 @@ import * as Store from './demoStore';
 import { SERVER_MODE, api } from './api';
 import { fromServerCategory, toServerCategory } from './scheduleCategory';
 import { serverCacheEvents } from './eventCacheCore';
+import { eventCategoryIds } from './eventCategoryCore';
 
 export const ROUTINE_KEY = 'solpay_routine_profile_v1';
 export const EVENTS_KEY = 'solpay_routine_exceptions_v1';
@@ -657,13 +658,10 @@ export function eventTypeBenefitLabel(type) {
   return id ? categoryLabel(id) : null;
 }
 
+// 직접 입력한 이름(장소 일정의 직접 입력, 일정 추가 창의 직접 입력 모두): 기본 업종과 맞으면 그 업종으로,
+// 아니면 입력한 말 그대로 혜택을 찾습니다 (utils/eventCategoryCore.js).
 export function eventBenefitCategories(event) {
-  if (event.category === 'other') {
-    // 직접 입력한 업종: 기본 업종과 맞으면 그 업종으로, 아니면 입력한 말 그대로 혜택을 찾습니다.
-    return typedCategoryIds(event.title);
-  }
-  if (event.category) return [event.category];
-  return event.types.map(type => EVENT_BENEFITS[type]?.[0]).filter(Boolean);
+  return eventCategoryIds(event, { typed: typedCategoryIds, byType: type => EVENT_BENEFITS[type]?.[0] });
 }
 
 export function makeSignals(profile, events, day = dateKey()) {

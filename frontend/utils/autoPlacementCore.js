@@ -25,3 +25,17 @@ export function syncAction({ autoOn, usingAi, firstId, selectedId, lastSelectedI
   if (selectedId !== lastSelectedId && selectedIndex > 0) return 'moveSelectedToTop';
   return 'selectTop';
 }
+
+// 홈 '내 카드' 오른쪽 위 버튼 (2026-11-24 수정사항2: '자동 배치 적용' → '순서 변경', 그 버튼을 눌러야만 순서를 바꾼다).
+//   편집 중이면 '완료'(finish). 아니면 '순서 변경': 자동 배치가 켜져 있으면 먼저 묻고(confirm, 바꾸면 자동 배치를 끈다),
+//   꺼져 있으면 바로 편집(edit).
+export function orderButton({ editing, autoOn }) {
+  if (editing) return { label: '완료', action: 'finish' };
+  return { label: '순서 변경', action: autoOn ? 'confirm' : 'edit' };
+}
+
+// 홈 '내 카드' 제목 아래 안내 한 줄
+export function orderHint({ editing, autoOn }) {
+  if (editing) return "☰를 끌어 순서를 바꾸고 '완료'를 눌러요.";
+  return autoOn ? '자동 배치 중이에요. 시간과 일정에 맞춰 순서가 바뀌어요.' : "맨 위 카드로 결제해요. 순서는 '순서 변경'을 눌러 바꿔요.";
+}
