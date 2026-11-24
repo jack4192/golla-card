@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 
 from engine.catalog import Catalog
-from engine.day_plan import day_points, merge_segments
+from engine.day_plan import covering, day_points, merge_segments
 from engine.category_model import CategoryModel
 from engine.domain import KnownPayment, Promotion, RankRequest, RankResult, RankedCard, UserWeights, ScheduleItem
 from engine.example import rank_example, schedule_example
@@ -361,17 +361,19 @@ class PlacementService:
     def day_placement(self, user_id: int, day, now: datetime) -> dict:
         """하루 배치 한 번에 (앱 홈 시간 표시줄, 2026-11-23). 기록은 남기지 않는다 (preview 와 같은 계산).
         지난 시각은 그 시각의 상태로(결제 점과 비교할 때 '그때 AI 가 놓았을 카드'), 앞으로의 시각은 기준 시각(now)의
-        상태에 시간대만 바꿔 계산한다 (가상 데이터 속 미래 결제가 섞이지 않게)."""
+        상태에 시간대만 바꿔 계산한다 (가상 데이터 속 미래 결제가 섞이지 않게).
+        점마다 그 시각을 덮는 일정만 넘긴다 (2026-11-24 '표시줄은 일정 시각에 맞춤', day_plan.covering)."""
         schedules = self.store.schedules(user_id, day)
         ahead = None
         results = []
         for point in day_points(day, schedules):
             if point <= now:
-                results.append((point, self.preview(user_id, point)))
+                past = self.store.context(user_id, point)
+                results.append((point, self.preview(user_id, point, context=replace(past, schedules=covering(schedules, point)))))
                 continue
             if ahead is None:
-                ahead = replace(self.store.context(user_id, now), schedules=schedules)
-            results.append((point, self.preview(user_id, point, context=ahead)))
+                ahead = self.store.context(user_id, now)
+            results.append((point, self.preview(user_id, point, context=replace(ahead, schedules=covering(schedules, point)))))
         return {"day": day.isoformat(), "segments": merge_segments(day, results)}
 
     def recommendation_log(self, user_id: int, recommendation_id: int) -> dict | None:
