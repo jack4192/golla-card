@@ -472,8 +472,14 @@ class PlacementService:
         page = build_page(state, context.payments, context.schedules, history, promotions, at, params, excluded)
         out = page.to_dict(self.engine.catalog, params)
         facts = facts_of(out)
+        random_offer = bool(page.offers) and not page.offers[0].related   # 일정과 무관하게 띄운 행사 (2026-11-24)
         if not page.tabs:                                 # 보여 줄 게 없으면 문구도 받지 않는다 (페이지를 건너뜀)
             copy, source, log = {"card": None, "merchant": None}, "none", {}
+        elif writer is not None and random_offer and facts["card"] is None:
+            copy, source, log = template_copy(facts), "template", {"reason": "random_offer"}
+        elif writer is not None and random_offer:         # 무작위 행사는 OpenAI 에 보내지 않고 정해진 문구 (일정과 엮어 쓰지 않게)
+            copy, source, log = writer.write({**facts, "merchant": None})
+            copy = {**copy, "merchant": template_copy(facts)["merchant"]}
         elif writer is not None:
             copy, source, log = writer.write(facts)
         else:

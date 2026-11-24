@@ -2,12 +2,15 @@ package com.paymate.backend.ai;
 
 import com.paymate.backend.common.exception.CommonErrorCode;
 import com.paymate.backend.common.exception.ErrorResponse;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /** /api/ai 의 오류를 다른 API 와 같은 형식({code, message})으로 돌려준다. */
+@Order(Ordered.HIGHEST_PRECEDENCE)   // 공통 처리(GlobalExceptionHandler 의 Exception)보다 먼저 AI 오류를 받는다
 @RestControllerAdvice(basePackageClasses = AiController.class)
 public class AiExceptionHandler {
 

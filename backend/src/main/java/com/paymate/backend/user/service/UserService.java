@@ -6,7 +6,9 @@ import com.paymate.backend.user.dto.UserResponse;
 import com.paymate.backend.user.entity.User;
 import com.paymate.backend.user.exception.UserErrorCode;
 import com.paymate.backend.user.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
+import java.util.Locale;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -16,15 +18,50 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@RequiredArgsConstructor
 public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final long protectedMaxUserId;   // 이 번호까지는 데모·가상 계정이라 탈퇴로 지우지 않는다 (가상 데이터 1~1005번)
+
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,
+                       @Value("${app.withdrawal.protected-max-user-id:1005}") long protectedMaxUserId) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.protectedMaxUserId = protectedMaxUserId;
+    }
+
+    /**
+     * 회원 탈퇴 (2026-11-24 사용자 결정): 비밀번호를 다시 확인하고 바로 완전히 지운다.
+     * 카드·카드 상세·결제·월 실적·일정·AI 기록(app 스키마)은 외래키 ON DELETE CASCADE 로 DB 가 함께 지운다.
+     * 데모·가상 계정(1~protectedMaxUserId번)은 시연 데이터가 사라지지 않게 지우지 않는다.
+     */
+    @Transactional
+    public void withdraw(Long userId, String password) {
+        if (userId == null || userId <= protectedMaxUserId) {
+            throw new BusinessException(UserErrorCode.DEMO_ACCOUNT);
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
+        if (password == null || !passwordEncoder.matches(password, user.getPasswordHash())) {
+            throw new BusinessException(UserErrorCode.WRONG_PASSWORD);
+        }
+        try {
+            userRepository.delete(user);
+            userRepository.flush();   // 외래키 오류를 여기서 받아 409 로 바꾼다
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(UserErrorCode.WITHDRAWAL_FAILED);
+        }
+    }
 
     @Transactional(readOnly = true)
     public boolean isEmailAvailable(String email) {
-        return !userRepository.existsByEmail(email.trim());
+        return !userRepository.existsByEmailIgnoreCase(normalizeEmail(email));
+    }
+
+    /** 이메일은 앞뒤 공백을 빼고 소문자로 통일한다 (2026-11-24 점검 문제 5). */
+    public static String normalizeEmail(String email) {
+        return email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
     }
 
     @Transactional(readOnly = true)
@@ -34,23 +71,36 @@ public class UserService {
 
     @Transactional
     public void signup(SignupRequest req) {
-        String email = req.getEmail().trim();            // 공백만 제거 (대소문자는 구분)
+        String email = normalizeEmail(req.getEmail());   // 공백 제거·소문자 통일 (2026-11-24)
         String phone = normalizePhone(req.getPhone());   // 010-1234-5678 형태로 통일
 
-        if (userRepository.existsByEmail(email)) {
+        if (!PasswordPolicy.isValid(req.getPassword())) {
+            throw new BusinessException(UserErrorCode.INVALID_PASSWORD);
+        }
+        if (userRepository.existsByEmailIgnoreCase(email)) {
             throw new BusinessException(UserErrorCode.DUPLICATE_EMAIL);
         }
         if (userRepository.existsByPhone(phone)) {
             throw new BusinessException(UserErrorCode.DUPLICATE_PHONE);
         }
 
-        userRepository.save(new User(
+        User user = new User(
                 req.getName().trim(),
                 req.getBirthDate(),
                 phone,
                 email,
                 passwordEncoder.encode(req.getPassword())   // 평문 대신 BCrypt 해시 저장
-        ));
+        );
+        user.changeWorkplaceName(req.getWorkplaceName());   // 가입 화면의 직장 (2026-11-24)
+        userRepository.save(user);
+    }
+
+    /** 필수 서비스 이용 동의 저장·철회 (2026-11-24). 다른 기기에서 로그인해도 다시 묻지 않게 서버에 둔다. */
+    @Transactional
+    public void saveAgreement(Long userId, boolean agreed) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
+        user.agreeMydata(agreed);
     }
 
     @Transactional(readOnly = true)

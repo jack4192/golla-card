@@ -32,7 +32,8 @@ import tools.jackson.databind.json.JsonMapper;
  *   <li>일정 추가 창(팀원 PR #5)의 직접 입력은 상황 일정(종류 other + 이름)으로 저장된다. 시간이 있으면 이것도
  *       장소 일정의 직접 입력처럼 이름을 분류해 넘긴다 (2026-11-24: 영화관·골프 일정이 AI 에 안 가던 문제).</li>
  *   <li>분류는 일정 저장 중에 일어나므로, 한 번 넘길 때 분류에 쓰는 시간을 4초로 묶는다 (남은 것은 넘기지 않는다).</li>
- *   <li>금액은 일정에 없으므로 과거 결제로 채운다: 내 중앙값 → 전체 사용자 중앙값 → 10,000원.</li>
+ *   <li>금액은 일정에 없으므로 과거 결제로 채운다: 내 중앙값 → 전체 사용자 중앙값 → 10,000원.
+ *       중앙값은 1시간 동안 기억한다(AmountMedians, 일정 저장 속도 2026-11-24).</li>
  *   <li>하루 일정을 통째로 바꾼다 (AI 엔진 API 가 그렇게 받는다). 하루 10개까지.</li>
  * </ul>
  */
@@ -45,7 +46,6 @@ public class ScheduleAiSync {
     private static final String TYPED_DIRECT_INPUT = "other";     // 상황 일정의 '직접 입력' 종류 (앱 일정 추가 창)
     private static final String DIRECT_INPUT = "OTHER";
     private static final Set<String> UNKNOWN_CATEGORIES = Set.of("OTHER", "ALL");
-    private static final int DEFAULT_AMOUNT = 10_000;
     private static final int MAX_ITEMS = 10;
     private static final int TITLE_LIMIT = 100;                  // AI 분류기가 받는 글 길이
     private static final long CLASSIFY_BUDGET_NANOS = 4_000_000_000L;
@@ -58,6 +58,7 @@ public class ScheduleAiSync {
     private final AiScheduleRepository schedules;
     private final AiService ai;
     private final LongSupplier nanoClock;
+    private final AmountMedians medians;
 
     @Autowired
     public ScheduleAiSync(AiScheduleRepository schedules, AiService ai) {
@@ -68,6 +69,7 @@ public class ScheduleAiSync {
         this.schedules = schedules;
         this.ai = ai;
         this.nanoClock = nanoClock;
+        this.medians = new AmountMedians(schedules);
     }
 
     /** 일정 저장이 끝난(커밋된) 뒤에 넘긴다. 실패해도 일정 저장은 이미 성공이므로 경고만 남긴다. */
@@ -250,11 +252,6 @@ public class ScheduleAiSync {
     }
 
     private int amountOf(Long userId, String category) {
-        Integer mine = schedules.medianAmountOfUser(userId, category);
-        if (mine != null && mine > 0) {
-            return mine;
-        }
-        Integer everyone = schedules.medianAmount(category);
-        return everyone != null && everyone > 0 ? everyone : DEFAULT_AMOUNT;
+        return medians.amountOf(userId, category);
     }
 }

@@ -27,7 +27,8 @@ export function toCardRecommendation(page, products = []) {
       status: 'ok', weight: 1, category: item?.category || null, reasons: [reason].filter(Boolean),
       // 화면의 혜택 배지·상세가 쓰는 칸 (benefitText 는 label 을 그대로 보여 준다)
       benefit: {
-        name: copy.title || ai.keyword || product.name,
+        // 최소 결제 금액으로 올려 계산한 혜택이면 '12:00 영화 12,000원 이상 결제 시 → 5,000원 할인' 줄로 조건을 보여 준다 (2026-11-24)
+        name: (item?.at_least && copy.amount_label) || copy.title || ai.keyword || product.name,
         label: ai.keyword || copy.title || '혜택 확인',
         minPrevSpend: item?.min_prev ?? null,
         note: (Array.isArray(copy.reasons) ? copy.reasons : []).join('\n'),
@@ -38,23 +39,29 @@ export function toCardRecommendation(page, products = []) {
 
 // AI 가맹점 탭의 첫 행사 → PromotionOffer 가 그리는 { merchant, benefit, method, minimum, note, start, end, logo }
 // merchant 는 화면 이름(display_name, 없으면 brand), logo 는 AI 가 준 logo_url 에 서버 주소를 붙인 것 (2026-11-23)
+// 일정과 맞는 행사가 없어 AI 가 무작위로 띄운 행사(related: false, 2026-11-24)는 일정 시간이 없으니 시간 칸을 비우고,
+// 유의사항에 끝 날짜를, 추천 이유에는 '일정과 맞는 행사가 없어…' 안내(가맹점 탭 요약)를 보여 준다.
+const monthDay = iso => (typeof iso === 'string' && iso.length >= 10 ? Number(iso.slice(5, 7)) + '월 ' + Number(iso.slice(8, 10)) + '일' : '');
+
 export function toPromotionOffer(page, baseUrl = '') {
   const offer = page?.merchant?.offers?.[0];
   if (!offer?.brand) return null;
   const copy = offer.copy || {};
+  const random = offer.related === false;
+  const until = random && monthDay(offer.until) ? monthDay(offer.until) + '까지' : '';
   return {
     offer: {
       id: 'ai:' + offer.promotion_id,
       merchant: offer.display_name || offer.brand,
       benefit: copy.amount_label || (offer.total ? offer.total.toLocaleString('ko-KR') + '원 혜택' : offer.title),
       method: offer.kind === 'myshop' ? '마이샵 (앱에서 그 가맹점을 켜야 받아요)' : 'SOL페이 결제',
-      minimum: null,
-      note: [offer.title, offer.card_name ? offer.card_name + '로 결제' : ''].filter(Boolean).join(' · '),
-      start: hhmm(offer.window_from) || hhmm(offer.start),
-      end: hhmm(offer.window_to) || hhmm(offer.end),
+      minimum: random && offer.min_amount > 0 ? offer.min_amount : null,   // 무작위 행사의 최소 결제 금액 (최종 검토)
+      note: [offer.title, offer.card_name ? offer.card_name + '로 결제' : '', until].filter(Boolean).join(' · '),
+      start: random ? null : hhmm(offer.window_from) || hhmm(offer.start),
+      end: random ? null : hhmm(offer.window_to) || hhmm(offer.end),
       logo: typeof offer.logo_url === 'string' && offer.logo_url.startsWith('/') ? { uri: baseUrl + offer.logo_url } : null,
     },
-    reason: copy.reasons?.[0] || '오늘 일정에 맞는 행사예요.',
+    reason: random ? page.merchant.copy?.summary || '오늘 진행 중인 행사예요.' : copy.reasons?.[0] || '오늘 일정에 맞는 행사예요.',
   };
 }
 

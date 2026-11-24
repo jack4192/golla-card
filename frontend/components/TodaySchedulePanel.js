@@ -496,13 +496,15 @@ export default function TodaySchedulePanel({
     const nowMinute = minuteOfDay(clock);
     const scrubbing = viewMinute != null;
     const dots = paymentDots(todayPayments, nowMinute);
-    // 그 시각의 큰 카드: 서버 모드는 AI 하루 배치 구간 카드, 데모 모드는 그 시각을 덮는 일정의 앱 계산 카드, 없으면 결제 카드.
-    // 미리보기와 노란 점(카드가 바뀌는 시각)이 같은 계산을 쓴다
+    // 그 시각의 큰 카드: 그 시각을 덮는 일정이 있으면 '오늘의 일정'에 보이는 그 일정 카드(서버 모드는 업종별 AI 계산),
+    // 일정이 없는 시각은 서버 모드면 AI 하루 배치 구간 카드, 데모 모드면 결제 카드.
+    // 미리보기와 노란 점(카드가 바뀌는 시각)이 같은 계산을 쓴다 → 일정 목록 카드와 노란 점이 어긋나지 않는다
     const cardAtMinute = minute => {
-      if (SERVER_MODE) return scrubbedCard({ segments: daySegments || [], minute, walletCards: cards, fallbackCard: selectedCard });
       const at = new Date(dayStart.getTime() + minute * 60 * 1000);
       const row = timeline.find(item => item.match && item.startDate && item.startDate <= at && at < item.endDate);
-      return { card: row?.match.card || selectedCard, note: row ? row.match.label : '' };
+      if (row) return { card: row.match.card, note: row.match.label };
+      if (SERVER_MODE) return scrubbedCard({ segments: daySegments || [], minute, walletCards: cards, fallbackCard: selectedCard });
+      return { card: selectedCard, note: '' };
     };
     let scrubbed = null;
     if (scrubbing) {
@@ -511,9 +513,10 @@ export default function TodaySchedulePanel({
         : cardAtMinute(viewMinute);
     }
     const minuteOf = date => Math.round((date - dayStart) / 60000);
-    const changeBoundaries = SERVER_MODE
-      ? (daySegments || []).flatMap(segment => [segment.startMin, segment.endMin])
-      : timeline.filter(row => row.match && row.startDate && row.endDate).flatMap(row => [minuteOf(row.startDate), minuteOf(row.endDate)]);
+    const changeBoundaries = [
+      ...timeline.filter(row => row.match && row.startDate && row.endDate).flatMap(row => [minuteOf(row.startDate), minuteOf(row.endDate)]),
+      ...(SERVER_MODE ? (daySegments || []).flatMap(segment => [segment.startMin, segment.endMin]) : []),
+    ];
     const changeDots = disabled || (SERVER_MODE && daySegments == null) ? []
       : cardChangeDots(changeBoundaries, minute => cardAtMinute(minute).card?.id ?? null);
     const scrubPayment = scrubbing ? paymentAt(dots.map(dot => dot.payment), viewMinute) : null;
