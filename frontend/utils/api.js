@@ -3,6 +3,7 @@
 //   예) .env.local →  EXPO_PUBLIC_API_URL=http://localhost:8080
 //       아이폰(Expo Go) → http://<PC의 IP>:8080
 import * as Store from './demoStore';
+import { SESSION_EXPIRED_MESSAGE, createExpiryNotifier, isSessionExpired } from './sessionCore';
 
 const TOKEN_KEY = 'solpay_api_token_v1';
 const TIMEOUT_MS = 10000;
@@ -19,6 +20,11 @@ export class ApiError extends Error {
     this.code = code;
   }
 }
+
+// 로그인 만료(401) 처리기: App 이 등록한다. 여러 요청이 동시에 401 이어도 한 번만 부른다 (2026-11-24)
+const sessionExpiry = createExpiryNotifier();
+export const setSessionExpiredHandler = handler => sessionExpiry.setHandler(handler);
+export const resetSessionExpiry = () => sessionExpiry.reset();
 
 export const readToken = () => Store.getItemAsync(TOKEN_KEY);
 export const clearToken = () => Store.deleteItemAsync(TOKEN_KEY);
@@ -57,6 +63,12 @@ async function request(path, { method = 'GET', body, auth = false, timeout = TIM
     data = null;
   }
   if (!response.ok) {
+    if (isSessionExpired({ status: response.status, auth, path })) {
+      // 로그인이 만료됨: 토큰을 지우고 App 에 알려 로그인 화면으로 보낸다 (2026-11-24)
+      await clearToken().catch(() => {});
+      sessionExpiry.notify();
+      throw new ApiError(SESSION_EXPIRED_MESSAGE, 401, 'SESSION_EXPIRED');
+    }
     // 백엔드 ErrorResponse: { code, message }
     throw new ApiError(data?.message || '요청을 처리하지 못했어요. (' + response.status + ')', response.status, data?.code || '');
   }
@@ -70,17 +82,18 @@ const toIsoDate = value => {
 };
 
 export const api = {
-  async signup({ name, birthDate, phone, email, password, job, jobOther }) {
+  // workplaceName: 가입 화면에서 고른 직장 글자 → users.workplace_name (2026-11-24)
+  async signup({ name, birthDate, phone, email, password, workplaceName }) {
     await request('/api/auth/signup', {
       method: 'POST',
-      // job·jobOther는 백엔드에 아직 칸이 없어 무시됩니다(백엔드에 추가 요청 필요).
-      body: { name, birthDate: toIsoDate(birthDate), phone, email, password, job, jobOther: jobOther || null },
+      body: { name, birthDate: toIsoDate(birthDate), phone, email, password, workplaceName: workplaceName || null },
     });
   },
   async login(email, password) {
     const data = await request('/api/auth/login', { method: 'POST', body: { email, password } });
     if (!data?.accessToken) throw new ApiError('로그인 응답을 확인하지 못했어요.');
     await Store.setItemAsync(TOKEN_KEY, data.accessToken);
+    sessionExpiry.reset();   // 다시 로그인했으니 다음 만료를 다시 알린다
     return data;
   },
   async logout() {
@@ -92,6 +105,13 @@ export const api = {
     await clearToken();
   },
   me: () => request('/api/users/me', { auth: true }),
+  // 필수 서비스 이용 동의 저장·철회 (users.mydata_agreed, 2026-11-24). /me 의 mydataAgreed 로 다시 읽는다
+  saveAgreement: agreed => request('/api/users/me/agreement', { method: 'PUT', auth: true, body: { agreed: Boolean(agreed) } }),
+  // 회원 탈퇴 (2026-11-24): 비밀번호를 다시 확인하고 서버에서 계정과 연결된 기록을 모두 지운다. 성공하면 기기 토큰도 지운다
+  async withdraw(password) {
+    await request('/api/users/me/withdrawal', { method: 'POST', auth: true, body: { password } });
+    await clearToken();
+  },
   async isEmailTaken(email) {
     const data = await request('/api/users/email-availability?email=' + encodeURIComponent(email));
     return data?.available === false;
@@ -108,6 +128,8 @@ export const api = {
   registerCard: cardCode => request('/api/cards/register', { method: 'POST', auth: true, body: { cardCode: String(cardCode) } }),
   // 결제 카드 순서: 내 카드 전체 userCardId를 빠짐없이 순서대로
   reorderCards: userCardIds => request('/api/cards/order', { method: 'PUT', auth: true, body: { userCardIds } }),
+  // 내 카드에서 빼기 (2026-11-24). 그 카드의 결제 기록도 서버에서 함께 지워진다
+  deleteCard: userCardId => request('/api/cards/' + encodeURIComponent(userCardId), { method: 'DELETE', auth: true }),
   cardBenefits: userCardId => request('/api/cards/' + encodeURIComponent(userCardId) + '/benefits', { auth: true }),
   // 카드 상품 검색: [{ cardCode, name, issuer, type, annualFee, tags, imageUrl, annualFeeOverseas, description }]
   cardProducts: (keyword = '') =>

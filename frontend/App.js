@@ -14,8 +14,9 @@ import {
 import { Alert } from './utils/demoAlert';
 import * as DemoStore from './utils/demoStore';
 import { createRandomHex, hashPassword } from './utils/demoCrypto';
-import { SERVER_MODE, api, clearToken, readToken } from './utils/api';
-import { registerServerCard, resetServerCards } from './utils/serverCards';
+import { SERVER_MODE, api, clearToken, readToken, setSessionExpiredHandler } from './utils/api';
+import { SESSION_EXPIRED_MESSAGE, startupKeepsSession } from './utils/sessionCore';
+import { addServerCardByCode, registerServerCard, removeServerCard, resetServerCards } from './utils/serverCards';
 import { applySignupJob, rememberSignupJob } from './utils/signupJob';
 import { cancelPhoneNotifications, requestPhonePermission } from './utils/notifications';
 import {
@@ -36,7 +37,8 @@ import { readPreferences, savePreferences } from './utils/cardRecommendation';
 
 import LoginScreen from './screens/LoginScreen';
 import { DEMO_EMAIL, isValidEmail, normalizeEmail } from './utils/demoEmail';
-import SignUpScreen, { isValidPhone, isValidSignUpPassword } from './screens/SignUpScreen';
+import SignUpScreen, { isValidPhone, isValidSignUpPassword, jobLabel } from './screens/SignUpScreen';
+import { consentFromServer } from './utils/consentCore';
 import AgreementScreen from './screens/AgreementScreen';
 import DetailedRoutineScreen from './screens/DetailedRoutineScreen';
 import RoutineRecommendationScreen from './screens/RoutineRecommendationScreen';
@@ -211,8 +213,9 @@ export default function App() {
       if (SERVER_MODE && resume) {
         try {
           await api.me();
-        } catch {
-          resume = false;
+        } catch (error) {
+          // 401(만료·무효)일 때만 로그아웃. 서버가 잠깐 안 되는 연결 오류면 로그인을 유지한다 (2026-11-24)
+          resume = startupKeepsSession(error);
         }
         if (!active) return;
       }
@@ -359,18 +362,37 @@ export default function App() {
     }
   };
 
-  const handleRegisterCard = code => runAction(async () => {
+  // 카드 탭 상세의 '내 카드로 추가' (2026-11-24). serverCode: 서버 상품 번호(서버 목록에서 열었을 때)
+  const handleRegisterCard = (code, serverCode) => runAction(async () => {
     requireAuthentication();
-    if (!canRegisterWalletCard(code)) throw Error('등록할 수 없는 카드 상품입니다.');
     if (SERVER_MODE) {
       // 서버에 먼저 등록하고, 서버 목록을 다시 읽어 지갑을 맞춥니다.
-      await registerServerCard(code);
+      if (serverCode) await addServerCardByCode(serverCode);
+      else {
+        if (!canRegisterWalletCard(code)) throw Error('등록할 수 없는 카드 상품입니다.');
+        await registerServerCard(code);
+      }
+      await reloadWallet();
+      return;
+    }
+    if (!canRegisterWalletCard(code)) throw Error('등록할 수 없는 카드 상품입니다.');
+    const preferences = await readPreferences();
+    if (preferences.owned.includes(code)) return;
+    const next = await savePreferences({ ...preferences, owned: [...preferences.owned, code] });
+    await handlePreferencesSaved(next);
+  });
+
+  // 카드 탭 상세의 '내 카드에서 빼기' (2026-11-24). card: 지갑 카드 (id, catalogCode)
+  const handleRemoveCard = card => runAction(async () => {
+    requireAuthentication();
+    if (!card?.id) throw Error('뺄 카드를 찾지 못했습니다.');
+    if (SERVER_MODE) {
+      await removeServerCard(card.id);
       await reloadWallet();
       return;
     }
     const preferences = await readPreferences();
-    if (preferences.owned.includes(code)) return;
-    const next = await savePreferences({ ...preferences, owned: [...preferences.owned, code] });
+    const next = await savePreferences({ ...preferences, owned: preferences.owned.filter(code => code !== card.catalogCode) });
     await handlePreferencesSaved(next);
   });
 
@@ -380,7 +402,7 @@ export default function App() {
     const snapshot = await readWallet();
 
     if (!snapshot.preferences.owned.includes(code)) {
-      throw Error('내 지갑에 있는 카드만 결제에 쓸 수 있어요. 이 카드는 \'카드 신청\'으로 먼저 신청해주세요.');
+      throw Error('내 지갑에 있는 카드만 결제에 쓸 수 있어요. 카드 탭에서 \'내 카드로 추가\'를 먼저 눌러주세요.');
     }
 
     const id = walletIdForCode(code);
@@ -404,10 +426,25 @@ export default function App() {
   });
 
   const afterAuthentication = async ({ firstSignupLogin = false } = {}) => {
-    const [savedConsent, finished] = await Promise.all([
+    let [savedConsent, finished] = await Promise.all([
       readConsent(),
       DemoStore.getItemAsync(FINISHED_KEY),
     ]);
+
+    // 서버 모드: 다른 기기에서 필수 동의를 했으면(users.mydata_agreed) 이 기기에서도 다시 묻지 않고 홈으로 (2026-11-24)
+    if (SERVER_MODE && savedConsent?.termsAgreed !== true) {
+      try {
+        const restored = consentFromServer(await api.me(), savedConsent, ONBOARDING_OPTIONS_VERSION);
+        if (restored) {
+          await DemoStore.setItemAsync(CONSENT_KEY, JSON.stringify(restored));
+          await DemoStore.setItemAsync(FINISHED_KEY, 'yes');
+          savedConsent = restored;
+          finished = 'yes';
+        }
+      } catch {
+        // 서버 동의를 못 읽으면 기기 기록대로 진행합니다(동의 화면).
+      }
+    }
 
     const completed = finished === 'yes' && savedConsent?.termsAgreed === true;
     await DemoStore.setItemAsync(SESSION_KEY, 'active');
@@ -515,6 +552,15 @@ export default function App() {
       morningNotificationAgreed: value.morningNotificationAgreed === true,
     };
 
+    // 서버 모드: 필수 동의를 서버에 먼저 남깁니다 (users.mydata_agreed, 2026-11-24). 실패하면 동의 화면에 머뭅니다.
+    if (SERVER_MODE) {
+      try {
+        await api.saveAgreement(true);
+      } catch (error) {
+        throw Error('동의를 서버에 저장하지 못했어요. 다시 시도해주세요. ' + (error?.message || ''));
+      }
+    }
+
     await DemoStore.setItemAsync(
       CONSENT_KEY,
       JSON.stringify(nextConsent)
@@ -566,6 +612,33 @@ export default function App() {
       actionBusy.current = false;
     }
   };
+
+  // 로그인 만료(서버 401): 서버 로그아웃 없이 이 기기 세션만 정리하고 로그인 화면으로 (2026-11-24 사용자 결정)
+  const expireSession = useRef(null);
+  expireSession.current = async () => {
+    if (!authenticated) return;
+    resetServerCards();
+    await cancelPhoneNotifications().catch(() => {});
+    await DemoStore.deleteItemAsync(SESSION_KEY).catch(() => {});
+    setAuthenticated(false);
+    setAllowAutomaticAds(false);
+    setConsentDraft(null);
+    setScheduleEditor({});
+    setPreviewScreen(null);
+    setPreviewWallet(null);
+    walletRevision.current += 1;
+    setWalletCards([]);
+    selectedCardRef.current = null;
+    setActiveCardId(null);
+    setWalletWarning('');
+    navigate('Login');
+    Alert.alert('로그인 만료', SESSION_EXPIRED_MESSAGE);
+  };
+  useEffect(() => {
+    if (!SERVER_MODE) return undefined;
+    setSessionExpiredHandler(() => { expireSession.current?.(); });
+    return () => setSessionExpiredHandler(null);
+  }, []);
 
   const handleLogout = async () => {
     if (actionBusy.current) return;
@@ -622,7 +695,7 @@ export default function App() {
     await rememberSignupJob(email, account.job, account.jobOther).catch(() => {});
 
     if (SERVER_MODE) {
-      await api.signup({ ...account, email });
+      await api.signup({ ...account, email, workplaceName: jobLabel(account.job, account.jobOther) });
       setOnboardingComplete(false);
       navigate('Login');
       Alert.alert('가입 완료', '가입한 이메일과 비밀번호로 로그인해주세요.');
@@ -697,6 +770,11 @@ export default function App() {
     try {
       await waitForWalletWrites();
 
+      // '동의 철회 및 이 기기의 계정 초기화': 서버 모드면 서버의 필수 동의도 철회합니다 (2026-11-24). 실패해도 기기 초기화는 계속
+      if (scope === 'account' && SERVER_MODE) {
+        await api.saveAgreement(false).catch(() => {});
+      }
+
       const report = await deleteDemoData(scope);
 
       if (scope === 'personal') {
@@ -756,6 +834,17 @@ export default function App() {
     }
     const cards = [...previewCards, ...buildWallet({ owned: [code] })];
     setPreviewWallet({ cards, id: walletIdForCode(code) });
+  };
+
+  const previewRemove = card => {
+    if (!card?.id) return;
+    if (Platform.OS === 'web') {
+      const codes = readPreviewCardCodes().filter(code => code !== card.catalogCode);
+      window.localStorage.setItem(PREVIEW_CARDS_STORAGE_KEY, JSON.stringify(codes));
+      setPreviewCardCodes(codes);
+    }
+    const cards = previewCards.filter(item => item.id !== card.id);
+    setPreviewWallet({ cards, id: validWalletId(cards, previewCardId === card.id ? null : previewCardId) });
   };
 
   const previewUseCard = async code => {
@@ -851,6 +940,7 @@ export default function App() {
                 activeCardId={previewCardId}
                 onSelectCard={previewSelect}
                 onRegisterCard={previewRegister}
+                onRemoveCard={previewRemove}
                 onLogout={() => previewGo('Login')}
                 onEditRoutine={(date, entryId) => {
                   setScheduleEditor({ date, entryId });
@@ -949,6 +1039,7 @@ export default function App() {
               activeCardId={activeCardId}
               onSelectCard={handleSelectCard}
               onRegisterCard={handleRegisterCard}
+              onRemoveCard={handleRemoveCard}
               onLogout={handleLogout}
               allowAutomaticAds={allowAutomaticAds}
               scheduleDisabled={Boolean(previewScreen) || privacyOpen}

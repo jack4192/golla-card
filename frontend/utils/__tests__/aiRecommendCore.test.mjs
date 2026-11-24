@@ -63,3 +63,40 @@ test('카드 추천 탭: AI 를 묻는 동안은 불러오는 중, 답이 오면
   assert.equal(cardSource({ asksAi: true, aiState: 'failed', aiCard: null }), 'local');
   assert.equal(cardSource({ asksAi: false, aiState: 'loading', aiCard: null }), 'local');
 });
+
+// 2026-11-24: 일정과 맞는 행사가 없을 때 무작위로 띄운 행사 (related: false)
+test('무작위 행사는 시간 없이 끝 날짜와 일정 무관 안내를 보여준다', () => {
+  const offerRow = { promotion_id: 1, brand: '메가MGC커피', title: '메가커피 500원 할인', kind: 'event', card_name: '신한카드 SOL트래블 체크',
+    total: 1500, related: false, until: '2026-11-30', window_from: null, window_to: null,
+    start: '2026-11-24T11:00:00+09:00', end: '2026-11-24T11:00:00+09:00',
+    copy: { amount_label: '이벤트 500원', reasons: ['메가커피 500원 할인', '11월 30일까지 · 신한카드 SOL트래블 체크로 결제'] } };
+  const summary = '오늘 일정에 맞는 행사가 없어 지금 진행 중인 메가MGC커피 행사를 보여드려요.';
+  const { offer, reason } = toPromotionOffer({ merchant: { copy: { title: '오늘 진행 중인 행사예요', summary }, offers: [offerRow] } });
+  assert.equal(offer.start, null);
+  assert.equal(offer.end, null);
+  assert.equal(offer.benefit, '이벤트 500원');
+  assert.equal(offer.note, '메가커피 500원 할인 · 신한카드 SOL트래블 체크로 결제 · 11월 30일까지');
+  assert.equal(reason, summary);
+  const bare = toPromotionOffer({ merchant: { offers: [{ ...offerRow, copy: undefined }] } });
+  assert.equal(bare.reason, '오늘 진행 중인 행사예요.');
+});
+
+// 2026-11-24: 일정 금액을 혜택의 최소 결제 금액으로 올려 계산한 카드는 '○원 이상 결제 시' 줄을 혜택 아래에 보여 준다
+test('조건 금액 카드는 혜택 아래 줄에 이상 결제 조건을 보여준다', () => {
+  const page = { tabs: ['card'], card: { card_name: '신한 모두의카드', annual_fee: 7000, keyword: 'CGV 5,000원 할인',
+    items: [{ category: 'MOVIE', at_least: true, min_prev: 400000 }],
+    copy: { title: '점심엔 CGV 5,000원 할인', summary: '오늘 12시 일정에 CGV 5,000원 할인을 받을 수 있어요.',
+      amount_label: '12:00 영화 12,000원 이상 결제 시 → 5,000원 할인', reasons: ['연회비 7,000원'] } } };
+  const rec = toCardRecommendation(page, products);
+  assert.equal(rec.matches[0].benefit.name, '12:00 영화 12,000원 이상 결제 시 → 5,000원 할인');
+  assert.equal(rec.matches[0].benefit.label, 'CGV 5,000원 할인');
+  const plain = toCardRecommendation({ ...page, card: { ...page.card, items: [{ category: 'MOVIE' }] } }, products);
+  assert.equal(plain.matches[0].benefit.name, '점심엔 CGV 5,000원 할인');
+});
+
+test('무작위 행사는 최소 결제 금액을 화면 칸에 넘긴다', () => {
+  const row = { promotion_id: 7, brand: '11번가', title: '마이샵 혜택', kind: 'myshop', related: false, until: '2026-11-30', min_amount: 50000,
+    copy: { amount_label: '마이샵 3,000원', reasons: ['마이샵 혜택', '50,000원 이상 결제 시', '11월 30일까지 · 신한카드 Simple Plan로 결제'] } };
+  assert.equal(toPromotionOffer({ merchant: { offers: [row] } }).offer.minimum, 50000);
+  assert.equal(toPromotionOffer({ merchant: { offers: [{ ...row, min_amount: 0 }] } }).offer.minimum, null);
+});

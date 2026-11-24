@@ -7,7 +7,7 @@
 
 - **사용자 번호는 로그인 토큰에서만** 꺼낸다. 앱이 본문에 `user_id` 를 넣어 보내도 버린다.
 - **응답은 AI 엔진의 JSON 그대로**다. 필드 이름이 `user_card_id` 처럼 밑줄 형식이고, 뜻은 `solpay-ai/openapi.json` 의 같은 이름 API 에 있다.
-- **카드 배치는 멈추지 않는다.** AI 가 0.8초 안에 답하지 못하면 내 카드 표시 순서대로 돌려준다 (`reason_code: "FALLBACK"`).
+- **카드 배치는 멈추지 않는다.** AI 가 2초(`AI_RANK_TIMEOUT_MS`) 안에 답하지 못하면 내 카드 표시 순서대로 돌려준다 (`reason_code: "FALLBACK"`).
 - **기준 시각은 서버 설정으로만** 정한다 (`AI_FIXED_AT`). 앱은 시각을 바꿀 수 없다.
 
 ## API
@@ -76,7 +76,7 @@
 |---|---|---|
 | `AI_BASE_URL` | `http://localhost:8001` | AI 엔진 주소 |
 | `AI_INTERNAL_TOKEN` | 없음 | AI 엔진의 `SOLPAY_INTERNAL_TOKEN` 과 같은 값. 비우면 헤더를 보내지 않는다 |
-| `AI_RANK_TIMEOUT_MS` | `800` | 카드 배치 제한 시간 |
+| `AI_RANK_TIMEOUT_MS` | `2000` | 카드 배치 제한 시간 (공용 RDS 첫 계산 0.9~1.9초, 2026-11-24 예전 800) |
 | `AI_TIMEOUT_MS` | `20000` | 나머지 호출 제한 시간 (챗봇은 최대 15초) |
 | `AI_FIXED_AT` | 없음 | 시연용 기준 시각 (예: `2026-11-05T09:30:00`). 비우면 현재 시각 |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:8081,http://localhost:19006` | 웹에서 부를 수 있게 허용할 주소 |

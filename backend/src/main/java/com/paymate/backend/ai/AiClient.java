@@ -24,7 +24,7 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * AI 엔진(solpay-ai, FastAPI)을 HTTP 로 부른다. 답은 JSON 글자 그대로 돌려준다.
  *
- * <p>카드 배치는 결제 화면을 막으면 안 되므로 짧은 제한 시간(기본 0.8초)을 쓰는 {@link #postFast} 로 부르고,
+ * <p>카드 배치는 결제 화면을 막으면 안 되므로 짧은 제한 시간(기본 2초, 2026-11-24 예전 0.8초)을 쓰는 {@link #postFast} 로 부르고,
  * 챗봇·리포트처럼 OpenAI 를 거치는 호출은 긴 제한 시간(기본 20초)을 쓴다.
  * 일정 '직접 입력' 분류는 일정 저장 중에 부르므로 그 사이의 제한 시간(기본 3초)을 쓴다 ({@link #postClassify}).
  * 실패는 모두 {@link AiException} 으로 바꾼다.
@@ -43,7 +43,7 @@ public class AiClient {
     @Autowired
     public AiClient(@Value("${ai.base-url}") String baseUrl,
                     @Value("${ai.internal-token:}") String internalToken,
-                    @Value("${ai.rank-timeout-ms:800}") long rankTimeoutMs,
+                    @Value("${ai.rank-timeout-ms:2000}") long rankTimeoutMs,
                     @Value("${ai.timeout-ms:20000}") long timeoutMs,
                     @Value("${ai.classify-timeout-ms:3000}") long classifyTimeoutMs) {
         this.fast = build(baseUrl, internalToken, Math.min(rankTimeoutMs, 500), rankTimeoutMs);

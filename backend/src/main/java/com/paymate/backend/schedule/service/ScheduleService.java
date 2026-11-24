@@ -1,5 +1,6 @@
 package com.paymate.backend.schedule.service;
 
+import com.paymate.backend.common.DemoClock;
 import com.paymate.backend.common.exception.BusinessException;
 import com.paymate.backend.common.exception.CommonErrorCode;
 import com.paymate.backend.schedule.dto.ScheduleRequest;
@@ -18,13 +19,12 @@ import java.util.Objects;
 import java.util.Set;
 
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@RequiredArgsConstructor
 public class ScheduleService {
 
     private static final String SITUATION = "SITUATION";
@@ -32,8 +32,30 @@ public class ScheduleService {
     private static final String OTHER = "OTHER";
     private static final Set<String> OTHER_TYPES = Set.of("기타", "OTHER");
 
+    private static final int MAX_PER_DAY = 10;          // AI 엔진이 하루 10개까지만 받는다 (2026-11-24)
+    private static final int RANGE_YEARS = 1;           // 기준 시각의 1년 전 ~ 1년 뒤
+
     private final ScheduleRepository scheduleRepository;
     private final ApplicationEventPublisher events;   // 일정이 바뀐 날짜를 알린다 (AI 엔진에 다시 넘기는 데 쓴다)
+    private final DemoClock clock;                    // '오늘'은 시연 시각(ai.fixed-at)을 따른다
+
+    public ScheduleService(ScheduleRepository scheduleRepository, ApplicationEventPublisher events,
+                           @Value("${ai.fixed-at:}") String fixedAt) {
+        this.scheduleRepository = scheduleRepository;
+        this.events = events;
+        this.clock = DemoClock.of(fixedAt);
+    }
+
+    /** 날짜는 기준 시각 1년 전~1년 뒤, 그날 일정은 10개까지 (sameDay 면 이미 있는 일정을 고치는 것이라 개수를 세지 않는다). */
+    private void checkDate(Long userId, LocalDate date, boolean sameDay) {
+        LocalDate today = clock.today();
+        if (date.isBefore(today.minusYears(RANGE_YEARS)) || date.isAfter(today.plusYears(RANGE_YEARS))) {
+            throw new BusinessException(ScheduleErrorCode.DATE_OUT_OF_RANGE);
+        }
+        if (!sameDay && scheduleRepository.countByUserIdAndScheduleDate(userId, date) >= MAX_PER_DAY) {
+            throw new BusinessException(ScheduleErrorCode.TOO_MANY_SCHEDULES);
+        }
+    }
 
     private record Parsed(String kind, String types, String category, String title,
                           String start, String end, String memo) {
@@ -64,6 +86,7 @@ public class ScheduleService {
     @Transactional
     public Long create(Long userId, ScheduleRequest req) {
         Parsed p = parse(req);
+        checkDate(userId, req.getDate(), false);
         Schedule saved = scheduleRepository.save(new Schedule(
                 userId, req.getDate(), p.kind(), p.types(), p.category(),
                 p.title(), p.start(), p.end(), p.memo()));
@@ -75,6 +98,7 @@ public class ScheduleService {
     public void update(Long userId, Long scheduleId, ScheduleRequest req) {
         Schedule schedule = findMine(userId, scheduleId);
         Parsed p = parse(req);
+        checkDate(userId, req.getDate(), req.getDate().equals(schedule.getScheduleDate()));
         Set<LocalDate> changed = new LinkedHashSet<>(List.of(schedule.getScheduleDate(), req.getDate()));   // 날짜를 옮기면 두 날짜 모두
         schedule.update(req.getDate(), p.kind(), p.types(), p.category(),
                 p.title(), p.start(), p.end(), p.memo());
@@ -104,6 +128,10 @@ public class ScheduleService {
         String end = blankToNull(req.getEnd());
         if ((start == null) != (end == null)) {
             throw new BusinessException(ScheduleErrorCode.TIME_PAIR_REQUIRED);
+        }
+        // 하루 안에서 시작 < 끝 (끝은 최대 24:00). 시작=끝·밤샘 일정은 받지 않는다 (2026-11-24 사용자 결정)
+        if (start != null && start.compareTo(end) >= 0) {
+            throw new BusinessException(ScheduleErrorCode.INVALID_TIME_RANGE);
         }
         String memo = blankToNull(req.getMemo());
 

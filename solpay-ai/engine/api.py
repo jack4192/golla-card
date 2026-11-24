@@ -193,10 +193,33 @@ def build_service() -> PlacementService:
                                                    models))
 
 
-def check_token(x_internal_token: str | None = Header(default=None)) -> None:
+LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
+
+def _env_on(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "on", "yes")
+
+
+def check_token(request: Request, x_internal_token: str | None = Header(default=None)) -> None:
+    """내부 호출 검사 (2026-11-24 점검 문제 7, 사용자 결정): SOLPAY_INTERNAL_TOKEN 이 있으면 X-Internal-Token 이 같아야 하고,
+    없으면 같은 컴퓨터(127.0.0.1·::1)에서 온 요청만 받는다 (배포에서 토큰을 깜빡해도 밖에서 못 부르게).
+    SOLPAY_ALLOW_NO_TOKEN=1 은 시험용 (TestClient 의 주소가 'testclient' 라서)."""
     expected = os.environ.get("SOLPAY_INTERNAL_TOKEN")
-    if expected and not hmac.compare_digest(x_internal_token or "", expected):
-        raise HTTPException(status_code=401, detail="내부 호출 토큰이 맞지 않습니다")
+    if expected:
+        if not hmac.compare_digest(x_internal_token or "", expected):
+            raise HTTPException(status_code=401, detail="내부 호출 토큰이 맞지 않습니다")
+        return
+    host = request.client.host if request.client else ""
+    if host in LOOPBACK_HOSTS or _env_on("SOLPAY_ALLOW_NO_TOKEN"):
+        return
+    raise HTTPException(status_code=401,
+                        detail="내부 호출 토큰(SOLPAY_INTERNAL_TOKEN)이 없어 같은 컴퓨터에서 온 요청만 받습니다")
+
+
+def require_dev_tools() -> None:
+    """개발용 화면·시연용 API 는 SOLPAY_DEV_TOOLS=on 일 때만 (2026-11-24 사용자 결정). 꺼져 있으면 없는 주소처럼 404."""
+    if not _env_on("SOLPAY_DEV_TOOLS"):
+        raise HTTPException(status_code=404, detail="Not Found")
 
 
 def _explain(svc: PlacementService, result) -> dict:
@@ -240,7 +263,10 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         app.state.service = service or build_service()
         client = openai_client() if chat_client is _DEFAULT else chat_client
         app.state.chat = ChatAgent(app.state.service, client)
-        app.state.page_writer = PageCopyWriter(client, CopySettings.from_env())
+        # 추천 페이지 문구는 기본이 정해진 틀이다 (2026-11-24 사용자 결정: OpenAI 문장 쓰기 2.8~3초가 화면을 늦춘다).
+        # SOLPAY_PAGE_COPY_LLM=1 일 때만 OpenAI 가 쓴다
+        app.state.page_writer = (PageCopyWriter(client, CopySettings.from_env())
+                                 if os.environ.get("SOLPAY_PAGE_COPY_LLM") == "1" else None)
         app.state.report_writer = ReportCopyWriter(client, CopySettings.from_env(ReportCopyWriter.settings_env))
         from engine.chat.place_llm import PlaceLLM
         app.state.place_llm = PlaceLLM(client)
@@ -259,7 +285,11 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
             if service is None and hasattr(store, "close"):   # 앱이 만든 저장소만 닫는다 (연결 풀 반납)
                 store.close()
 
-    app = FastAPI(title="SOL페이 카드 배치 엔진", version="0.1.0", lifespan=lifespan)
+    # API 명세 화면(/docs·/redoc·/openapi.json)도 개발 도구라 SOLPAY_DEV_TOOLS=on 일 때만 연다 (2026-11-24)
+    dev_tools = _env_on("SOLPAY_DEV_TOOLS")
+    app = FastAPI(title="SOL페이 카드 배치 엔진", version="0.1.0", lifespan=lifespan,
+                  docs_url="/docs" if dev_tools else None, redoc_url="/redoc" if dev_tools else None,
+                  openapi_url="/openapi.json" if dev_tools else None)
 
     def current(request: Request) -> PlacementService:
         return request.app.state.service
@@ -268,7 +298,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
     def health() -> dict:
         return {"status": "ok"}
 
-    @app.get("/dev", include_in_schema=False, response_class=HTMLResponse)
+    @app.get("/dev", include_in_schema=False, response_class=HTMLResponse, dependencies=[Depends(require_dev_tools)])
     def dev_console(svc: PlacementService = Depends(current)) -> str:
         """개발용 테스트 화면: 카드 배치·챗봇·추천 페이지를 브라우저에서 눌러 본다. 내부 API 를 그대로 부른다
         (SOLPAY_INTERNAL_TOKEN 을 켰으면 화면의 설정에 토큰을 넣어야 한다)."""
@@ -352,7 +382,8 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         """맞춤 추천 페이지 (일정 저장·건너뛰기 뒤). tabs: card(아직 없는 신한카드) / merchant(프로모션 가맹점).
         더 주는 새 카드가 있으면 매번 카드 탭(2주 안에 추천한 카드도 다시), 행사가 있으면 가맹점 탭 (2026-11-24).
         Params.page_card_every_time=False 면 예전처럼 카드날(마지막 카드 추천 3일 뒤)에만 카드 탭. 비면 페이지를 건너뛴다.
-        카드·금액은 엔진 계산, 문구는 OpenAI (실패하면 정해진 문구 copy_source=template, 탭이 비면 none). 같은 날 다시 부르면 cached=true."""
+        카드·금액은 엔진 계산, 문구는 정해진 틀(copy_source=template, 2026-11-24). SOLPAY_PAGE_COPY_LLM=1 이면 OpenAI
+        (실패하면 정해진 틀, 탭이 비면 none). 일정 행사가 없으면 받을 수 있는 행사 1건을 무작위로. 같은 날 다시 부르면 cached=true."""
         try:
             return svc.recommendation_page(user_id, _kst(body.at),
                                            request.app.state.page_writer)
@@ -460,7 +491,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
                 for m in catalog.merchants.values()
                 if not m.is_online and (zone is None or m.zone == zone)]
 
-    @app.post("/internal/dev/reset", dependencies=[Depends(check_token)])
+    @app.post("/internal/dev/reset", dependencies=[Depends(require_dev_tools), Depends(check_token)])
     def reset(svc: PlacementService = Depends(current)) -> dict:
         """로컬 시연용. 시연 중 더한 결제, 규칙, 일정, 카드 추천 기록을 지운다."""
         try:
@@ -552,7 +583,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         svc.store.decide_draft(draft_id, "cancelled")
         return {"cancelled": True, "draft_id": draft_id}
 
-    @app.post("/internal/payments", dependencies=[Depends(check_token)])
+    @app.post("/internal/payments", dependencies=[Depends(require_dev_tools), Depends(check_token)])
     def add_payment(body: PaymentBody, svc: PlacementService = Depends(current)) -> dict:
         """로컬 시연용. 운영에서는 Spring 이 결제를 DB 에 저장하고 엔진은 DB 를 읽는다."""
         try:

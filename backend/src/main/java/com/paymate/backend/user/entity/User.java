@@ -52,6 +52,16 @@ public class User {
     protected User() {
     }
 
+    /** 가입 화면에서 고른 직장 (2026-11-24). 빈 값이면 null. */
+    public void changeWorkplaceName(String workplaceName) {
+        this.workplaceName = workplaceName == null || workplaceName.isBlank() ? null : workplaceName.trim();
+    }
+
+    /** 필수 서비스 이용 동의 (2026-11-24 사용자 결정: 기존 mydata_agreed 칸에 저장, 철회하면 false). */
+    public void agreeMydata(boolean agreed) {
+        this.mydataAgreed = agreed;
+    }
+
     public User(String name, LocalDate birthDate, String phone, String email, String passwordHash) {
         this.name = name;
         this.birthDate = birthDate;
