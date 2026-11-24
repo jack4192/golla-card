@@ -65,9 +65,9 @@ test('옮긴 시각의 큰 카드: 구간 카드, 없으면 결제 카드와 실
   assert.deepEqual(scrubbedCard({ segments, minute: 800, walletCards: wallet, fallbackCard }),
     { card: wallet[1], note: 'KB ALL 이 유리해요' });
   assert.deepEqual(scrubbedCard({ segments: [], minute: 800, walletCards: wallet, fallbackCard }),
-    { card: fallbackCard, note: '이 시각 AI 카드를 불러오지 못했어요' });
+    { card: fallbackCard, note: '이 시각 카드를 불러오지 못했어요' });
   assert.deepEqual(scrubbedCard({ segments: null, minute: 800, walletCards: wallet, fallbackCard }),
-    { card: fallbackCard, note: '이 시각 AI 카드를 불러오지 못했어요' });
+    { card: fallbackCard, note: '이 시각 카드를 불러오지 못했어요' });
 });
 
 test('결제 점: 기준 시각 이후 결제는 빼고 위치를 하루 비율로', () => {

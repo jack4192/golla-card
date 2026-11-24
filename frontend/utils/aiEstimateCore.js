@@ -62,15 +62,15 @@ export function exampleNote(example, message) {
   const amount = String(message || '').match(/약 ([\d,]+)원/);
   if (!amount) return '';
   const percent = example.prob * 100 < 1 ? '1% 미만' : '약 ' + Math.round(example.prob * 100) + '%';
-  return `AI 문구의 '약 ${amount[1]}원'은 이 시간대에 결제할 만한 곳의 행사 혜택을 가능성만큼 더한 금액이에요. `
+  return `추천 문구의 '약 ${amount[1]}원'은 이 시간대에 결제할 만한 곳의 행사 혜택을 가능성만큼 더한 금액이에요. `
     + `${example.name}에서 결제할 가능성은 ${percent}예요.`;
 }
 
 // 상자 아래 줄의 앞부분: 예시 거래를 어떻게 골랐는지. 실적·구간 지키기처럼 문구가 거래를 말하지 않으면(likely)
 // '문구가 말하는 거래'라고 하지 않는다.
 const BASIS_LINE = {
-  promotion: 'AI 추천 문구가 말하는 거래로 계산했어요. ',
-  benefit: 'AI 추천 문구가 말하는 거래로 계산했어요. ',
+  promotion: '추천 문구가 말하는 거래로 계산했어요. ',
+  benefit: '추천 문구가 말하는 거래로 계산했어요. ',
   likely: '지금 시간대에 결제할 가능성이 가장 높은 거래로 계산했어요. ',
   schedule: '오늘 일정에 맞춘 거래로 계산했어요. ',
 };
@@ -91,7 +91,7 @@ export function toEstimates(result, linked) {
       value: Number(card.benefit) || 0,
       unit: 'KRW',
       name: (card.benefit > 0 ? '예상 혜택' : '이 거래에 받을 혜택 없음') + promo,
-      reason: '이번 달 실적·한도와 진행 중인 행사를 반영해 AI 엔진이 계산했어요.',
+      reason: '이번 달 실적·한도와 진행 중인 행사를 반영해 계산했어요.',
       condition: '',
       source: 'ai',
     };
