@@ -92,6 +92,11 @@ export const api = {
     await clearToken();
   },
   me: () => request('/api/users/me', { auth: true }),
+  // 회원 탈퇴 (2026-11-24): 비밀번호를 다시 확인하고 서버에서 계정과 연결된 기록을 모두 지운다. 성공하면 기기 토큰도 지운다
+  async withdraw(password) {
+    await request('/api/users/me/withdrawal', { method: 'POST', auth: true, body: { password } });
+    await clearToken();
+  },
   async isEmailTaken(email) {
     const data = await request('/api/users/email-availability?email=' + encodeURIComponent(email));
     return data?.available === false;
