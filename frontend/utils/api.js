@@ -3,6 +3,7 @@
 //   예) .env.local →  EXPO_PUBLIC_API_URL=http://localhost:8080
 //       아이폰(Expo Go) → http://<PC의 IP>:8080
 import * as Store from './demoStore';
+import { SESSION_EXPIRED_MESSAGE, createExpiryNotifier, isSessionExpired } from './sessionCore';
 
 const TOKEN_KEY = 'solpay_api_token_v1';
 const TIMEOUT_MS = 10000;
@@ -19,6 +20,11 @@ export class ApiError extends Error {
     this.code = code;
   }
 }
+
+// 로그인 만료(401) 처리기: App 이 등록한다. 여러 요청이 동시에 401 이어도 한 번만 부른다 (2026-11-24)
+const sessionExpiry = createExpiryNotifier();
+export const setSessionExpiredHandler = handler => sessionExpiry.setHandler(handler);
+export const resetSessionExpiry = () => sessionExpiry.reset();
 
 export const readToken = () => Store.getItemAsync(TOKEN_KEY);
 export const clearToken = () => Store.deleteItemAsync(TOKEN_KEY);
@@ -57,6 +63,12 @@ async function request(path, { method = 'GET', body, auth = false, timeout = TIM
     data = null;
   }
   if (!response.ok) {
+    if (isSessionExpired({ status: response.status, auth, path })) {
+      // 로그인이 만료됨: 토큰을 지우고 App 에 알려 로그인 화면으로 보낸다 (2026-11-24)
+      await clearToken().catch(() => {});
+      sessionExpiry.notify();
+      throw new ApiError(SESSION_EXPIRED_MESSAGE, 401, 'SESSION_EXPIRED');
+    }
     // 백엔드 ErrorResponse: { code, message }
     throw new ApiError(data?.message || '요청을 처리하지 못했어요. (' + response.status + ')', response.status, data?.code || '');
   }
@@ -81,6 +93,7 @@ export const api = {
     const data = await request('/api/auth/login', { method: 'POST', body: { email, password } });
     if (!data?.accessToken) throw new ApiError('로그인 응답을 확인하지 못했어요.');
     await Store.setItemAsync(TOKEN_KEY, data.accessToken);
+    sessionExpiry.reset();   // 다시 로그인했으니 다음 만료를 다시 알린다
     return data;
   },
   async logout() {

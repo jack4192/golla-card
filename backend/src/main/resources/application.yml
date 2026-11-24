@@ -20,7 +20,8 @@ spring:
         format_sql: true
 jwt:
   secret: ${JWT_SECRET}
-  access-token-expire-time: 3600000
+  # 로그인 유지 시간(ms). 2026-11-24 사용자 결정 12시간 (예전 1시간). JWT_ACCESS_EXPIRE_MS 로 바꿀 수 있다
+  access-token-expire-time: ${JWT_ACCESS_EXPIRE_MS:43200000}
 
 # AI 엔진(solpay-ai, FastAPI) 연결
 ai:

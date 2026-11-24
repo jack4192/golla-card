@@ -14,7 +14,8 @@ import {
 import { Alert } from './utils/demoAlert';
 import * as DemoStore from './utils/demoStore';
 import { createRandomHex, hashPassword } from './utils/demoCrypto';
-import { SERVER_MODE, api, clearToken, readToken } from './utils/api';
+import { SERVER_MODE, api, clearToken, readToken, setSessionExpiredHandler } from './utils/api';
+import { SESSION_EXPIRED_MESSAGE, startupKeepsSession } from './utils/sessionCore';
 import { addServerCardByCode, registerServerCard, removeServerCard, resetServerCards } from './utils/serverCards';
 import { applySignupJob, rememberSignupJob } from './utils/signupJob';
 import { cancelPhoneNotifications, requestPhonePermission } from './utils/notifications';
@@ -212,8 +213,9 @@ export default function App() {
       if (SERVER_MODE && resume) {
         try {
           await api.me();
-        } catch {
-          resume = false;
+        } catch (error) {
+          // 401(만료·무효)일 때만 로그아웃. 서버가 잠깐 안 되는 연결 오류면 로그인을 유지한다 (2026-11-24)
+          resume = startupKeepsSession(error);
         }
         if (!active) return;
       }
@@ -610,6 +612,33 @@ export default function App() {
       actionBusy.current = false;
     }
   };
+
+  // 로그인 만료(서버 401): 서버 로그아웃 없이 이 기기 세션만 정리하고 로그인 화면으로 (2026-11-24 사용자 결정)
+  const expireSession = useRef(null);
+  expireSession.current = async () => {
+    if (!authenticated) return;
+    resetServerCards();
+    await cancelPhoneNotifications().catch(() => {});
+    await DemoStore.deleteItemAsync(SESSION_KEY).catch(() => {});
+    setAuthenticated(false);
+    setAllowAutomaticAds(false);
+    setConsentDraft(null);
+    setScheduleEditor({});
+    setPreviewScreen(null);
+    setPreviewWallet(null);
+    walletRevision.current += 1;
+    setWalletCards([]);
+    selectedCardRef.current = null;
+    setActiveCardId(null);
+    setWalletWarning('');
+    navigate('Login');
+    Alert.alert('로그인 만료', SESSION_EXPIRED_MESSAGE);
+  };
+  useEffect(() => {
+    if (!SERVER_MODE) return undefined;
+    setSessionExpiredHandler(() => { expireSession.current?.(); });
+    return () => setSessionExpiredHandler(null);
+  }, []);
 
   const handleLogout = async () => {
     if (actionBusy.current) return;

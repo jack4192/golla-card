@@ -8,6 +8,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.paymate.backend.util.JWTUtil;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+
+import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -62,5 +65,13 @@ class ErrorFormatApiTest {
         mvc.perform(delete("/api/promotions").header("Authorization", token()))
                 .andExpect(status().isMethodNotAllowed())
                 .andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"));
+    }
+
+    @Test
+    @DisplayName("로그인 유지 시간(토큰 만료)은 기본 12시간 (2026-11-24 사용자 결정, 예전 1시간)")
+    void tokenLifetime() {
+        Claims claims = jwt.getClaims(jwt.createAccessToken(1L, "test1@example.com", "USER"));
+        long lifetime = claims.getExpiration().getTime() - claims.getIssuedAt().getTime();
+        assertThat(lifetime).isEqualTo(12L * 60 * 60 * 1000);
     }
 }
