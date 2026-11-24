@@ -20,11 +20,14 @@ import com.paymate.backend.payment.repository.PosRepository;
 import com.paymate.backend.payment.repository.TerminalRow;
 import com.paymate.backend.payment.util.HashUtil;
 import com.paymate.backend.payment.util.PaymentCodeHasher;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,12 +41,18 @@ import org.springframework.transaction.annotation.Transactional;
  *       결제 내역·AI 와 같은 날을 봐야 방금 한 결제가 내역에 보이고 실적도 같은 달로 쌓인다.</li>
  *   <li>결제 코드 만료(60초): 실제 시각. 코드를 발급할 때도 실제 시각으로 만료를 정한다.</li>
  * </ul>
+ *
+ * <p>시연용 만능 키(app.pos.demo-terminal-key, 환경 변수 POS_DEMO_TERMINAL_KEY): 이 키로 온 요청은 POS 가 보낸 가맹점
+ * (없으면 업종)의 단말기로 결제한다. DB 단말기는 키 원문을 저장하지 않아, 가상 POS 에서 아무 가맹점이나 고르려면 필요하다
+ * (2026-11-24 사용자 결정). 비우거나 16자보다 짧으면 꺼진다.
  */
+@Slf4j
 @Service
 public class PosPaymentService {
 
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final String SHINHAN = "신한";
+    private static final int DEMO_KEY_MIN_LENGTH = 16;
 
     private final PosRepository posRepository;
     private final PaymentCodeRepository paymentCodeRepository;
@@ -54,12 +63,14 @@ public class PosPaymentService {
     private final AmountPolicy amountPolicy;
     private final PaymentCodeHasher hasher;
     private final DemoClock clock;
+    private final byte[] demoKey;   // 시연용 만능 키 (꺼져 있으면 null)
 
     public PosPaymentService(PosRepository posRepository, PaymentCodeRepository paymentCodeRepository,
                              PaymentWriteRepository paymentRepository, UserCardRepository userCardRepository,
                              CardRepository cardRepository, BenefitCalculator benefitCalculator,
                              AmountPolicy amountPolicy, PaymentCodeHasher hasher,
-                             @Value("${ai.fixed-at:}") String fixedAt) {
+                             @Value("${ai.fixed-at:}") String fixedAt,
+                             @Value("${app.pos.demo-terminal-key:}") String demoTerminalKey) {
         this.posRepository = posRepository;
         this.paymentCodeRepository = paymentCodeRepository;
         this.paymentRepository = paymentRepository;
@@ -69,13 +80,20 @@ public class PosPaymentService {
         this.amountPolicy = amountPolicy;
         this.hasher = hasher;
         this.clock = DemoClock.of(fixedAt);
+        String demo = demoTerminalKey == null ? "" : demoTerminalKey.trim();
+        if (!demo.isEmpty() && demo.length() < DEMO_KEY_MIN_LENGTH) {
+            log.warn("시연용 POS 만능 키가 {}자보다 짧아 쓰지 않습니다", DEMO_KEY_MIN_LENGTH);
+        }
+        this.demoKey = demo.length() >= DEMO_KEY_MIN_LENGTH ? demo.getBytes(StandardCharsets.UTF_8) : null;
     }
 
     @Transactional
     public PosPaymentResponse pay(PosPaymentRequest req) {
-        TerminalRow terminal = posRepository.findTerminal(HashUtil.sha256Hex(req.getTerminalKey().trim()))
-                .stream().findFirst()
-                .orElseThrow(() -> new BusinessException(PaymentErrorCode.INVALID_TERMINAL));
+        String key = req.getTerminalKey().trim();
+        TerminalRow terminal = isDemoKey(key)
+                ? pickTerminal(req.getMerchantId(), req.getCategory())
+                : posRepository.findTerminal(HashUtil.sha256Hex(key)).stream().findFirst()
+                        .orElseThrow(() -> new BusinessException(PaymentErrorCode.INVALID_TERMINAL));
 
         LocalDateTime now = clock.now();   // 결제 시각 (시연용 기준 시각이 있으면 그 시각)
         int amount = req.getAmount() != null ? req.getAmount() : amountPolicy.randomAmount(terminal.getCategory());
@@ -106,6 +124,10 @@ public class PosPaymentService {
      * 앱 시연 결제의 가맹점: 가맹점을 정했으면 그 가맹점, 아니면 업종(일정에서 연 결제)의 가맹점 중 무작위,
      * 그 업종에 단말기가 없거나 업종도 없으면 아무 가맹점 (2026-11-24).
      */
+    private boolean isDemoKey(String key) {
+        return demoKey != null && MessageDigest.isEqual(demoKey, key.getBytes(StandardCharsets.UTF_8));
+    }
+
     private TerminalRow pickTerminal(Long merchantId, String category) {
         if (merchantId != null) {
             return posRepository.findTerminalByMerchant(merchantId).stream().findFirst()

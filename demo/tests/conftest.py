@@ -146,6 +146,7 @@ def env(tmp_path, monkeypatch):
     from app import terminals
     monkeypatch.delenv("SOLPAY_FIXED_TERMINAL_KEYS", raising=False)
     monkeypatch.delenv("SOLPAY_BACKEND_URL", raising=False)
+    monkeypatch.delenv("POS_DEMO_TERMINAL_KEY", raising=False)
     monkeypatch.setattr(terminals, "KEYS_FILE", tmp_path / "terminal_keys.json")
     monkeypatch.setattr(main, "_POS_TRANSPORT", None)
     fake = FakeAI()

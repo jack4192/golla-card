@@ -81,7 +81,7 @@ async function loadMerchants() {
   const groups = order.filter((z) => opts.merchants[z]).map((z) => {
     const g = document.createElement("optgroup");
     const role = user.zones.find((u) => u.code === z);
-    g.label = opts.zones[z] + (role ? ` (${role.role})` : "");
+    g.label = (opts.zones[z] || z) + (role ? ` (${role.role})` : "");   // 구역이 없으면 서버가 업종 이름으로 묶는다
     for (const m of opts.merchants[z]) {
       byId[m.merchant_id] = m;
       const o = el("option", `${m.name} · ${m.category_name}`); o.value = m.merchant_id; g.append(o);

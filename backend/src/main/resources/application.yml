@@ -38,10 +38,14 @@ ai:
   # 시연용 기준 시각 (예: 2026-11-05T09:30:00). 비우면 현재 시각
   fixed-at: ${AI_FIXED_AT:}
 
-# 회원 탈퇴로 지우지 않는 데모·가상 계정 번호 상한 (가상 데이터 1~1005번, 2026-11-24)
 app:
+  # 회원 탈퇴로 지우지 않는 데모·가상 계정 번호 상한 (가상 데이터 1~1005번, 2026-11-24)
   withdrawal:
     protected-max-user-id: ${WITHDRAWAL_PROTECTED_MAX_USER_ID:1005}
+  # 가상 POS 시연용 만능 키 (2026-11-24). 이 키로 온 POS 요청은 POS 가 고른 가맹점으로 결제한다.
+  # 비우면(기본) 꺼짐, 16자 이상이어야 켜진다. 값은 backend/.env 에만 두고 GitHub 에 올리지 않는다
+  pos:
+    demo-terminal-key: ${POS_DEMO_TERMINAL_KEY:}
 
 # 웹(Expo 웹, Vercel)에서 부를 수 있게 허용할 주소 (쉼표 구분)
 cors:
