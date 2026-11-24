@@ -52,13 +52,24 @@ SOLPAY_AI_URL=http://127.0.0.1:8000 uvicorn app.main:app --port 8001
 
 ### SOL·Pay 앱 결제와 잇기 (2026-11-24)
 
-가맹점별 POS 단말기 키를 `SOLPAY_FIXED_TERMINAL_KEYS` 에 JSON 으로 주면, 가상 POS 가 승인 요청을 백엔드(`http://127.0.0.1:8080/api/v1/pos/payments`)로 보낸다. 이때 가맹점 목록에는 키가 있는 가맹점만 나온다.
+단말기 키가 있는 가맹점은 가상 POS 가 승인 요청을 SOL·Pay 백엔드(`/api/v1/pos/payments`)로 보낸다. 이때 가맹점 목록에는 키가 있는 가맹점만 나온다. 키가 하나도 없으면 예전처럼 이 데모 서버가 발급한 코드만 승인한다.
+
+**1) 시연용 단말기 만들기 (처음 한 번).** DB 의 단말기는 키 원문을 저장하지 않으므로(가상 데이터 660개도 원문 없음) 키를 아는 단말기를 새로 넣는다.
 
 ```bash
-SOLPAY_FIXED_TERMINAL_KEYS='{"164":"<단말기 키>"}' uvicorn app.main:app --port 8000
+cd demo
+python -m app.terminals 560        # 560 = 스타벅스 강남역점. 키는 demo/data/terminal_keys.json 에 저장(git 에 안 올라감)
 ```
 
-키를 주지 않으면 예전처럼 이 데모 서버가 발급한 코드만 승인한다.
+화면에 나온 SQL 을 백엔드가 쓰는 DB 에 실행한다. 로컬 DB 는 `docker exec -i solpay-db psql -U solpay_app -d solpay_v21`, 공용 RDS 는 마스터 계정으로 실행한다. 키 파일 대신 `SOLPAY_FIXED_TERMINAL_KEYS='{"560":"<키>"}'` 환경 변수로 줘도 된다(이쪽이 먼저).
+
+**2) 가상 POS 켜기.** 백엔드를 8080 이 아닌 포트로 켰다면 `SOLPAY_BACKEND_URL` 로 알려 준다. AI 엔진에 토큰을 걸었다면 `SOLPAY_AI_TOKEN` 도 같은 값으로.
+
+```bash
+SOLPAY_BACKEND_URL=http://127.0.0.1:8090 SOLPAY_AI_URL=http://127.0.0.1:8031 uvicorn app.main:app --port 8000
+```
+
+키 파일·환경 변수는 요청마다 읽으므로 단말기를 새로 만들어도 POS 를 다시 켤 필요가 없다.
 
 ### 카메라로 찍기
 

@@ -142,6 +142,12 @@ def env(tmp_path, monkeypatch):
     from app import ai, db, main
     importlib.reload(db)
     importlib.reload(main)
+    # 개발자 PC 의 단말기 키(환경 변수·demo/data/terminal_keys.json)가 시험에 섞이지 않게 비워 둔다
+    from app import terminals
+    monkeypatch.delenv("SOLPAY_FIXED_TERMINAL_KEYS", raising=False)
+    monkeypatch.delenv("SOLPAY_BACKEND_URL", raising=False)
+    monkeypatch.setattr(terminals, "KEYS_FILE", tmp_path / "terminal_keys.json")
+    monkeypatch.setattr(main, "_POS_TRANSPORT", None)
     fake = FakeAI()
     ai.use_client(httpx.Client(base_url="http://ai", transport=httpx.MockTransport(fake.handle)))
     main._merchants.clear()
