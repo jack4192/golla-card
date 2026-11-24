@@ -1,0 +1,147 @@
+# v2 소비 분포 (2026-11-22 사용자 결정). 기본 distributions.yml 위에 겹쳐 쓴다 (사전은 합치고 목록은 바꿈).
+
+dawn:
+  archetype_mult: { HOMEMAKER: 0.5, SELFEMP: 1.0, SHIFT: 1.0, FIELD: 0.8, RETIRED: 0.3 }
+
+archetypes:
+  # 전업주부(40~60대): v1 '출근 없는 50대'(HOME50, 데모 3) 와 같은 패턴. 나이대 차이는 age_effects 로 준다.
+  HOMEMAKER:
+    per_day: { weekday: 2.6, weekend: 2.0 }
+    amount_mult: 1.0
+    home_shopping_share: 0.4
+    slot_weight:
+      weekday: { MORNING: 0.22, LUNCH: 0.25, AFTERNOON: 0.30, EVENING: 0.18, NIGHT: 0.05 }
+      weekend: { MORNING: 0.15, LUNCH: 0.30, AFTERNOON: 0.30, EVENING: 0.20, NIGHT: 0.05 }
+    category_weight:
+      MORNING:   { BAKERY: 30, CAFE: 28, CVS: 20, MEDICAL: 15, ONLINE: 8 }
+      LUNCH:     { REST: 60, CAFE: 21, FASTFOOD: 10, MEDICAL: 5 }
+      AFTERNOON: { ONLINE: 25, MEDICAL: 22, SUPER: 22, CAFE: 14, HNB: 7, DEPT: 6, OUTLET: 2, HAIR: 4, OPTICAL: 2, BAKERY: 5, FITNESS: 2, FRESH: 4, TICKET: 1 }
+      EVENING:   { SUPER: 38, REST: 25, MART: 20, DELIVERY: 10, FUEL: 10, CVS: 5 }
+      NIGHT:     { ONLINE: 50, CVS: 30, DELIVERY: 14, FRESH: 4 }
+    weekend_boost: { MART: 2.0, FUEL: 2.0, DEPT: 1.5, OUTLET: 2.0, MOVIE: 2.0 }
+    commute: { days: none }
+    rides_per_day: { weekday: 0.7, weekend: 0.7 }
+    monthly_fixed: [ { category: EDU, day_range: [1, 15], amount_range: [150000, 450000] } ]
+
+  # 자영업자: 가게가 집 동네. 오전 장보기, 가게 근처 점심·저녁(배달 포함), 늦은 퇴근, 건당 금액 1.2배. 차로 다녀 대중교통이 적다.
+  SELFEMP:
+    per_day: { weekday: 3.0, weekend: 2.5 }
+    amount_mult: 1.2
+    slot_weight:
+      weekday: { MORNING: 0.22, LUNCH: 0.25, AFTERNOON: 0.18, EVENING: 0.20, NIGHT: 0.15 }
+      weekend: { MORNING: 0.15, LUNCH: 0.28, AFTERNOON: 0.25, EVENING: 0.22, NIGHT: 0.10 }
+    category_weight:
+      MORNING:   { MART: 25, SUPER: 25, CAFE: 20, CVS: 15, BAKERY: 10, FUEL: 5 }
+      LUNCH:     { REST: 50, DELIVERY: 25, FASTFOOD: 10, CAFE: 10, CVS: 5 }
+      AFTERNOON: { ONLINE: 25, SUPER: 15, CAFE: 15, CVS: 15, MEDICAL: 8, FUEL: 8, HNB: 4, PARKING: 4, STATIONERY: 3, EASYPAY: 3 }
+      EVENING:   { REST: 30, DELIVERY: 30, CVS: 15, SUPER: 10, MART: 10, FUEL: 5 }
+      NIGHT:     { CVS: 35, DELIVERY: 35, ONLINE: 20, TAXI: 5, REST: 5 }
+    weekend_boost: { MART: 2.0, FUEL: 1.5, DEPT: 1.5, OUTLET: 2.0, MOVIE: 2.0 }
+    commute: { days: none }
+    rides_per_day: { weekday: 0.2, weekend: 0.3 }
+
+  # 교대근무(간호·생산직): 주마다 주간(07~15시)·저녁(15~23시)·야간(23~07시) 근무가 돌아간다.
+  # shift_rotation 의 근무별 값(slot_weight·commute·zone_by_slot·dawn_mult)이 그 주의 기본값을 덮어쓴다.
+  SHIFT:
+    per_day: { weekday: 2.6, weekend: 2.3 }
+    amount_mult: 1.0
+    slot_weight:
+      weekday: { MORNING: 0.12, LUNCH: 0.25, AFTERNOON: 0.28, EVENING: 0.27, NIGHT: 0.08 }
+      weekend: { MORNING: 0.10, LUNCH: 0.30, AFTERNOON: 0.28, EVENING: 0.24, NIGHT: 0.08 }
+    category_weight:
+      MORNING:   { CAFE: 35, CVS: 35, BAKERY: 15, FASTFOOD: 10, MEDICAL: 5 }
+      LUNCH:     { REST: 50, CAFE: 20, FASTFOOD: 15, CVS: 10, SALAD: 5 }
+      AFTERNOON: { CAFE: 30, CVS: 25, ONLINE: 20, HNB: 8, MEDICAL: 5, SUPER: 7, APPSTORE: 3, EASYPAY: 2 }
+      EVENING:   { REST: 30, DELIVERY: 25, CVS: 20, FASTFOOD: 10, SUPER: 10, FITNESS: 5 }
+      NIGHT:     { CVS: 45, DELIVERY: 35, ONLINE: 12, TAXI: 5, APPSTORE: 3 }
+    commute: { days: weekday, out: [6, 20, 15], back: [15, 40, 20] }
+    shift_rotation:
+      cycle: [DAY, EVENING, NIGHT]
+      DAY:
+        slot_weight:
+          weekday: { MORNING: 0.12, LUNCH: 0.25, AFTERNOON: 0.28, EVENING: 0.27, NIGHT: 0.08 }
+          weekend: { MORNING: 0.10, LUNCH: 0.30, AFTERNOON: 0.28, EVENING: 0.24, NIGHT: 0.08 }
+        commute: { days: weekday, out: [6, 20, 15], back: [15, 40, 20] }
+        zone_by_slot:
+          weekday: { DAWN: home, MORNING: work, LUNCH: work, AFTERNOON: { work: 0.3, home: 0.7 }, EVENING: home, NIGHT: home }
+        dawn_mult: 0.5
+      EVENING:
+        slot_weight:
+          weekday: { MORNING: 0.15, LUNCH: 0.30, AFTERNOON: 0.20, EVENING: 0.20, NIGHT: 0.15 }
+          weekend: { MORNING: 0.10, LUNCH: 0.30, AFTERNOON: 0.28, EVENING: 0.22, NIGHT: 0.10 }
+        commute: { days: weekday, out: [14, 0, 15], back: [23, 20, 15] }
+        zone_by_slot:
+          weekday: { DAWN: home, MORNING: home, LUNCH: home, AFTERNOON: work, EVENING: work, NIGHT: work }
+        dawn_mult: 2.0
+      NIGHT:
+        slot_weight:
+          weekday: { MORNING: 0.25, LUNCH: 0.10, AFTERNOON: 0.20, EVENING: 0.25, NIGHT: 0.20 }
+          weekend: { MORNING: 0.15, LUNCH: 0.25, AFTERNOON: 0.25, EVENING: 0.20, NIGHT: 0.15 }
+        commute: { days: weekday, out: [22, 0, 15], back: [7, 40, 15] }
+        zone_by_slot:
+          weekday: { DAWN: work, MORNING: { work: 0.4, home: 0.6 }, LUNCH: home, AFTERNOON: home, EVENING: home, NIGHT: work }
+        dawn_mult: 6.0
+
+  # 영업·외근직: 평일 점심·오후에 여러 동네를 돈다. 주유·주차·카페·음식점이 많고 저녁 음식점 금액이 크다(접대). 차로 다닌다.
+  FIELD:
+    per_day: { weekday: 3.4, weekend: 2.2 }
+    amount_mult: 1.1
+    slot_weight:
+      weekday: { MORNING: 0.18, LUNCH: 0.28, AFTERNOON: 0.27, EVENING: 0.22, NIGHT: 0.05 }
+      weekend: { MORNING: 0.10, LUNCH: 0.30, AFTERNOON: 0.25, EVENING: 0.28, NIGHT: 0.07 }
+    category_weight:
+      MORNING:   { CAFE: 40, CVS: 25, FUEL: 20, BAKERY: 10, PARKING: 5 }
+      LUNCH:     { REST: 65, CAFE: 20, FASTFOOD: 10, CVS: 5 }
+      AFTERNOON: { CAFE: 35, PARKING: 18, FUEL: 15, CVS: 15, TAXI: 5, ONLINE: 7, HNB: 3, EASYPAY: 2 }
+      EVENING:   { REST: 50, CVS: 10, DELIVERY: 10, TAXI: 10, SUPER: 8, PARKING: 7, FITNESS: 5 }
+      NIGHT:     { CVS: 40, DELIVERY: 25, TAXI: 20, ONLINE: 15 }
+    weekend_boost: { MART: 2.0, FUEL: 1.5, DEPT: 1.5, OUTLET: 2.0, MOVIE: 2.0 }
+    commute: { days: none }
+    rides_per_day: { weekday: 0.3, weekend: 0.3 }
+    roam_slots: [LUNCH, AFTERNOON]
+    roam_zones: [GANGNAM, SINCHON, PANGYO, GASAN, SEONGSU, HONGDAE, JEONGJA, BANGBAE]
+    slot_amount_mult: { EVENING: { REST: 1.4 } }   # 시간대·종류별 금액 배율 (저녁 접대)
+
+  # 은퇴자(60~64세): 출근 없음, 오전·낮 위주. 병원·약국·슈퍼·제과가 많고 배달·온라인은 적다.
+  RETIRED:
+    per_day: { weekday: 2.0, weekend: 1.8 }
+    amount_mult: 1.0
+    home_shopping_share: 0.3
+    slot_weight:
+      weekday: { MORNING: 0.28, LUNCH: 0.27, AFTERNOON: 0.28, EVENING: 0.14, NIGHT: 0.03 }
+      weekend: { MORNING: 0.22, LUNCH: 0.30, AFTERNOON: 0.30, EVENING: 0.15, NIGHT: 0.03 }
+    category_weight:
+      MORNING:   { MEDICAL: 30, BAKERY: 25, CAFE: 15, SUPER: 15, CVS: 10, FITNESS: 5 }
+      LUNCH:     { REST: 65, CAFE: 15, MEDICAL: 10, BAKERY: 10 }
+      AFTERNOON: { MEDICAL: 25, SUPER: 25, CAFE: 12, ONLINE: 8, HNB: 5, DEPT: 6, OUTLET: 2, HAIR: 5, OPTICAL: 3, BAKERY: 4, FITNESS: 3, FRESH: 2 }
+      EVENING:   { SUPER: 35, REST: 30, MART: 20, FUEL: 10, CVS: 5 }
+      NIGHT:     { CVS: 40, ONLINE: 35, DELIVERY: 25 }
+    weekend_boost: { MART: 2.0, FUEL: 1.5, DEPT: 1.5, OUTLET: 1.5 }
+    commute: { days: none }
+    rides_per_day: { weekday: 0.8, weekend: 0.6 }
+
+# 나이대 효과 (같은 직업의 30대 대비, 배경 사용자에게만. 2026-11-22 사용자 결정)
+#   category_mult  생성기 종류별 업종 가중치 배율
+#   amount_mult    일반·충동 결제 건당 금액 배율
+#   edu_share      학원비 자동이체(맞벌이·전업주부)를 내는 비율 (없으면 전원)
+#   car_mult       차량 보유 비율 배율 (내 결정: 20대 0.6, 60대 0.9)
+age_effects:
+  20s: { category_mult: { DELIVERY: 1.3, CVS: 1.3, FASTFOOD: 1.3, APPSTORE: 1.3, EASYPAY: 1.3, MEDICAL: 0.7, MART: 0.7, FUEL: 0.7 }, amount_mult: 0.85, car_mult: 0.6 }
+  30s: { category_mult: {}, amount_mult: 1.0, edu_share: 0.5 }
+  40s: { category_mult: { MART: 1.2, SUPER: 1.2, FUEL: 1.2, CVS: 0.85, FASTFOOD: 0.85 }, amount_mult: 1.1, edu_share: 0.9 }
+  50s: { category_mult: { MEDICAL: 1.4, MART: 1.2, SUPER: 1.2, BAKERY: 1.2, DELIVERY: 0.7, CVS: 0.7, APPSTORE: 0.7 }, amount_mult: 1.15, edu_share: 0.5 }
+  60s: { category_mult: { MEDICAL: 1.8, SUPER: 1.3, BAKERY: 1.3, DELIVERY: 0.6, ONLINE: 0.6, CVS: 0.6, CAFE: 0.6 }, amount_mult: 1.0, edu_share: 0.0, car_mult: 0.9 }
+
+recurring:
+  UTILITY:
+    items:
+      - { name: 한국전력공사, amount: [40000, 0.30], month_mult: { 12: 1.3, 1: 1.3, 2: 1.2, 7: 1.5, 8: 1.5, 9: 1.5 } }
+      - { name: 도시가스, amount: [25000, 0.35], month_mult: { 11: 1.5, 12: 2.5, 1: 2.8, 2: 2.3, 3: 1.6, 4: 1.1, 5: 0.7, 6: 0.6, 7: 0.6, 8: 0.6, 9: 0.6, 10: 0.8 } }
+      - { name: 아파트 관리비, amount: [180000, 0.25], only: [FAMILY, HOME50, HOMEMAKER, RETIRED, SELFEMP] }
+
+# 특수 고액 결제 소유 비율에 새 직업 추가 (기본값과 합쳐진다)
+special:
+  GOLFRANGE: { owners: { HOMEMAKER: 0.15, SELFEMP: 0.15, FIELD: 0.15, RETIRED: 0.20 } }
+  GOLFCLUB:  { owners: { HOMEMAKER: 0.15, SELFEMP: 0.15, FIELD: 0.15, RETIRED: 0.20 } }
+  CARFIX:    { owners: { HOMEMAKER: 0.75, SELFEMP: 0.70, SHIFT: 0.40, FIELD: 0.95, RETIRED: 0.60 } }
+  INTERCITY: { owners: { FIELD: 0.60 } }

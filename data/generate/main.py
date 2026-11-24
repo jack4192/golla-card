@@ -11,6 +11,7 @@
 import time
 
 import numpy as np
+import pandas as pd
 
 from .card_status import build_card_status
 from .common import CACHE_DIR, OUT_DIR, load_config
@@ -46,6 +47,9 @@ def main() -> None:
     pay.insert(0, "payment_id", range(1, len(pay) + 1))
     tables["payments"] = pay
     tables["card_month_status"] = build_card_status(cards, tables["user_cards"], pay, merchants)
+    if sim.user_routines:   # v2.1 개인 루틴 (생성기 전용, 팀 DB 에는 넣지 않는다)
+        tables["user_routines"] = pd.DataFrame(sim.user_routines)
+        tables["routine_events"] = pd.DataFrame(sim.routine_events).sort_values(["user_id", "paid_at"]).reset_index(drop=True)
 
     write(tables)
     print(f"결제 {len(pay):,}건 · 사용자 {len(users)}명 · {time.time() - t0:.1f}초")

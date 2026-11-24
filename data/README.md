@@ -21,6 +21,35 @@ uv run pytest                        # 검증
 
 같은 `seed`(config/settings.yml)면 누가 돌려도 같은 결과가 나온다. 결과물(`out/`)은 깃에 올리지 않고 각자 다시 만든다.
 
+### v2 (1005명, 2026-11-22)
+
+직업·나이대가 비슷한 사용자끼리 학습할 수 있게 만든 판이다. 같은 코드에 `config/v2/*.yml` 을 기본 설정 위에 겹쳐 쓴다(사전은 합치고 목록은 바꿈).
+배경 1000명 = 직업 10개(사무직·대학생·맞벌이·야근·재택·전업주부·자영업·교대근무·영업외근·은퇴) × 20~60대 26칸(칸마다 30명 이상) + 데모 5명(카드 3~5장).
+같은 직업 안에서도 나이대마다 업종 비중·건당 금액·차량·학원비가 다르다(`age_effects`, 배경 사용자만). 기간·시드·표 형식은 v1 과 같다.
+설계: `docs/superpowers/specs/2026-11-22-data-v2-1000-design.md`
+
+```bash
+SOLPAY_DATA_VERSION=v2 uv run python -m generate.main        # → out_v2/ (45초 안팎)
+SOLPAY_DATA_VERSION=v2 uv run python -m generate.summary     # 직업×나이대 표 포함
+SOLPAY_DATA_VERSION=v2 uv run python -m generate.export_db   # → ../카드서비스_DB_1년_v2 (v1 폴더에는 쓰지 않음)
+uv run pytest tests/test_generated_v2.py                      # v2 검증 (환경 변수 없이)
+```
+
+### v2.1 (v2 + 개인 루틴, 2026-11-23)
+
+v2 는 업종을 직업·나이대 확률로 결제마다 새로 뽑아 "평일 8시 반엔 꼭 커피" 같은 개인 루틴이 없었다. 개인 습관 가중치를 시험하려고
+배경 사용자 절반에게 직업에 맞는 루틴 1~2개(출근길 커피·점심 식당·퇴근길 편의점 등)를 넣은 판이다. 점이 있는 판은 큰 판 설정 위에
+한 번 더 겹친다(`config/v2` → `config/v2.1`). 루틴은 정해진 시각 ±30분, 해당 요일 60~90% 확률로 지킨다. 그날의 같은 종류 결제나
+금액이 비슷한 결제를 루틴으로 바꾸고, 없을 때만 새로 만들고 뒤의 날 결제를 빼서 결제 수(+2%)와 월 지출(+0.4%)을 v2 와 비슷하게 둔다.
+루틴은 따로 뽑은 난수로 정해서 루틴이 없는 사용자의 결제는 v2 와 똑같다. 루틴 목록은 `user_routines`·`routine_events`
+(생성기 전용, 팀 DB 에는 넣지 않음). 사용자·카드·팀 DB 의 사용자 표는 v2 와 같다.
+
+```bash
+SOLPAY_DATA_VERSION=v2.1 uv run python -m generate.main       # → out_v2.1/
+SOLPAY_DATA_VERSION=v2.1 uv run python -m generate.export_db  # → ../카드서비스_DB_1년_v2.1
+uv run pytest tests/test_generated_v2_1.py                     # v2.1 검증
+```
+
 ## 카카오 실제 가맹점 위치 (선택)
 
 1. Kakao Developers에서 앱을 만들고 REST API 키를 받는다.
