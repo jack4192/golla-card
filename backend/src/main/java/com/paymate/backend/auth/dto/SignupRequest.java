@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -30,4 +31,8 @@ public class SignupRequest {
 
     @NotBlank(message = "비밀번호를 입력해 주세요.")
     private String password;
+
+    // 가입 화면에서 고른 직장 (예: 회사원, 직접입력 글자). 선택 항목, users.workplace_name (2026-11-24)
+    @Size(max = 100, message = "직장은 100자 이내로 입력해 주세요.")
+    private String workplaceName;
 }

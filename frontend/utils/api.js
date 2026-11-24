@@ -70,11 +70,11 @@ const toIsoDate = value => {
 };
 
 export const api = {
-  async signup({ name, birthDate, phone, email, password, job, jobOther }) {
+  // workplaceName: 가입 화면에서 고른 직장 글자 → users.workplace_name (2026-11-24)
+  async signup({ name, birthDate, phone, email, password, workplaceName }) {
     await request('/api/auth/signup', {
       method: 'POST',
-      // job·jobOther는 백엔드에 아직 칸이 없어 무시됩니다(백엔드에 추가 요청 필요).
-      body: { name, birthDate: toIsoDate(birthDate), phone, email, password, job, jobOther: jobOther || null },
+      body: { name, birthDate: toIsoDate(birthDate), phone, email, password, workplaceName: workplaceName || null },
     });
   },
   async login(email, password) {
@@ -92,6 +92,8 @@ export const api = {
     await clearToken();
   },
   me: () => request('/api/users/me', { auth: true }),
+  // 필수 서비스 이용 동의 저장·철회 (users.mydata_agreed, 2026-11-24). /me 의 mydataAgreed 로 다시 읽는다
+  saveAgreement: agreed => request('/api/users/me/agreement', { method: 'PUT', auth: true, body: { agreed: Boolean(agreed) } }),
   // 회원 탈퇴 (2026-11-24): 비밀번호를 다시 확인하고 서버에서 계정과 연결된 기록을 모두 지운다. 성공하면 기기 토큰도 지운다
   async withdraw(password) {
     await request('/api/users/me/withdrawal', { method: 'POST', auth: true, body: { password } });

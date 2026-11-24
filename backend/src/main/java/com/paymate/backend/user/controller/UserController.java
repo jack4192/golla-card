@@ -2,6 +2,7 @@ package com.paymate.backend.user.controller;
 
 import com.paymate.backend.auth.service.AuthService;
 import com.paymate.backend.common.security.AuthUser;
+import com.paymate.backend.user.dto.AgreementRequest;
 import com.paymate.backend.user.dto.EmailAvailabilityResponse;
 import com.paymate.backend.user.dto.PhoneAvailabilityResponse;
 import com.paymate.backend.user.dto.UserResponse;
@@ -15,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -36,6 +38,14 @@ public class UserController {
      * 회원 탈퇴 (2026-11-24): 비밀번호를 다시 확인하고 계정과 연결된 기록을 서버에서 모두 지운다.
      * 지금 쓰던 토큰도 바로 막는다. 데모·가상 계정은 403, 비밀번호가 틀리면 400.
      */
+    /** 필수 서비스 이용 동의 저장·철회 (2026-11-24): users.mydata_agreed. /me 의 mydataAgreed 로 다시 읽는다. */
+    @PutMapping("/me/agreement")
+    public ResponseEntity<Void> saveAgreement(@AuthenticationPrincipal AuthUser authUser,
+                                              @Valid @RequestBody AgreementRequest req) {
+        userService.saveAgreement(authUser.getId(), req.getAgreed());
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/me/withdrawal")
     public ResponseEntity<Void> withdraw(@AuthenticationPrincipal AuthUser authUser,
                                          @Valid @RequestBody WithdrawalRequest req) {
