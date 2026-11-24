@@ -75,13 +75,23 @@ public class UserService {
             throw new BusinessException(UserErrorCode.DUPLICATE_PHONE);
         }
 
-        userRepository.save(new User(
+        User user = new User(
                 req.getName().trim(),
                 req.getBirthDate(),
                 phone,
                 email,
                 passwordEncoder.encode(req.getPassword())   // 평문 대신 BCrypt 해시 저장
-        ));
+        );
+        user.changeWorkplaceName(req.getWorkplaceName());   // 가입 화면의 직장 (2026-11-24)
+        userRepository.save(user);
+    }
+
+    /** 필수 서비스 이용 동의 저장·철회 (2026-11-24). 다른 기기에서 로그인해도 다시 묻지 않게 서버에 둔다. */
+    @Transactional
+    public void saveAgreement(Long userId, boolean agreed) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
+        user.agreeMydata(agreed);
     }
 
     @Transactional(readOnly = true)

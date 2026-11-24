@@ -36,7 +36,8 @@ import { readPreferences, savePreferences } from './utils/cardRecommendation';
 
 import LoginScreen from './screens/LoginScreen';
 import { DEMO_EMAIL, isValidEmail, normalizeEmail } from './utils/demoEmail';
-import SignUpScreen, { isValidPhone, isValidSignUpPassword } from './screens/SignUpScreen';
+import SignUpScreen, { isValidPhone, isValidSignUpPassword, jobLabel } from './screens/SignUpScreen';
+import { consentFromServer } from './utils/consentCore';
 import AgreementScreen from './screens/AgreementScreen';
 import DetailedRoutineScreen from './screens/DetailedRoutineScreen';
 import RoutineRecommendationScreen from './screens/RoutineRecommendationScreen';
@@ -423,10 +424,25 @@ export default function App() {
   });
 
   const afterAuthentication = async ({ firstSignupLogin = false } = {}) => {
-    const [savedConsent, finished] = await Promise.all([
+    let [savedConsent, finished] = await Promise.all([
       readConsent(),
       DemoStore.getItemAsync(FINISHED_KEY),
     ]);
+
+    // 서버 모드: 다른 기기에서 필수 동의를 했으면(users.mydata_agreed) 이 기기에서도 다시 묻지 않고 홈으로 (2026-11-24)
+    if (SERVER_MODE && savedConsent?.termsAgreed !== true) {
+      try {
+        const restored = consentFromServer(await api.me(), savedConsent, ONBOARDING_OPTIONS_VERSION);
+        if (restored) {
+          await DemoStore.setItemAsync(CONSENT_KEY, JSON.stringify(restored));
+          await DemoStore.setItemAsync(FINISHED_KEY, 'yes');
+          savedConsent = restored;
+          finished = 'yes';
+        }
+      } catch {
+        // 서버 동의를 못 읽으면 기기 기록대로 진행합니다(동의 화면).
+      }
+    }
 
     const completed = finished === 'yes' && savedConsent?.termsAgreed === true;
     await DemoStore.setItemAsync(SESSION_KEY, 'active');
@@ -533,6 +549,15 @@ export default function App() {
       termsAgreed: true,
       morningNotificationAgreed: value.morningNotificationAgreed === true,
     };
+
+    // 서버 모드: 필수 동의를 서버에 먼저 남깁니다 (users.mydata_agreed, 2026-11-24). 실패하면 동의 화면에 머뭅니다.
+    if (SERVER_MODE) {
+      try {
+        await api.saveAgreement(true);
+      } catch (error) {
+        throw Error('동의를 서버에 저장하지 못했어요. 다시 시도해주세요. ' + (error?.message || ''));
+      }
+    }
 
     await DemoStore.setItemAsync(
       CONSENT_KEY,
@@ -641,7 +666,7 @@ export default function App() {
     await rememberSignupJob(email, account.job, account.jobOther).catch(() => {});
 
     if (SERVER_MODE) {
-      await api.signup({ ...account, email });
+      await api.signup({ ...account, email, workplaceName: jobLabel(account.job, account.jobOther) });
       setOnboardingComplete(false);
       navigate('Login');
       Alert.alert('가입 완료', '가입한 이메일과 비밀번호로 로그인해주세요.');
@@ -715,6 +740,11 @@ export default function App() {
 
     try {
       await waitForWalletWrites();
+
+      // '동의 철회 및 이 기기의 계정 초기화': 서버 모드면 서버의 필수 동의도 철회합니다 (2026-11-24). 실패해도 기기 초기화는 계속
+      if (scope === 'account' && SERVER_MODE) {
+        await api.saveAgreement(false).catch(() => {});
+      }
 
       const report = await deleteDemoData(scope);
 
