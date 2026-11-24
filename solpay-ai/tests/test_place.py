@@ -371,3 +371,46 @@ def test_여러_브랜드가_한_업종이면_업종은_정함(svc, text, catego
     llm, client = _llm([])
     r = svc.classify_place(text, llm=llm)
     assert (r["category"], r["brand"], r["source"]) == (category, None, "search") and client.requests == []
+
+
+# ---------- '야구' = LG트윈스 홈경기 (2026-11-24 사용자 결정) ----------
+# LG트윈스 신한카드 체크의 입장권 혜택은 '공연/문화 티켓' + LG트윈스 브랜드로만 계산된다. 가맹점 목록에는 LG트윈스가 없다.
+
+@pytest.mark.parametrize("text", ["야구", "야구장", "잠실 야구 직관", "엘지트윈스", "LG트윈스 경기", "프로야구 보러 감"])
+def test_야구는_LG트윈스_홈경기로_분류(catalog, text):
+    from engine.place import match_place
+    m = match_place(text, catalog)
+    assert (m.category, m.brand, m.exact) == ("CULTURE_TICKET", "LG트윈스", True), text
+
+
+def test_야구가_아닌_말은_그대로(catalog):
+    from engine.place import match_place
+    assert match_place("축구", catalog).brand != "LG트윈스"
+    assert match_place("스타벅스", catalog).brand == "스타벅스"
+
+
+@pytest.mark.parametrize("text", ["kt wiz 야구", "두산 베어스 야구", "한화 야구 보러", "롯데 자이언츠 직관"])
+def test_다른_구단을_말하면_LG트윈스로_보지_않음(catalog, text):
+    from engine.place import match_place
+    assert match_place(text, catalog).brand != "LG트윈스"
+
+
+def test_야구는_OpenAI_없이_검색으로(svc):
+    llm, client = _llm([])
+    r = svc.classify_place("야구", llm=llm)
+    assert (r["source"], r["category"], r["brand"], r["brand_name"]) == ("search", "CULTURE_TICKET", "LG트윈스", "LG트윈스")
+    assert client.requests == [] and r["amount_hint"] > 0
+
+
+def test_카드_혜택에_나오는_브랜드는_일정에_넣을_수_있다(svc):
+    svc.store.reset()
+    try:
+        item = {"start": time(18, 30), "end": time(21, 30), "category": "CULTURE_TICKET", "amount": 30000, "brand": "LG트윈스"}
+        saved = svc.put_schedule(1, DAY, [item], MORNING)
+        assert saved[0].brand == "LG트윈스"
+        with pytest.raises(ValueError):          # 업종과 맞지 않는 브랜드는 여전히 막는다
+            svc.put_schedule(1, DAY, [{**item, "category": "CAFE"}], MORNING)
+        page = svc.recommendation_page(1, MORNING.replace(hour=12), None)
+        assert page["card"] and page["card"]["card_name"] == "LG트윈스 신한카드 체크"     # 야구 일정이면 LG트윈스 카드
+    finally:
+        svc.store.reset()
