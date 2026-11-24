@@ -627,7 +627,8 @@ class PlacementService:
         """연말정산 안내: 지난 days 일 동안 각 신한카드가 있었다면 더 받았을 금액 (상위 3장).
         start(date, 2026-11-24 연말 결산): 주면 그 달부터 at 까지 센다. 전달 1일부터 start 전 결제는 실적만 쌓는다.
         params.missed_min_gain 원 미만인 카드는 뺀다 (2026-11-24 사용자 결정).
-        only(card_id 들, 챗봇 카드 지정 비교): 그 카드들만 계산하고 금액 기준·상위 3장 자르기 없이 모두 돌려준다."""
+        only(card_id 들, 챗봇 카드 지정 비교): 그 카드들만 계산하고 금액 기준·상위 3장 자르기 없이 모두 돌려준다.
+        항목마다 계산한 기간 from·until('YYYY-MM-DD')을 붙인다 (연말 결산이 '1월 1일부터 11월 24일까지'로 밝히게, 2026-11-24)."""
         from datetime import datetime, timedelta
         from engine.recommend import missed_benefit
         context = self.store.context(user_id, at)
@@ -644,6 +645,8 @@ class PlacementService:
             months = (at.year * 12 + at.month) - (start.year * 12 + start.month) + 1
             found = missed_benefit(state, rows, params.switch_threshold, **extra,
                                    count_from=(start.year, start.month), months=months)
+        span = {"from": f"{(start or (at - timedelta(days=days)).date()):%Y-%m-%d}", "until": f"{at:%Y-%m-%d}"}
+        found = [{**m, **span} for m in found]
         if only is not None:
             return found
         return [m for m in found if m["gain"] >= params.missed_min_gain][:3]
