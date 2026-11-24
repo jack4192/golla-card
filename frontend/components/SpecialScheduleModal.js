@@ -29,6 +29,10 @@ const toMinutes = time => {
   return hour * 60 + minute;
 };
 const clockTime = minutes => String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0');
+// 하루 일정 휠 (2026-11-24): 다음 날로 넘기지 않는다. 시작을 바꾸면 종료는 시작 + 1시간(24:00 까지),
+// 종료를 시작과 같거나 앞으로 돌리면 다시 시작 + 1시간으로 맞춘다
+const plusHour = start => clockTime(Math.min(24 * 60, toMinutes(start) + 60));
+const wheelNext = (updater, previous) => (typeof updater === 'function' ? updater(previous) : updater);
 // 새 일정의 기본 시간은 항상 12:00~13:00
 const suggestedTime = () => ({ start: clockTime(12 * 60), end: clockTime(13 * 60) });
 
@@ -157,7 +161,7 @@ function PlacePicker({ category, setCategory, title, setTitle, disabled }) {
 function MemoInput({ memo, setMemo, types, disabled }) {
   return <>
     <TextInput accessibilityLabel="일정 메모" value={memo} onChangeText={setMemo} editable={!disabled} style={[s.input, s.memo]}
-      placeholder="예: 오후 반차 후 병원 · 개인정보는 적지 마세요"
+      placeholder="예: 오후 반차 후 병원"
       maxLength={80} multiline textAlignVertical="top" />
     <Text style={s.counter}>{memo.length}/80</Text>
   </>;
@@ -450,16 +454,8 @@ export default function SpecialScheduleModal({
               <Ionicons name="close" size={26} color="#385988" accessible={false} />
             </TouchableOpacity>
           </View>
-          <ScrollView ref={scrollRef} style={s.addScroll} contentContainerStyle={s.addFields}
-            keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-            {loading && <ActivityIndicator color="#245DE5" />}
-            {!!loadError && <View style={s.addFields}>
-              <Text accessibilityRole="alert" style={s.error}>{loadError}</Text>
-              <TouchableOpacity accessibilityRole="button" disabled={loading} style={s.small} onPress={() => setReload(value => value + 1)}>
-                <Text style={s.blue}>다시 불러오기</Text>
-              </TouchableOpacity>
-            </View>}
-            {!loading && !loadError && <>
+          {/* 날짜·시간 휠은 창 위쪽에 고정: 휠을 굴릴 때 창 전체가 같이 움직이지 않게 (2026-11-24) */}
+          {!loading && !loadError && <View style={s.addFixed}>
               <Text style={s.todayLabel}>{dateHeading(editing ? editingEvent.date : today)}</Text>
               <View style={s.addTimeHeading}>
                 <Text style={s.step}>시간</Text>
@@ -473,12 +469,24 @@ export default function SpecialScheduleModal({
               </View>
               {timeMode === 'range' && <>
                 <View style={s.timeWheels}>
-                  <ScheduleTimeWheel label="시작" value={start} disabled={disabled} setValue={setStart} />
-                  <ScheduleTimeWheel label={isOvernight(timeMode, start, end) ? '종료 (다음 날)' : '종료'}
-                    value={end} disabled={disabled} setValue={setEnd} allowMidnight />
+                  <ScheduleTimeWheel label="시작" value={start} disabled={disabled}
+                    setValue={updater => { const next = wheelNext(updater, start); setStart(next); setEnd(plusHour(next)); }} />
+                  <ScheduleTimeWheel label="종료" value={end} disabled={disabled} allowMidnight
+                    setValue={updater => { const next = wheelNext(updater, end); setEnd(toMinutes(next) > toMinutes(start) ? next : plusHour(start)); }} />
                 </View>
                 {!!durationText && <Text style={s.addHint}>{durationText} 동안</Text>}
               </>}
+          </View>}
+          <ScrollView ref={scrollRef} style={s.addScroll} contentContainerStyle={s.addFields}
+            keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+            {loading && <ActivityIndicator color="#245DE5" />}
+            {!!loadError && <View style={s.addFields}>
+              <Text accessibilityRole="alert" style={s.error}>{loadError}</Text>
+              <TouchableOpacity accessibilityRole="button" disabled={loading} style={s.small} onPress={() => setReload(value => value + 1)}>
+                <Text style={s.blue}>다시 불러오기</Text>
+              </TouchableOpacity>
+            </View>}
+            {!loading && !loadError && <>
               <View style={s.addEntry}>
                 <Text style={s.addEntryLabel}>일정 직접 입력</Text>
                 <TextInput accessibilityLabel="일정 이름 직접 입력" value={placeTitle} editable={!disabled}
@@ -601,6 +609,7 @@ const s = StyleSheet.create({
   addHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   addTitle: { color: '#152D50', fontSize: 26, fontWeight: '800' },
   addClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  addFixed: { gap: 10 },
   addScroll: { flexGrow: 0, flexShrink: 1, minHeight: 0 },
   addFields: { gap: 9, paddingBottom: 4 },
   todayLabel: { paddingVertical: 8, textAlign: 'center', color: '#385988', fontSize: 15, fontWeight: '700', backgroundColor: '#F1F5FC', borderRadius: 12 },
