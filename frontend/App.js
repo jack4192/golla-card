@@ -14,6 +14,7 @@ import {
 import { Alert } from './utils/demoAlert';
 import * as DemoStore from './utils/demoStore';
 import { createRandomHex, hashPassword } from './utils/demoCrypto';
+import { DEV_MENU_ENABLED } from './utils/devMenu';
 import { SERVER_MODE, api, clearToken, readToken, setSessionExpiredHandler } from './utils/api';
 import { SESSION_EXPIRED_MESSAGE, startupKeepsSession } from './utils/sessionCore';
 import { addServerCardByCode, registerServerCard, removeServerCard, resetServerCards } from './utils/serverCards';
@@ -117,8 +118,8 @@ async function readDemoAccount() {
 }
 
 // 화면 미리보기(개발 메뉴): 개발 중(__DEV__)에만 보여줍니다. 배포한 웹(Amplify 등, 사용자 모드)에는 나오지 않습니다.
-//   배포 웹에서도 보려면 빌드 때 EXPO_PUBLIC_DEV_MENU=on (2026-11-25, 웹을 바탕화면 앱처럼 쓰려고 바꿈)
-const PREVIEW_ENABLED = __DEV__ || (Platform.OS === 'web' && process.env.EXPO_PUBLIC_DEV_MENU === 'on');
+//   배포 웹에서도 보려면 빌드 때 EXPO_PUBLIC_DEV_MENU=on (2026-11-25, 웹을 바탕화면 앱처럼 쓰려고 바꿈, utils/devMenu.js)
+const PREVIEW_ENABLED = DEV_MENU_ENABLED;
 
 function readPreviewCardCodes() {
   if (!PREVIEW_ENABLED || Platform.OS !== 'web') return [];

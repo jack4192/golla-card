@@ -10,6 +10,7 @@ import TodaySchedulePanel from '../components/TodaySchedulePanel';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Dimensions, View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { DEV_MENU_ENABLED } from '../utils/devMenu';
 import YearEndReport from '../components/YearEndReport';
 import PaymentCardOrder from '../components/PaymentCardOrder';
 import AutoPlacementSwitch from '../components/AutoPlacementSwitch';
@@ -921,7 +922,8 @@ export default function MainScreen({
       })}
         </View>}
 
-      {Platform.OS === 'web' && <View style={styles.devClearance} />}
+      {/* 웹: 개발 메뉴 버튼이 탭바를 가리지 않게 둔 빈 칸. 메뉴가 없는 배포 웹(바탕화면 웹앱)에서는 두지 않는다 (2026-11-25) */}
+      {Platform.OS === 'web' && DEV_MENU_ENABLED && <View style={styles.devClearance} />}
 
       <YearEndReport visible={yearEndOpen} onClose={() => setYearEndOpen(false)} />
       <QuickPaySheet visible={!!paySheet} cards={walletCards} cardId={currentCard?.id} context={paySheet} autoOn={auto.on}
