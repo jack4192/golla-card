@@ -62,6 +62,8 @@ export function toPromotionOffer(page, baseUrl = '') {
       logo: typeof offer.logo_url === 'string' && offer.logo_url.startsWith('/') ? { uri: baseUrl + offer.logo_url } : null,
     },
     reason: random ? page.merchant.copy?.summary || '오늘 진행 중인 행사예요.' : copy.reasons?.[0] || '오늘 일정에 맞는 행사예요.',
+    // 혜택 금액 아래 한 줄 설명 (가맹점 탭 요약, 없으면 첫 이유)
+    description: page?.merchant?.copy?.summary || copy.reasons?.[0] || '',
   };
 }
 

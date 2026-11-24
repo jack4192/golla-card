@@ -209,7 +209,7 @@ export default function RoutineRecommendationScreen({
     await onNext();
   });
   const promotionContent = () => recommendations?.offer
-    ? <PromotionOffer key={recommendations.offer.id} offer={recommendations.offer} reason={recommendations.reason}
+    ? <PromotionOffer key={recommendations.offer.id} offer={recommendations.offer} reason={recommendations.reason} description={recommendations.description}
         recommendation reduced={reduced} />
     : <View style={s.empty}>
     <Text style={s.reason}>{error || '진행 중인 프로모션이 없어요.'}</Text>
@@ -452,18 +452,23 @@ const s = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700"
   },
+  // '홈으로 가기': 글자만 있던 것을 테두리 있는 넓은 버튼으로 (2026-11-24, 어르신도 잘 보이게)
   secondary: {
+    alignSelf: 'stretch',
+    minHeight: 54,
     paddingVertical: 14,
     paddingHorizontal: 16,
-    minHeight: 44,
-    alignSelf: 'center',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#B9CCF2',
+    backgroundColor: '#FFFFFF',
     alignItems: "center",
     justifyContent: "center"
   },
   secondaryText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#526176'
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#1D4FB8'
   },
   primary: {
     padding: 16,

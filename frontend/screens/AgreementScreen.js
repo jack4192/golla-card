@@ -1,6 +1,7 @@
 import FlowHeading from '../components/FlowHeading';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { PHONE_NOTIFICATIONS_SUPPORTED, requestPhonePermission } from '../utils/notifications';
 function CheckRow({
   title,
   description,
@@ -52,9 +53,28 @@ export default function AgreementScreen({
       mounted.current = false;
     };
   }, []);
-  const toggleChoice = key => {
+  const toggleChoice = async key => {
     if (lock.current) return;
     const next = { ...choices, [key]: !choices[key] };
+    // 알림 수신 동의를 켜는 순간 폰의 '알림 허용' 창을 띄운다 (2026-11-24). 거절하면 체크하지 않는다
+    if (key === 'morningNotificationAgreed' && next[key] && PHONE_NOTIFICATIONS_SUPPORTED) {
+      lock.current = true;
+      setPending('permission');
+      let granted = false;
+      try {
+        granted = await requestPhonePermission();
+      } catch {
+        granted = false;
+      } finally {
+        lock.current = false;
+        if (mounted.current) setPending('');
+      }
+      if (!mounted.current) return;
+      if (!granted) {
+        setMessage('폰 설정에서 SOL·Pay 알림을 허용해야 알림을 받을 수 있어요.');
+        return;
+      }
+    }
     setChoices(next);
     setMessage('');
     onDraftChange(next);
