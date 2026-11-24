@@ -142,6 +142,14 @@ function HomeScheduleRibbon({ start, clockTime, nowMinute, viewMinute, onScrub, 
   const scheduleSummary = rows.map(row => `${scheduleLabel(row.label)} ${row.timeCaption}`).join(', ');
 
   return <View style={styles.homeRibbon}>
+    {/* 제목과 흰 점 설명: 처음 보는 사람도 무엇인지 알게 (2026-11-24) */}
+    <View style={styles.homeRibbonHead}>
+      <Text accessibilityRole="header" style={styles.homeRibbonTitle}>오늘의 카드 시간표</Text>
+      {changeDots.length > 0 && <View style={styles.homeLegend} accessible accessibilityLabel="흰 점은 카드가 바뀌는 시각">
+        <View style={styles.homeLegendDot} />
+        <Text style={styles.homeLegendText}>카드가 바뀌는 시각</Text>
+      </View>}
+    </View>
     {scrubbing && <TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 시각으로 돌아가기"
       style={styles.homeNowButton} onPress={onNow} hitSlop={8}>
       <Ionicons name="refresh-outline" size={14} color="#1D55D9" />
@@ -775,6 +783,11 @@ const styles = StyleSheet.create({
   home:{gap:14},
   homeCard:{alignItems:'center',gap:8,padding:20,borderRadius:22,backgroundColor:'#F1F6FE'},
   homeCardScheduled:{padding:12,gap:10,borderRadius:28,borderWidth:1,borderColor:'#DDE9FF',backgroundColor:'#F5F8FF'},
+  homeRibbonHead:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8,paddingHorizontal:16,marginBottom:6,minHeight:24},
+  homeRibbonTitle:{fontSize:15,fontWeight:'800',color:'#13254A'},
+  homeLegend:{flexDirection:'row',alignItems:'center',gap:6},
+  homeLegendDot:{width:12,height:12,borderRadius:6,borderWidth:3,borderColor:'#5A93F2',backgroundColor:'#FFFFFF'},
+  homeLegendText:{fontSize:12,fontWeight:'700',color:'#4A5A75'},
   homeRibbon:{
     width:'100%',paddingTop:10,paddingBottom:8,borderRadius:19,borderWidth:1,
     borderColor:'#E8EFFF',backgroundColor:'#FFFFFF'
@@ -811,7 +824,7 @@ const styles = StyleSheet.create({
   homeNowText:{fontSize:11,fontWeight:'800',color:'#FFFFFF',fontVariant:['tabular-nums']},
   homeNowPreview:{backgroundColor:'#5B3FC4'},
   homeNowButton:{
-    position:'absolute',top:6,right:8,zIndex:10,flexDirection:'row',alignItems:'center',gap:3,height:26,
+    position:'absolute',top:40,right:8,zIndex:10,flexDirection:'row',alignItems:'center',gap:3,height:26,
     paddingHorizontal:9,borderRadius:13,borderWidth:1,borderColor:'#BFD3FA',backgroundColor:'#FFFFFF'
   },
   homeNowButtonText:{fontSize:12,fontWeight:'800',color:'#1D55D9'},
