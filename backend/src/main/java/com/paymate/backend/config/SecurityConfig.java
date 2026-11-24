@@ -74,6 +74,8 @@ public class SecurityConfig {
                                 "/api/users/email-availability",
                                 "/api/users/phone-availability").permitAll()
                         .requestMatchers("/error").permitAll()
+                        // 가상 POS 결제: 단말기는 로그인 토큰이 없어서 단말기 키(terminalKey)로 확인한다 (PosPaymentService, 2026-11-24)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/pos/payments").permitAll()
                         // 카드 상품 이미지 (공개된 상품 이미지라 로그인 없이 받는다. 앱의 <Image> 는 토큰을 보낼 수 없다)
                         .requestMatchers(HttpMethod.GET, "/card-images/**").permitAll()
                         // 행사 브랜드 로고 (카드 이미지와 같은 이유로 로그인 없이, 2026-11-23)
