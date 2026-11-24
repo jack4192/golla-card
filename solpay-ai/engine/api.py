@@ -107,6 +107,7 @@ class ChatTurn(BaseModel):
 class ChatScreen(BaseModel):
     name: str | None = None                 # pay: 결제 화면에서 열었을 때
     recommendation_id: int | None = None
+    blocks: bool | None = None              # true: 앱이 답 아래에 표(blocks)를 그린다 (2026-11-24). 없으면 옛 앱 = 문장만
 
 
 class ChatBody(BaseModel):

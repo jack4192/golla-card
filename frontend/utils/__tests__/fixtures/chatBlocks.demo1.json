@@ -1,0 +1,681 @@
+{
+ "recommend_for_payment": [
+  {
+   "type": "card_compare",
+   "basis": "스타벅스 6,000원",
+   "recommended": "신한카드 Discount Plan+",
+   "rows": [
+    {
+     "user_card_id": 1,
+     "name": "신한카드 Discount Plan+",
+     "benefit": 600,
+     "promotion": 0
+    },
+    {
+     "user_card_id": 3,
+     "name": "KB ALL 카드",
+     "benefit": 60,
+     "promotion": 0
+    },
+    {
+     "user_card_id": 2,
+     "name": "신한카드 SOL트래블 체크",
+     "benefit": 0,
+     "promotion": 0
+    }
+   ]
+  },
+  {
+   "type": "pay_button",
+   "user_card_id": 1,
+   "name": "신한카드 Discount Plan+"
+  }
+ ],
+ "explain_ranking": [
+  {
+   "type": "score_table",
+   "source": "지금 시각 기준",
+   "rows": [
+    {
+     "rank": 1,
+     "user_card_id": 1,
+     "name": "신한카드 Discount Plan+",
+     "immediate": 674,
+     "promotion": 7,
+     "promotion_label": "메가MGC커피 이벤트 500원",
+     "expected_total": 680,
+     "message": "신한카드 Discount Plan+ 150만 원 구간까지 1,451,560원 남았어요. 채우면 다음 달에도 지금 혜택을 받아요"
+    },
+    {
+     "rank": 2,
+     "user_card_id": 3,
+     "name": "KB ALL 카드",
+     "immediate": 124,
+     "promotion": 0,
+     "promotion_label": null,
+     "expected_total": 124,
+     "message": ""
+    },
+    {
+     "rank": 3,
+     "user_card_id": 2,
+     "name": "신한카드 SOL트래블 체크",
+     "immediate": 0,
+     "promotion": 7,
+     "promotion_label": "메가MGC커피 이벤트 500원",
+     "expected_total": 7,
+     "message": ""
+    }
+   ],
+   "base_card": 1,
+   "swapped": false
+  }
+ ],
+ "get_card_status": [
+  {
+   "type": "card_status",
+   "month": "2026-11",
+   "rows": [
+    {
+     "user_card_id": 1,
+     "name": "신한카드 Discount Plan+",
+     "prev_month_perf": 1542790,
+     "this_month_perf": 48440,
+     "this_month_tier_min": 1500000,
+     "remaining_to_keep_tier": 1451560,
+     "next_tier_min": 400000,
+     "remaining_to_next_tier": 351560,
+     "benefit_this_month": 1140,
+     "limits": [
+      {
+       "name": "카드 월 통합 한도",
+       "used": 1140,
+       "limit": 73000,
+       "left": 71860
+      },
+      {
+       "name": "DAY 카페 10% 할인",
+       "used": 0,
+       "limit": 15000,
+       "left": 15000
+      },
+      {
+       "name": "쇼핑 10% 할인 (마트)",
+       "used": 1140,
+       "limit": 35000,
+       "left": 33860
+      },
+      {
+       "name": "정기결제 공과금 10% 할인",
+       "used": 0,
+       "limit": 15000,
+       "left": 15000
+      }
+     ],
+     "note": null
+    },
+    {
+     "user_card_id": 2,
+     "name": "신한카드 SOL트래블 체크",
+     "prev_month_perf": 202400,
+     "this_month_perf": 59350,
+     "this_month_tier_min": null,
+     "remaining_to_keep_tier": null,
+     "next_tier_min": 300000,
+     "remaining_to_next_tier": 240650,
+     "benefit_this_month": 0,
+     "limits": [],
+     "note": null
+    },
+    {
+     "user_card_id": 3,
+     "name": "KB ALL 카드",
+     "prev_month_perf": 371800,
+     "this_month_perf": 5100,
+     "this_month_tier_min": null,
+     "remaining_to_keep_tier": null,
+     "next_tier_min": 400000,
+     "remaining_to_next_tier": 394900,
+     "benefit_this_month": 40,
+     "limits": [],
+     "note": "다른 카드사 카드는 어제까지 결제 기준"
+    }
+   ]
+  }
+ ],
+ "get_card_benefits": [
+  {
+   "type": "benefit_list",
+   "card_id": 12,
+   "name": "신한카드 SOL트래블 체크",
+   "issuer": "신한카드",
+   "card_type": "체크",
+   "annual_fee": 0,
+   "perf_tiers": [
+    300000
+   ],
+   "benefits": [
+    {
+     "name": "국내 4대 편의점 5% 할인",
+     "where": [
+      "편의점(CU)",
+      "편의점(GS25)",
+      "편의점(세븐일레븐)",
+      "편의점(이마트24)"
+     ],
+     "by_prev_month_perf": [
+      {
+       "prev_perf_min": 300000,
+       "value": "5%",
+       "max_per_payment": null,
+       "monthly_limit": 3000,
+       "monthly_count": 3
+      }
+     ]
+    },
+    {
+     "name": "국내 대중교통 1% 할인",
+     "where": [
+      "대중교통(버스/지하철)"
+     ],
+     "by_prev_month_perf": [
+      {
+       "prev_perf_min": 300000,
+       "value": "1%",
+       "max_per_payment": null,
+       "monthly_limit": 3000,
+       "monthly_count": null
+      }
+     ]
+    }
+   ],
+   "group_limits": [],
+   "not_calculated": [
+    "공항 라운지",
+    "해외 현지통화 결제",
+    "해외 대중교통"
+   ]
+  }
+ ],
+ "recommend_new_card": [
+  {
+   "type": "new_card_list",
+   "months": [
+    "2026-08",
+    "2026-09",
+    "2026-10"
+   ],
+   "monthly_spend": 2296870,
+   "cards": [
+    {
+     "card_id": 1,
+     "name": "신한카드 Discount Plan",
+     "monthly_benefit": 52270,
+     "annual_fee": 15000,
+     "annual_fee_monthly": 1250,
+     "net_benefit": 51020,
+     "top_categories": [
+      {
+       "category": "ONLINE_SHOPPING",
+       "category_name": "온라인쇼핑",
+       "benefit": 12830
+      },
+      {
+       "category": "RESTAURANT",
+       "category_name": "음식점",
+       "benefit": 7490
+      },
+      {
+       "category": "UTILITY",
+       "category_name": "공과금",
+       "benefit": 5740
+      }
+     ]
+    },
+    {
+     "card_id": 4,
+     "name": "신한카드 Simple Plan+",
+     "monthly_benefit": 33790,
+     "annual_fee": 47000,
+     "annual_fee_monthly": 3920,
+     "net_benefit": 29870,
+     "top_categories": [
+      {
+       "category": "RESTAURANT",
+       "category_name": "음식점",
+       "benefit": 9480
+      },
+      {
+       "category": "GOLF",
+       "category_name": "골프",
+       "benefit": 4010
+      },
+      {
+       "category": "ONLINE_SHOPPING",
+       "category_name": "온라인쇼핑",
+       "benefit": 3490
+      }
+     ]
+    },
+    {
+     "card_id": 5,
+     "name": "신한카드 ECO Plan",
+     "monthly_benefit": 23300,
+     "annual_fee": 20000,
+     "annual_fee_monthly": 1670,
+     "net_benefit": 21630,
+     "top_categories": [
+      {
+       "category": "CONVENIENCE",
+       "category_name": "편의점",
+       "benefit": 7660
+      },
+      {
+       "category": "TRANSIT",
+       "category_name": "대중교통(버스/지하철)",
+       "benefit": 4330
+      },
+      {
+       "category": "HNB",
+       "category_name": "헬스앤뷰티(올리브영 등)",
+       "benefit": 2300
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "list_promotions": [
+  {
+   "type": "promotion_list",
+   "promotions": [
+    {
+     "promotion_id": 9,
+     "brand": "CU",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "500원",
+     "start": "2026-11-01",
+     "end": "2026-11-15",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/cu.png"
+    },
+    {
+     "promotion_id": 8,
+     "brand": "11번가",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "3,000원",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/11st.png",
+     "min_amount": 50000
+    },
+    {
+     "promotion_id": 19,
+     "brand": "SSG닷컴",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "10% (한 번에 최대 20,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/ssg.png"
+    },
+    {
+     "promotion_id": 4,
+     "brand": "W컨셉(앱/웹)",
+     "title": "W컨셉에서 20만 원 이상 결제하고 1만 원 받자!",
+     "kind": "이벤트",
+     "benefit": "10,000원",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/wconcept.png",
+     "min_amount": 200000
+    },
+    {
+     "promotion_id": 25,
+     "brand": "교보문고",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "10% (한 번에 최대 20,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/kyobo.png",
+     "min_amount": 30000
+    },
+    {
+     "promotion_id": 17,
+     "brand": "닥터자르트",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "12% (한 번에 최대 50,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/drjart.png"
+    },
+    {
+     "promotion_id": 14,
+     "brand": "동원몰",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "7% (한 번에 최대 20,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/dongwon.png",
+     "min_amount": 20000
+    },
+    {
+     "promotion_id": 23,
+     "brand": "레드캡투어",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "12% (한 번에 최대 20,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/redcap.png"
+    },
+    {
+     "promotion_id": 10,
+     "brand": "마켓컬리",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "20% (한 번에 최대 40,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/kurly.png"
+    },
+    {
+     "promotion_id": 1,
+     "brand": "메가MGC커피",
+     "title": "메가MGC커피 마실 땐 신한 슈퍼SOL/SOL페이!",
+     "kind": "이벤트",
+     "benefit": "500원",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/mega.png"
+    },
+    {
+     "promotion_id": 13,
+     "brand": "신라아이파크면세점",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "10% (한 번에 최대 20,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/shilla-ipark.png"
+    },
+    {
+     "promotion_id": 16,
+     "brand": "신세계면세점",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "11% (한 번에 최대 100,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/ssg-dutyfree.png"
+    },
+    {
+     "promotion_id": 12,
+     "brand": "알리익스프레스",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "10% (한 번에 최대 20,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/ali.png",
+     "min_amount": 20000
+    },
+    {
+     "promotion_id": 24,
+     "brand": "야놀자",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "8% (한 번에 최대 20,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/yanolja.png"
+    },
+    {
+     "promotion_id": 11,
+     "brand": "에이치몰",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "5% (한 번에 최대 20,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/hmall.png"
+    },
+    {
+     "promotion_id": 22,
+     "brand": "오설록",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "10% (한 번에 최대 20,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/osulloc.png"
+    },
+    {
+     "promotion_id": 2,
+     "brand": "온라인 다이소몰",
+     "title": "다이소몰 결제 시 1,000포인트 적립",
+     "kind": "이벤트",
+     "benefit": "1,000원",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/daiso.png",
+     "min_amount": 30000
+    },
+    {
+     "promotion_id": 27,
+     "brand": "올리브영",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "25% (한 번에 최대 20,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/oliveyoung.png"
+    },
+    {
+     "promotion_id": 26,
+     "brand": "위메프",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "20% (한 번에 최대 20,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/wemakeprice.png"
+    },
+    {
+     "promotion_id": 29,
+     "brand": "유니클로",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "16% (한 번에 최대 40,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/uniqlo.png"
+    },
+    {
+     "promotion_id": 20,
+     "brand": "이마트몰",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "10% (한 번에 최대 20,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/emart.png"
+    },
+    {
+     "promotion_id": 21,
+     "brand": "차앤박(CNP)",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "12% (한 번에 최대 20,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/cnp.png"
+    },
+    {
+     "promotion_id": 28,
+     "brand": "파리바게뜨",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "12% (한 번에 최대 20,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/paris.png",
+     "min_amount": 20000
+    },
+    {
+     "promotion_id": 15,
+     "brand": "할리스",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "10% (한 번에 최대 20,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/hollys.png"
+    },
+    {
+     "promotion_id": 18,
+     "brand": "현대백화점",
+     "title": "마이샵 혜택",
+     "kind": "마이샵",
+     "benefit": "15% (한 번에 최대 40,000원)",
+     "start": "2026-11-01",
+     "end": "2026-11-30",
+     "cards": [
+      "신한카드 Discount Plan+",
+      "신한카드 SOL트래블 체크"
+     ],
+     "logo_url": "/brand-logos/hyundai.png"
+    }
+   ]
+  }
+ ],
+ "simulate_payment": [
+  {
+   "type": "card_compare",
+   "basis": "지금 결제 화면의 예상 결제 기준 기대 혜택",
+   "rows": [
+    {
+     "user_card_id": 1,
+     "name": "신한카드 Discount Plan+",
+     "benefit": 674,
+     "promotion": 7,
+     "total": 680
+    },
+    {
+     "user_card_id": 3,
+     "name": "KB ALL 카드",
+     "benefit": 124,
+     "promotion": 0,
+     "total": 124
+    },
+    {
+     "user_card_id": 2,
+     "name": "신한카드 SOL트래블 체크",
+     "benefit": 0,
+     "promotion": 7,
+     "total": 7
+    }
+   ]
+  }
+ ]
+}
