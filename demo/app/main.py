@@ -3,11 +3,11 @@
 실제 구조에서 Spring 이 맡을 역할을 한다: 일회용 토큰 발급, 가상 POS 승인, 거래 저장.
 카드 순서와 안내 문구, 하루 일정, 신규 카드 추천은 AI 추천 엔진(solpay-ai)에 HTTP 로 묻는다.
 위치(GPS)는 받지도 보내지도 않는다 (2026-11-14 멘토링 반영).
-실제 결제망·카드사와 연결되지 않는다. 단말기 키가 설정된 가맹점은 로컬 SOLPay_FIXED 결제 서버를 사용한다.
+실제 결제망·카드사와 연결되지 않는다. 단말기 키가 설정된 가맹점은 SOL·Pay 백엔드(/api/v1/pos/payments)로 승인을 보낸다
+(백엔드 주소 SOLPAY_BACKEND_URL, 단말기 키는 app.terminals).
 """
 import hashlib
 import hmac
-import json
 import logging
 import os
 import secrets
@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import ai, codes, db, demo
+from . import ai, codes, db, demo, terminals
 
 TOKEN_TTL_SEC = 60          # 토큰 유효시간
 TOKEN_DIGITS = 18           # 바코드에 담기는 숫자 자릿수
@@ -35,9 +35,23 @@ PAYMENT_ID_BASE = 900_000_000   # AI 엔진에 보내는 시연 결제 번호 (�
 _SECRET = os.environ.get("SOLPAY_SECRET", "").encode() or secrets.token_bytes(32)
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
-FIXED_POS_URL = "http://127.0.0.1:8080/api/v1/pos/payments"
-FIXED_TERMINAL_KEYS: dict[str, str] = json.loads(os.environ.get("SOLPAY_FIXED_TERMINAL_KEYS", "{}"))
+DEFAULT_BACKEND_URL = "http://127.0.0.1:8080"   # 백엔드를 다른 포트(예: 8090)로 켰다면 SOLPAY_BACKEND_URL 로 알려 준다
+_POS_TRANSPORT: httpx.BaseTransport | None = None   # 시험에서 백엔드 대신 끼우는 가짜 연결
 logger = logging.getLogger(__name__)
+
+
+def fixed_pos_url() -> str:
+    """가상 POS 가 승인 요청을 보낼 SOL·Pay 백엔드 주소 (요청마다 읽는다)."""
+    base = os.environ.get("SOLPAY_BACKEND_URL", "").strip() or DEFAULT_BACKEND_URL
+    return base.rstrip("/") + "/api/v1/pos/payments"
+
+
+def fixed_terminal_keys() -> dict[str, str]:
+    """가맹점 번호 → 단말기 키 (요청마다 읽어서, 키를 새로 만들어도 서버를 다시 켤 필요가 없다)."""
+    try:
+        return terminals.load_keys()
+    except terminals.KeysError as e:
+        raise HTTPException(500, str(e)) from None
 
 _merchants: dict[int, dict] = {}            # AI 엔진의 가맹점 목록 (처음 성공했을 때 한 번 받는다)
 _cards: dict[int, list[dict]] = {}          # 사용자별 마지막 카드 현황. AI 가 꺼져도 기본 순서를 보여 주려고 둔다
@@ -116,14 +130,15 @@ def pos_page():
 
 @app.get("/api/demo/options")
 def options():
+    keys = fixed_terminal_keys()
     by_zone: dict[str, list[dict]] = {}
     for m in sorted(merchants().values(), key=lambda m: (demo.CATEGORY_ORDER.get(m["category_code"], 99), m["name"])):
-        if FIXED_TERMINAL_KEYS and str(m["merchant_id"]) not in FIXED_TERMINAL_KEYS:
+        if keys and str(m["merchant_id"]) not in keys:
             continue
         by_zone.setdefault(m["zone"], []).append(
             {"merchant_id": m["merchant_id"], "name": m["name"], "category_code": m["category_code"],
              "category_name": m["category_name"], "typical_amount": demo.TYPICAL_AMOUNT.get(m["category_code"], 10000)})
-    return {"uses_fixed_pos": bool(FIXED_TERMINAL_KEYS),
+    return {"uses_fixed_pos": bool(keys),
             "users": [{**u, "zones": [{"code": z, "name": demo.ZONES[z], "role": r} for z, r in u["zones"]]}
                       for u in demo.USERS],
             "times": demo.TIMES, "zones": demo.ZONES, "merchants": by_zone,
@@ -500,15 +515,15 @@ FIXED_DECLINE_REASONS = {
 }
 
 
-def approve_fixed(req: ApproveRequest, merchant: dict, demo_at: str) -> dict:
-    key = FIXED_TERMINAL_KEYS.get(str(req.merchant_id))
+def approve_fixed(req: ApproveRequest, merchant: dict, demo_at: str, keys: dict[str, str]) -> dict:
+    key = keys.get(str(req.merchant_id))
     if key is None:
         raise HTTPException(422, "SOLPay 결제에 연결된 가맹점을 선택해 주세요.")
     if req.amount < 100:
         raise HTTPException(422, "결제 금액은 100원 이상이어야 합니다.")
     try:
-        with httpx.Client(timeout=5.0, trust_env=False) as client:
-            response = client.post(FIXED_POS_URL, json={
+        with httpx.Client(timeout=5.0, trust_env=False, transport=_POS_TRANSPORT) as client:
+            response = client.post(fixed_pos_url(), json={
                 "terminalKey": key, "code": req.token, "amount": req.amount,
             })
     except httpx.ConnectError:
@@ -552,8 +567,9 @@ def approve(req: ApproveRequest):
     if merchant is None:
         raise HTTPException(422, "가맹점 목록에 없는 가맹점입니다. AI 서버가 켜져 있는지 확인하세요.")
     demo_at = state()["demo_at"]
-    if FIXED_TERMINAL_KEYS:
-        return approve_fixed(req, merchant, demo_at)
+    keys = fixed_terminal_keys()
+    if keys:
+        return approve_fixed(req, merchant, demo_at, keys)
 
     with db.connect() as con:
         def record(result, reason=None, row=None, approval_no=None):
