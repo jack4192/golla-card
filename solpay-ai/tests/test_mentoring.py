@@ -83,12 +83,17 @@ def test_같은_업종_반복이면_그_업종_카드를_추천한다(state, par
 
 def test_하루에_한_번까지_같은_카드는_2주_동안_다시_추천하지_않는다(state, params):
     item = ScheduleItem(1, 1, at(10, 7, 12), at(10, 7, 14), "CVS", 1_000_000)
-    p = params.with_(special_categories=("CVS",))
+    p = params.with_(special_categories=("CVS",), recommend_same_card_days=14)   # 2주 규칙을 켠 경우 (기본은 끔, 2026-11-24)
     assert recommend(_ready(state), [], [item], [{"at": at(10, 7, 0), "card_id": 9}], at(10, 7, 8), p) is None
     assert recommend(state, [], [item], [{"at": at(10, 1, 0), "card_id": 4}], at(10, 7, 8), p) is None
     assert recommend(state, [], [item], [{"at": at(9, 24, 0), "card_id": 4}], at(10, 7, 8), p) is None          # 13일 8시간 전
     assert recommend(state, [], [item], [{"at": at(9, 23, 0), "card_id": 4}], at(10, 7, 8), p) is not None      # 14일 8시간 전
     assert recommend(state, [], [item], [{"at": at(9, 1, 0), "card_id": 4}], at(10, 7, 8), p) is not None
+    # 기본(2026-11-24 사용자 결정 '2주 규칙을 없애줘'): 6일 전에 추천한 카드도 다시 추천한다. 하루 한 번 규칙은 그대로
+    off = params.with_(special_categories=("CVS",))
+    assert off.recommend_same_card_days == 0
+    assert recommend(state, [], [item], [{"at": at(10, 1, 0), "card_id": 4}], at(10, 7, 8), off) is not None
+    assert recommend(_ready(state), [], [item], [{"at": at(10, 7, 0), "card_id": 9}], at(10, 7, 8), off) is None
 
 
 def test_연말정산_놓친_혜택은_기존_카드의_구간을_지키는_만큼만_옮긴다(state):
