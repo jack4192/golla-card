@@ -502,6 +502,8 @@ def test_놓친_혜택은_시작일을_주면_그_달부터_센다(svc):
         r = c.get("/internal/users/1/missed-benefit", params={"at": AT, "start": "2026-01-01"}).json()
     assert [(m["card_id"], m["months"], m["gain"]) for m in r] == [(4, 3, 60_000)]
     assert r[0]["message"] == "그때 이 카드를 발급받으셨다면 3개월 동안 60,000원을 더 받으셨어요"
+    # 연말 결산 화면이 '1월 1일부터 3월 20일까지'처럼 기간을 밝히게 (2026-11-24 수정사항)
+    assert (r[0]["from"], r[0]["until"]) == ("2026-01-01", "2026-03-20")
 
 
 def test_놓친_혜택은_시작일이_없으면_지금처럼_days_로_센다(svc):
@@ -509,6 +511,7 @@ def test_놓친_혜택은_시작일이_없으면_지금처럼_days_로_센다(sv
     with client(svc) as c:
         r = c.get("/internal/users/1/missed-benefit", params={"at": AT}).json()
     assert [(m["card_id"], m["months"], m["gain"]) for m in r] == [(4, 4, 80_000)]
+    assert (r[0]["from"], r[0]["until"]) == ("2025-03-20", "2026-03-20")
 
 
 def test_놓친_혜택은_기준_금액_이상만_남긴다(catalog, priors, params):
