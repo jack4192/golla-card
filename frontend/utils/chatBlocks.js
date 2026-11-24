@@ -1,0 +1,128 @@
+// 챗봇 답 아래 표 (2026-11-24 사용자 결정 '앱에서 표 그리기').
+//
+// AI 서버(/internal/chat)는 답 문장(reply)과 함께 표 데이터(blocks)를 보낸다. 백엔드는 그대로 넘긴다.
+// 여기서는 blocks 를 화면에 그리기 좋은 모양(view)으로만 바꾼다. 그리는 일은 components/ChatBlocks.js.
+// 테스트: node --test utils/__tests__/chatBlocks.test.mjs
+
+const won = value => Math.round(Number(value) || 0).toLocaleString('ko-KR') + '원';
+const monthDay = day => `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))}까지`;
+
+/**
+ * blocks → view 목록. 모르는 표, 규칙 카드(이미 초안 카드로 보여 줌), 빈 표는 뺀다.
+ * links: 지갑 카드 id → 서버 userCardId (utils/serverCards.js serverCardLinks). 결제 버튼을 지갑 카드로 잇는 데 쓴다.
+ */
+export function chatBlockViews(blocks, links = {}) {
+  const walletIdOf = new Map(Object.entries(links || {}).map(([walletId, userCardId]) => [String(userCardId), walletId]));
+  const list = Array.isArray(blocks) ? blocks : [];
+  // 옛 AI 서버는 비교표에 추천 카드(recommended)를 넣지 않는다. 결제 버튼의 카드가 추천 카드다
+  const payName = list.find(block => block?.type === 'pay_button')?.name;
+  const views = [];
+  for (const block of list) {
+    const view = toView(block?.type === 'card_compare' && !block.recommended && payName ? { ...block, recommended: payName } : block,
+      walletIdOf);
+    if (view) views.push(view);
+  }
+  return views;
+}
+
+function toView(block, walletIdOf) {
+  switch (block?.type) {
+    case 'card_compare': return compareView(block);
+    case 'pay_button': {
+      const walletId = walletIdOf.get(String(block.user_card_id));
+      return walletId ? { kind: 'pay', name: block.name, walletId } : null;
+    }
+    case 'score_table': return rankView(block);
+    case 'card_status': return statusView(block);
+    case 'benefit_list': return benefitsView(block);
+    case 'new_card_list': return newCardsView(block);
+    case 'promotion_list': return promotionsView(block);
+    default: return null;
+  }
+}
+
+function compareView(block) {
+  const rows = (block.rows || []).map(row => ({
+    name: row.name,
+    total: row.total ?? (row.benefit || 0) + (row.promotion || 0),
+    promotion: row.promotion || 0,
+  }));
+  if (!rows.length) return null;
+  // 결제 추천은 추천 카드(실적을 지키는 기본 카드일 수 있음), 가정 비교는 혜택이 가장 큰 카드를 강조한다
+  const pick = rows.find(row => row.name === block.recommended) || rows.reduce((a, b) => (b.total > a.total ? b : a));
+  return {
+    kind: 'compare',
+    title: `${block.basis} · 카드 비교`,
+    rows: rows.map(row => ({
+      name: row.name,
+      amount: won(row.total),
+      sub: row.promotion > 0 ? `프로모션 ${won(row.promotion)} 포함` : null,
+      highlight: row === pick,
+    })),
+  };
+}
+
+function rankView(block) {
+  const rows = (block.rows || []).slice(0, 3).map(row => ({
+    rank: row.rank,
+    name: row.name,
+    amount: won(row.expected_total),
+    sub: row.promotion > 0 ? `프로모션 ${won(row.promotion)} 포함` : null,
+    tags: row.user_card_id === block.base_card ? ['기본 카드'] : [],
+  }));
+  return rows.length ? { kind: 'rank', title: '결제 화면 카드 순서 · 예상 혜택', rows } : null;
+}
+
+function statusView(block) {
+  const rows = (block.rows || []).map(row => {
+    const goal = row.next_tier_min;
+    return {
+      name: row.name,
+      perf: won(row.this_month_perf),
+      goal: goal ? won(goal) : null,
+      ratio: goal ? Math.max(0, Math.min(1, (row.this_month_perf || 0) / goal)) : 1,
+      left: goal ? `${won(row.remaining_to_next_tier)} 남음` : '가장 높은 구간',
+      benefit: `이번 달 받은 혜택 ${won(row.benefit_this_month)}`,
+    };
+  });
+  return rows.length ? { kind: 'status', title: `${block.month} 실적 · 다음 구간까지`, rows } : null;
+}
+
+function benefitsView(block) {
+  const rows = (block.benefits || []).slice(0, 5).map(item => {
+    const tiers = item.by_prev_month_perf || [];
+    const values = [...new Set(tiers.map(tier => tier.value).filter(Boolean))];
+    const maxPer = tiers.find(tier => tier.max_per_payment)?.max_per_payment;
+    return {
+      name: item.name,
+      where: (item.where || []).slice(0, 3).join(', '),
+      value: values.join(' · ') + (values.length > 1 ? ' (전월 실적별)' : '') + (maxPer ? ` · 건당 최대 ${won(maxPer)}` : ''),
+    };
+  }).filter(row => row.name && row.value);
+  const fee = block.annual_fee == null ? null : `연회비 ${won(block.annual_fee)}`;
+  return {
+    kind: 'benefits',
+    title: block.name,
+    sub: [block.issuer, block.card_type, fee].filter(Boolean).join(' · '),
+    rows,
+  };
+}
+
+function newCardsView(block) {
+  const rows = (block.cards || []).map(card => ({
+    name: card.name,
+    amount: `월 ${won(card.net_benefit)}`,
+    sub: [`연회비 ${won(card.annual_fee)}`, ...(card.top_categories || []).slice(0, 2).map(c => c.category_name)].join(' · '),
+  }));
+  return rows.length ? { kind: 'newCards', title: '내 소비로 다시 계산한 신한카드 · 연회비 뺀 월 혜택', rows } : null;
+}
+
+function promotionsView(block) {
+  const all = block.promotions || [];
+  return {
+    kind: 'promotions',
+    title: all.length ? '지금 받을 수 있는 프로모션' : '지금 받을 수 있는 프로모션이 없어요',
+    rows: all.slice(0, 5).map(p => ({ brand: p.brand, kind: p.kind, benefit: p.benefit, until: monthDay(p.end) })),
+    more: Math.max(0, all.length - 5),
+  };
+}

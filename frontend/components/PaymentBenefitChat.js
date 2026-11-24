@@ -3,6 +3,9 @@ import { Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, St
 import { Ionicons } from '@expo/vector-icons';
 import { SERVER_MODE, api } from '../utils/api';
 import { chatHistory } from '../utils/aiPlacementCore';
+import { chatBlockViews } from '../utils/chatBlocks';
+import { serverCardLinks } from '../utils/serverCards';
+import ChatBlocks from './ChatBlocks';
 
 const avatar = require('../assets/chatbot-avatar.png');
 const prompts = ['왜 이 카드예요?', '혜택 적용 조건', '다른 카드와 비교'];
@@ -39,7 +42,7 @@ function answerQuestion(question, { selected, baseline, difference }) {
   return { text, rows };
 }
 
-export default function PaymentBenefitChat({ transaction, selected, baseline, difference, recommendationId = null }) {
+export default function PaymentBenefitChat({ transaction, selected, baseline, difference, recommendationId = null, onSelectCard = null }) {
   const [visible, setVisible] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
@@ -73,13 +76,14 @@ export default function PaymentBenefitChat({ transaction, selected, baseline, di
     const history = chatHistory(messagesRef.current);
     setBusy(true);
     setMessages(previous => [...previous, { id, question, pending: true, text: '답변을 준비하고 있어요…' }]);
-    api.aiChat({ message: question, history, screen: { name: 'pay', recommendation_id: recommendationId } })
+    // blocks: true → 앱이 답 아래에 표를 그린다 (AI 는 문장에서 카드별 금액 나열을 줄인다, 2026-11-24)
+    api.aiChat({ message: question, history, screen: { name: 'pay', recommendation_id: recommendationId, blocks: true } })
       .then(data => {
         if (!data?.reply) return { ...local(), offline: true };
         const draft = data.rule_draft?.draft_id != null
           ? { id: data.rule_draft.draft_id, summary: data.rule_draft.summary || '', state: 'pending' }
           : null;
-        return { text: data.reply, ai: true, draft };
+        return { text: data.reply, ai: true, draft, blocks: data.blocks };
       })
       .catch(() => ({ ...local(), offline: true }))
       .then(answer => {
@@ -130,6 +134,11 @@ export default function PaymentBenefitChat({ transaction, selected, baseline, di
               <Text style={s.question}>{message.question}</Text>
               <View style={s.answer} accessibilityLiveRegion="polite">
                 <Text style={s.answerText}>{message.text}</Text>
+                {!!message.blocks && <ChatBlocks
+                  views={chatBlockViews(message.blocks, serverCardLinks())}
+                  payLabel="이 카드로 결제 카드 바꾸기"
+                  onPay={onSelectCard ? walletId => { onSelectCard(walletId); setVisible(false); } : null}
+                />}
                 {!!message.detail && <Text style={s.hint}>{message.detail}</Text>}
                 {message.rows?.map(row => <View key={row.id} style={s.row}>
                   <View style={s.rowCard}>
