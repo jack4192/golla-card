@@ -121,6 +121,16 @@ def _answer(category, brand=None, confidence="high"):
     return json.dumps({"category": category, "brand": brand, "confidence": confidence}, ensure_ascii=False)
 
 
+def test_OpenAI_분류_요청은_생각_단계_none_옛_모델은_온도_0():
+    from engine.chat.page_copy import CopySettings
+    from engine.chat.place_llm import PlaceLLM
+    new, old = FakeClient([_answer("CAFE")]), FakeClient([_answer("CAFE")])
+    PlaceLLM(new, CopySettings()).classify("스벅", {"CAFE": "카페"}, {})
+    PlaceLLM(old, CopySettings(model="gpt-4o-mini", reasoning_effort=None)).classify("스벅", {"CAFE": "카페"}, {})
+    assert new.requests[0]["reasoning_effort"] == "none" and "temperature" not in new.requests[0]
+    assert old.requests[0]["temperature"] == 0 and "reasoning_effort" not in old.requests[0]
+
+
 def test_검색으로_찾으면_OpenAI_안_부름(svc):
     llm, client = _llm([])
     r = svc.classify_place("스타벅스", llm=llm)

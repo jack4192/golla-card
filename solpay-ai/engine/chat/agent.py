@@ -1,4 +1,4 @@
-"""챗봇 에이전트: OpenAI Chat Completions 함수 호출, 도구 반복, 시간 제한, 답변 검사, 예비 답변 (챗봇 설계서).
+"""챗봇 에이전트: OpenAI Chat Completions 함수 호출(모델은 openai_params: 기본 GPT-6.1 Terra, 생각 단계 none), 도구 반복, 시간 제한, 답변 검사, 예비 답변 (챗봇 설계서).
 
 질문 하나는 도구 호출 최대 3번 + 답변으로 끝나고, 전체 제한 시간은 15초다.
 검사(guard)에 걸리면 한 번 다시 쓰게 하고, 그래도 안 되면 화면 요소만 보여 주는 정해진 문구로 바꾼다.
@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from engine.chat import guard
+from engine.chat.openai_params import DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, model_from_env, reasoning_effort_from_env, sampling
 from engine.chat.prompts import PROMPT_VERSION, system_prompt
 from engine.chat.tools import TOOL_SPECS, ToolBox, _josa, said_day
 from engine.privacy import redact
@@ -43,16 +44,18 @@ def load_dotenv(path: Path = ROOT / ".env") -> None:
 
 @dataclass(frozen=True)
 class ChatSettings:
-    model: str = "gpt-4o-mini"
+    model: str = DEFAULT_MODEL
     timeout_sec: float = 15.0
     max_tool_calls: int = 3
     history_turns: int = 10
-    temperature: float = 0.2
+    temperature: float = 0.2                       # 생각 단계가 없을 때(옛 모델)만 보낸다
+    reasoning_effort: str | None = DEFAULT_REASONING_EFFORT
 
     @classmethod
     def from_env(cls) -> "ChatSettings":
-        return cls(os.environ.get("OPENAI_MODEL", "gpt-4o-mini"), float(os.environ.get("CHAT_TIMEOUT_SEC", 15)),
-                   int(os.environ.get("CHAT_MAX_TOOL_CALLS", 3)), int(os.environ.get("CHAT_HISTORY_TURNS", 10)))
+        return cls(model_from_env(), float(os.environ.get("CHAT_TIMEOUT_SEC", 15)),
+                   int(os.environ.get("CHAT_MAX_TOOL_CALLS", 3)), int(os.environ.get("CHAT_HISTORY_TURNS", 10)),
+                   reasoning_effort=reasoning_effort_from_env())
 
 
 def openai_client():
@@ -119,8 +122,8 @@ class ChatAgent:
         left = deadline - time.monotonic()
         if left < 1.0:
             raise TimeoutError("제한 시간 초과")
-        kwargs = {"model": self.settings.model, "messages": messages, "temperature": self.settings.temperature,
-                  "timeout": left}
+        kwargs = {"model": self.settings.model, "messages": messages, "timeout": left,
+                  **sampling(self.settings.temperature, self.settings.reasoning_effort)}
         if tools:
             kwargs.update(tools=TOOL_SPECS, tool_choice="auto", parallel_tool_calls=True)
         resp = self.client.chat.completions.create(**kwargs)

@@ -1,7 +1,7 @@
 """맞춤 추천 페이지 문구 (설계서 2026-11-19-recommendation-page-design.md 8절).
 
 카드·행사·금액은 엔진(engine.page)이 정하고, 이 모듈은 그 사실로 페이지 문구만 받는다.
-- OpenAI Chat Completions(gpt-4o-mini), JSON 스키마 응답. 두 탭 문구를 한 번에 받는다.
+- OpenAI Chat Completions(기본 GPT-6.1 Terra, 생각 단계 none — openai_params), JSON 스키마 응답. 두 탭 문구를 한 번에 받는다.
 - 검사: 탭 구성·길이·숫자(그 탭·그 행사의 사실에 정확히 있는 값만)·소비 권유·카드 탭의 연회비·실적 조건(금액까지)·
   '실적 0원'·0원 혜택·뻔한 표현·큰 금액 설명의 첫 달 안내·평소 소비인데 '오늘 일정'·혜택 종류(할인/캐시백/적립) 바꿔 말하기.
 - 카드 탭 (2026-11-21 사용자 결정): 화면의 큰 글씨는 오늘 일정에서 받는 혜택 키워드(card.keyword, '음식점 10% 할인')이고
@@ -18,6 +18,8 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import datetime
+
+from engine.chat.openai_params import DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, model_from_env, reasoning_effort_from_env, sampling
 
 from engine.chat.guard import SPEND_PUSH, numbers_in_text
 from engine.chat.tools import _josa
@@ -80,13 +82,14 @@ SCHEMA = {"type": "object", "additionalProperties": False, "required": ["card", 
 
 @dataclass(frozen=True)
 class CopySettings:
-    model: str = "gpt-4o-mini"
+    model: str = DEFAULT_MODEL
     timeout_sec: float = 8.0
-    temperature: float = 0.4
+    temperature: float = 0.4                       # 생각 단계가 없을 때(옛 모델)만 보낸다
+    reasoning_effort: str | None = DEFAULT_REASONING_EFFORT
 
     @classmethod
     def from_env(cls, timeout_env: str = "PAGE_COPY_TIMEOUT_SEC") -> "CopySettings":
-        return cls(os.environ.get("OPENAI_MODEL", "gpt-4o-mini"), float(os.environ.get(timeout_env, 8)))
+        return cls(model_from_env(), float(os.environ.get(timeout_env, 8)), reasoning_effort=reasoning_effort_from_env())
 
 
 # ---------- 사실 ----------
@@ -598,7 +601,8 @@ class PageCopyWriter:
         if left < 1.0:
             raise TimeoutError("제한 시간 초과")
         resp = self.client.chat.completions.create(
-            model=self.settings.model, messages=messages, temperature=self.settings.temperature, timeout=left,
+            model=self.settings.model, messages=messages, timeout=left,
+            **sampling(self.settings.temperature, self.settings.reasoning_effort),
             response_format={"type": "json_schema", "json_schema": {"name": self.schema_name, "strict": True, "schema": self.schema}})
         if getattr(resp, "usage", None) is not None:
             log["tokens_in"] += resp.usage.prompt_tokens or 0
