@@ -19,7 +19,7 @@ import { loadPlacementPreview } from '../utils/aiPlacement';
 import RecentPayments from '../components/RecentPayments';
 import QuickPaySheet from '../components/QuickPaySheet';
 import NotificationCenter, { NotificationBell, useInbox } from '../components/NotificationCenter';
-import { PHONE_NOTIFICATIONS_SUPPORTED, addPhoneNotificationOpenListener, refreshDailyNotifications, requestPhonePermission, syncPhoneNotifications } from '../utils/notifications';
+import { PHONE_NOTIFICATIONS_SUPPORTED, refreshDailyNotifications, requestPhonePermission } from '../utils/notifications';
 import { eventTitle, readEvents } from '../utils/routineData';
 import { Alert } from '../utils/demoAlert';
 import * as SecureStore from '../utils/demoStore';
@@ -245,6 +245,7 @@ const SettingsToggle = ({
   </View>;
 export default function MainScreen({
   onLogout,
+  onConsentChange,
   onOpenChat,
   onEditRoutine,
   onViewBenefits,
@@ -259,7 +260,6 @@ export default function MainScreen({
 }) {
   const [tab, setTab] = useState(initialTab || 'home');   // '일정 다시 확인'으로 돌아오면 오늘의 일정 탭 (2026-11-24)
   const [schedulePayment, setSchedulePayment] = useState(null);
-  const [sampleActive, setSampleActive] = useState(null);
   const [adRequest, setAdRequest] = useState(null);
   const [catalogQuery, setCatalogQuery] = useState('');
   const [catalogFilter, setCatalogFilter] = useState('all');
@@ -413,28 +413,24 @@ export default function MainScreen({
       active = false;
     };
   }, []);
-  // 앱을 열 때 오늘 알림(일정·혜택)을 알림함에 넣고, 동의한 경우 폰 알림 예약을 맞춥니다.
+  // 앱을 열 때 오늘 알림(일정·혜택)을 알림함에 넣습니다.
   useEffect(() => {
     let active = true;
     readEvents().catch(() => []).then(events => {
       if (!active) return;
       refreshDailyNotifications({ events, titleOf: eventTitle, promotions: activeNow }).catch(() => {});
-      if (savedConsent) {
-        syncPhoneNotifications({ agreed: savedConsent.morningNotificationAgreed === true, events, titleOf: eventTitle }).catch(() => {});
-      }
     });
     return () => { active = false; };
     // 행사 목록을 다 읽으면 한 번 더 (행사 알림)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedConsent, promotions.status]);
-  // 알림(알림함 또는 폰 알림)을 눌렀을 때 해당 화면으로 이동
+  }, [promotions.status]);
+  // 알림함의 알림을 눌렀을 때 해당 화면으로 이동
   const openNotificationTarget = target => {
     setNotificationsOpen(false);
     setSettingsOpen(false);
     if (target === 'yearend') setYearEndOpen(true);
     else if (['home', 'benefits', 'schedule', 'cards', 'payment'].includes(target)) selectTab(target);
   };
-  useEffect(() => addPhoneNotificationOpenListener(target => openNotificationTarget(target)), []);
   // 설정 > 폰 알림 받기: 켜면 권한을 요청하고, 동의 기록(알림 수신 동의)도 함께 바꿉니다.
   const togglePhoneNotifications = async value => {
     if (phoneNotifyBusy) return;
@@ -449,6 +445,7 @@ export default function MainScreen({
       const next = { ...(savedConsent || {}), morningNotificationAgreed: value, savedAt: new Date().toISOString() };
       await SecureStore.setItemAsync(CONSENT_KEY, JSON.stringify(next));
       setSavedConsent(next);
+      onConsentChange?.(next);
     } catch {
       Alert.alert('저장 실패', '알림 설정을 저장하지 못했어요. 다시 시도해주세요.');
     } finally {
@@ -617,9 +614,6 @@ export default function MainScreen({
     onViewBenefits={onViewBenefits}
     cards={realWalletCards(currentCard, walletCards)}
     selectedCard={currentCard}
-    sampleActive={sampleActive}
-    onStartSample={setSampleActive}
-    onEndSample={() => setSampleActive(null)}
     onPay={openPaySheet}
   />;
   // 연말 결산 바로가기
@@ -836,7 +830,7 @@ export default function MainScreen({
 
         <SettingsGroup title="서비스·이용 동의">
           {PHONE_NOTIFICATIONS_SUPPORTED
-            ? <SettingsToggle icon="notifications-outline" title="폰 알림 받기 (알림 수신 동의)" subtitle="매일 아침 8시 안내 · 일정 30분 전 알림" value={savedConsent?.morningNotificationAgreed === true} disabled={phoneNotifyBusy || !savedConsent} onChange={togglePhoneNotifications} />
+            ? <SettingsToggle icon="notifications-outline" title="폰 알림 받기 (알림 수신 동의)" subtitle="매일 오전 7시 일정 입력 안내" value={savedConsent?.morningNotificationAgreed === true} disabled={phoneNotifyBusy || !savedConsent} onChange={togglePhoneNotifications} />
             : <SettingsItem icon="notifications-outline" title="알림 수신 동의" value={savedConsent ? savedConsent.morningNotificationAgreed ? '선택함' : '선택 안 함' : '기록 없음'} subtitle="폰 알림은 아이폰·안드로이드 앱에서만 받을 수 있어요" />}
         </SettingsGroup>
 

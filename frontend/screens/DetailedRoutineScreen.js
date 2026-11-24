@@ -272,16 +272,20 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
           {savedRange ? `✓ ${eventTitle(savedRange)} ${eventTimeCaption(savedRange)} 일정을 추가했어요` : '시간을 누르면 바로 일정을 넣을 수 있어요'}
         </Text>
       </View>
-      <ScrollView ref={scroll} style={s.scroll} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
-        <FlowHeading brand icon="time-outline">일정 관리</FlowHeading>
-        <Text style={s.date}>{scheduleDate}</Text>
-
-        {loading && <ActivityIndicator color="#1854D8" />}
-        {loadFailed && <Action onPress={() => setRetry(value => value + 1)} label="다시 불러오기" />}
-        <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={addNow} style={[s.addButton, disabled && s.dim]}>
-          <Ionicons name="add" size={20} color="#FFFFFF" />
-          <Text style={s.white}>일정 추가</Text>
-        </TouchableOpacity>
+      <ScrollView ref={scroll} style={s.scroll} contentContainerStyle={s.body}
+        stickyHeaderIndices={[1]} keyboardShouldPersistTaps="handled">
+        <View style={s.scheduleHeader}>
+          <FlowHeading brand icon="time-outline">일정 관리</FlowHeading>
+          <Text style={s.date}>{scheduleDate}</Text>
+          {loading && <ActivityIndicator color="#1854D8" />}
+          {loadFailed && <Action onPress={() => setRetry(value => value + 1)} label="다시 불러오기" />}
+        </View>
+        <View style={s.addBar}>
+          <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={addNow} style={[s.addButton, disabled && s.dim]}>
+            <Ionicons name="add" size={20} color="#FFFFFF" />
+            <Text style={s.white}>일정 추가</Text>
+          </TouchableOpacity>
+        </View>
         <View style={s.timelineHeading}>
           <Text style={[s.section, s.railHeading]}>시간</Text>
           <Text style={s.section}>일과</Text>
@@ -437,6 +441,8 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F1F5FF' },
   scroll: { flex: 1 },
   body: { width: '100%', maxWidth: 720, alignSelf: 'center', gap: 16, paddingHorizontal: 16, paddingVertical: 23 },
+  scheduleHeader: { gap: 16 },
+  addBar: { backgroundColor: '#F1F5FF' },
   steps: { width: '100%', maxWidth: 720, alignSelf: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
   stepRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   step: { flexGrow: 1, color: '#536A88', backgroundColor: '#E8EEF9', borderRadius: 14, paddingVertical: 7, paddingHorizontal: 6, fontSize: 11, fontWeight: '700', textAlign: 'center' },

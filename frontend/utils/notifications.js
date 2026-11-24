@@ -1,7 +1,7 @@
 // 앱 내 알림함 + 폰 알림(로컬 알림)
 //
 // - 알림함: 이 기기에 저장한 알림 목록(읽음 표시). 오늘 일정, 맞춤 카드 추천, 진행 중인 혜택 등을 쌓습니다.
-// - 폰 알림: '알림 수신 동의'를 한 경우에만, 매일 아침 8시 안내 + 시간이 있는 일정 30분 전 알림을 예약합니다.
+// - 폰 알림: '알림 수신 동의'를 한 경우에만 매일 오전 7시 일정 입력 안내를 예약합니다.
 //   expo-notifications(SDK 58) 로컬 알림 사용. Expo Go에서도 동작하고, 웹은 지원하지 않아 건너뜁니다.
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
@@ -10,9 +10,7 @@ import * as Store from './demoStore';
 export const INBOX_KEY = 'solpay_notifications_v1';
 const MAX_ITEMS = 60;
 const CHANNEL_ID = 'solpay-default';
-const MORNING_HOUR = 8;
-const SCHEDULE_LEAD_MINUTES = 30;
-const SCHEDULE_DAYS_AHEAD = 7;
+const MORNING_HOUR = 7;
 export const PHONE_NOTIFICATIONS_SUPPORTED = Platform.OS !== 'web';
 
 // ── 알림함 ──
@@ -149,66 +147,52 @@ export async function requestPhonePermission() {
   return asked.granted || asked.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
 }
 
-/** 예약된 SOL·Pay 폰 알림을 모두 취소합니다(동의 철회·로그아웃 시). */
-export async function cancelPhoneNotifications() {
-  if (!PHONE_NOTIFICATIONS_SUPPORTED) return;
-  await Notifications.cancelAllScheduledNotificationsAsync();
-}
+let phoneSync = Promise.resolve();
 
-const dailyTrigger = (hour, minute) => (Platform.OS === 'android'
-  ? { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour, minute, channelId: CHANNEL_ID }
-  // iOS는 달력(시·분) 트리거로 매일 반복합니다.
-  : { type: Notifications.SchedulableTriggerInputTypes.CALENDAR, hour, minute, repeats: true });
-
-/**
- * 폰 알림 예약을 다시 맞춥니다. 동의하지 않았거나 권한이 없으면 모두 취소합니다.
- * - 매일 아침 8시: 오늘 일정·맞춤 카드 확인 안내
- * - 시간이 있는 일정: 시작 30분 전(앞으로 7일 안의 일정만)
- */
-export async function syncPhoneNotifications({ agreed, events = [], titleOf = () => '일정' }) {
-  if (!PHONE_NOTIFICATIONS_SUPPORTED) return { scheduled: 0 };
-  ensureHandler();
-  await cancelPhoneNotifications();
-  if (!agreed) return { scheduled: 0 };
-  const permission = await Notifications.getPermissionsAsync();
-  if (!permission.granted && permission.ios?.status !== Notifications.IosAuthorizationStatus.PROVISIONAL) {
-    return { scheduled: 0, denied: true };
-  }
-  await ensureChannel();
-
-  await Notifications.scheduleNotificationAsync({
-    content: { title: '오늘의 카드를 확인해보세요', body: '오늘 일정에 맞는 카드와 진행 중인 혜택을 알려드려요.', data: { kind: 'morning', target: 'home' } },
-    trigger: dailyTrigger(MORNING_HOUR, 0),
-  });
-  let scheduled = 1;
-
-  const now = Date.now();
-  const limit = now + SCHEDULE_DAYS_AHEAD * 24 * 60 * 60 * 1000;
-  const upcoming = events
-    .filter(event => event.start && event.date)
-    .map(event => ({ event, at: new Date(`${event.date}T${event.start}:00`).getTime() - SCHEDULE_LEAD_MINUTES * 60 * 1000 }))
-    .filter(({ at }) => at > now && at < limit)
-    .sort((a, b) => a.at - b.at)
-    .slice(0, 20);
-  for (const { event, at } of upcoming) {
+/** 이전 예약을 지운 뒤, 동의와 기기 권한이 있으면 아침 알림을 예약합니다. */
+export function syncPhoneNotifications({ agreed }) {
+  if (!PHONE_NOTIFICATIONS_SUPPORTED) return Promise.resolve();
+  phoneSync = phoneSync.catch(() => {}).then(async () => {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    if (!agreed) return;
+    ensureHandler();
+    const permission = await Notifications.getPermissionsAsync();
+    if (!permission.granted && permission.ios?.status !== Notifications.IosAuthorizationStatus.PROVISIONAL) return;
+    await ensureChannel();
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: `${SCHEDULE_LEAD_MINUTES}분 뒤 일정: ${titleOf(event)}`,
-        body: `${event.start} 시작 · 이 일정에 맞는 카드를 앱에서 확인해보세요`,
-        data: { kind: 'schedule', target: 'schedule', eventId: event.id },
+        title: '좋은 아침이에요! 오늘은 어떤 일정이 있나요?',
+        body: '갈 곳과 대략적인 시간을 알려주세요. 일정에 맞는 혜택 카드를 골라드릴게요.',
+        data: { kind: 'morning' },
       },
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(at), ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}) },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: MORNING_HOUR,
+        minute: 0,
+        ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+      },
     });
-    scheduled += 1;
-  }
-  return { scheduled };
+  });
+  return phoneSync;
 }
 
-/** 폰 알림을 눌러 앱이 열렸을 때 갈 곳(target)을 알려줍니다. */
-export function addPhoneNotificationOpenListener(onOpen) {
+export const cancelPhoneNotifications = () => syncPhoneNotifications({ agreed: false });
+
+/** 앱이 종료된 상태에서 아침 알림을 눌렀을 때도 열기 요청을 전달합니다. */
+export function addMorningNotificationOpenListener(onOpen) {
   if (!PHONE_NOTIFICATIONS_SUPPORTED) return () => {};
-  const subscription = Notifications.addNotificationResponseReceivedListener(response => {
-    onOpen?.(response?.notification?.request?.content?.data?.target || 'home');
-  });
+  let handled;
+  const receive = response => {
+    const notification = response?.notification;
+    if (response?.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER ||
+      notification?.request?.content?.data?.kind !== 'morning') return;
+    const key = notification.request.identifier + ':' + notification.date;
+    if (handled === key) return;
+    handled = key;
+    onOpen();
+    Notifications.clearLastNotificationResponse();
+  };
+  const subscription = Notifications.addNotificationResponseReceivedListener(receive);
+  receive(Notifications.getLastNotificationResponse());
   return () => subscription.remove();
 }

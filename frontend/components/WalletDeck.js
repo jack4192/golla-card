@@ -50,7 +50,10 @@ export default function WalletDeck({cards, selected, onSelect, canPay, onPay, hi
   return <View style={styles.wallet}>
     <View style={styles.stage}>
     <TouchableOpacity accessibilityRole="button" accessibilityState={{expanded:listOpen}} onPress={() => setListOpen(!listOpen)} style={styles.countButton}>
-      <Text style={styles.caption}>카드 선택 {listOpen?'⌃':'⌄'}</Text>
+      <Text style={styles.caption}>카드 선택</Text>
+      <View style={styles.countChevron}>
+        <Ionicons name={listOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#BECEE9" accessible={false} />
+      </View>
     </TouchableOpacity>
     {listOpen && <View style={styles.list}>{cards.map(item => <TouchableOpacity key={item.id}
       accessibilityRole="button" accessibilityState={{selected:selected.id===item.id}}
@@ -105,7 +108,8 @@ export default function WalletDeck({cards, selected, onSelect, canPay, onPay, hi
 const styles = StyleSheet.create({
   list:{padding:8,borderRadius:12,backgroundColor:'#192F56'},
   listItem:{minHeight:44,justifyContent:'center',paddingHorizontal:10},
-  countButton:{alignSelf:'flex-start',minHeight:44,justifyContent:'center'},
+  countButton:{alignSelf:'flex-start',minHeight:44,flexDirection:'row',alignItems:'center',gap:6},
+  countChevron:{width:20,height:20,alignItems:'center',justifyContent:'center'},
   controls:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:16},
   arrow:{minWidth:44,minHeight:44,alignItems:'center',justifyContent:'center',backgroundColor:'#1D345D',borderRadius:22},
   dim:{opacity:0.4},
