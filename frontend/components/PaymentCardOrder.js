@@ -318,10 +318,10 @@ export default function PaymentCardOrder({
         <Text style={[s.heading, s.flexOne]}>
           내 카드 · {cards.length}장
         </Text>
-        {/* 켜짐 = AI 추천 순서로 자동 배치 중, 꺼짐 = 내가 정한 순서. 꺼짐에서 누르면 자동 배치로 돌아간다 */}
-        {homeMode && <TouchableOpacity accessibilityRole="button" accessibilityLabel="자동 배치 적용"
-          accessibilityState={{ selected: Boolean(autoOn) }} disabled={Boolean(autoOn)}
-          onPress={() => onAutoChange?.(true)} style={[s.autoPill, autoOn ? s.autoPillOn : s.autoPillOff]}>
+        {/* 켜짐 = AI 추천 순서로 자동 배치 중, 꺼짐 = 내가 정한 순서. 누를 때마다 켜고 끈다 */}
+        {homeMode && <TouchableOpacity accessibilityRole="switch" accessibilityLabel={autoOn ? '자동 배치 적용 해제' : '자동 배치 적용'}
+          accessibilityState={{ checked: Boolean(autoOn) }}
+          onPress={() => onAutoChange?.(!autoOn)} style={[s.autoPill, autoOn ? s.autoPillOn : s.autoPillOff]}>
           <Text style={autoOn ? s.autoPillOnText : s.autoPillOffText}>자동 배치 적용</Text>
         </TouchableOpacity>}
       </View>
