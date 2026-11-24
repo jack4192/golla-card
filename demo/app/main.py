@@ -46,6 +46,15 @@ def fixed_pos_url() -> str:
     return base.rstrip("/") + "/api/v1/pos/payments"
 
 
+DEMO_KEY_MIN_LENGTH = 16
+
+
+def demo_terminal_key() -> str | None:
+    """시연용 만능 키 (백엔드 POS_DEMO_TERMINAL_KEY 와 같은 값). 있으면 아무 가맹점이나 골라 결제한다 (2026-11-24)."""
+    key = os.environ.get("POS_DEMO_TERMINAL_KEY", "").strip()
+    return key if len(key) >= DEMO_KEY_MIN_LENGTH else None
+
+
 def fixed_terminal_keys() -> dict[str, str]:
     """가맹점 번호 → 단말기 키 (요청마다 읽어서, 키를 새로 만들어도 서버를 다시 켤 필요가 없다)."""
     try:
@@ -130,15 +139,17 @@ def pos_page():
 
 @app.get("/api/demo/options")
 def options():
-    keys = fixed_terminal_keys()
+    demo_key = demo_terminal_key()
+    keys = {} if demo_key else fixed_terminal_keys()
     by_zone: dict[str, list[dict]] = {}
     for m in sorted(merchants().values(), key=lambda m: (demo.CATEGORY_ORDER.get(m["category_code"], 99), m["name"])):
         if keys and str(m["merchant_id"]) not in keys:
             continue
-        by_zone.setdefault(m["zone"], []).append(
+        # 구역이 없는 가맹점(지금 AI 목록)은 업종으로 묶는다 (예전엔 묶음 이름이 undefined 로 보였다)
+        by_zone.setdefault(m.get("zone") or m["category_name"], []).append(
             {"merchant_id": m["merchant_id"], "name": m["name"], "category_code": m["category_code"],
              "category_name": m["category_name"], "typical_amount": demo.TYPICAL_AMOUNT.get(m["category_code"], 10000)})
-    return {"uses_fixed_pos": bool(keys),
+    return {"uses_fixed_pos": bool(demo_key or keys),
             "users": [{**u, "zones": [{"code": z, "name": demo.ZONES[z], "role": r} for z, r in u["zones"]]}
                       for u in demo.USERS],
             "times": demo.TIMES, "zones": demo.ZONES, "merchants": by_zone,
@@ -515,23 +526,25 @@ FIXED_DECLINE_REASONS = {
 }
 
 
-def approve_fixed(req: ApproveRequest, merchant: dict, demo_at: str, keys: dict[str, str]) -> dict:
-    key = keys.get(str(req.merchant_id))
-    if key is None:
-        raise HTTPException(422, "SOLPay 결제에 연결된 가맹점을 선택해 주세요.")
+def approve_fixed(req: ApproveRequest, merchant: dict, demo_at: str, key: str, demo_key: bool = False) -> dict:
+    """백엔드에 승인 요청. 만능 키면 고른 가맹점(merchantId)을 함께 보내 그 가맹점 단말기로 결제된다."""
     if req.amount < 100:
         raise HTTPException(422, "결제 금액은 100원 이상이어야 합니다.")
+    body = {"terminalKey": key, "code": req.token, "amount": req.amount}
+    if demo_key:
+        body["merchantId"] = req.merchant_id
     try:
         with httpx.Client(timeout=5.0, trust_env=False, transport=_POS_TRANSPORT) as client:
-            response = client.post(fixed_pos_url(), json={
-                "terminalKey": key, "code": req.token, "amount": req.amount,
-            })
+            response = client.post(fixed_pos_url(), json=body)
     except httpx.ConnectError:
         raise HTTPException(503, "SOLPay 결제 서버에 연결할 수 없습니다.") from None
     except httpx.RequestError:
         raise HTTPException(502, "결제 응답을 확인하지 못했습니다. 앱 결제 내역을 먼저 확인해 주세요.") from None
     if response.status_code == 403:
-        raise HTTPException(502, "이 가맹점의 POS 단말기 등록을 확인해 주세요.")
+        raise HTTPException(502, "백엔드가 시연용 만능 키를 받지 않았습니다. 양쪽 POS_DEMO_TERMINAL_KEY 가 같은지 확인해 주세요."
+                            if demo_key else "이 가맹점의 POS 단말기 등록을 확인해 주세요.")
+    if response.status_code == 404:
+        raise HTTPException(502, "이 가맹점에는 단말기가 없습니다. 다른 가맹점을 골라 주세요.")
     if not response.is_success:
         raise HTTPException(502, "결제 응답을 확인하지 못했습니다. 앱 결제 내역을 먼저 확인해 주세요.")
     try:
@@ -567,9 +580,15 @@ def approve(req: ApproveRequest):
     if merchant is None:
         raise HTTPException(422, "가맹점 목록에 없는 가맹점입니다. AI 서버가 켜져 있는지 확인하세요.")
     demo_at = state()["demo_at"]
+    demo_key = demo_terminal_key()
+    if demo_key:
+        return approve_fixed(req, merchant, demo_at, demo_key, demo_key=True)
     keys = fixed_terminal_keys()
     if keys:
-        return approve_fixed(req, merchant, demo_at, keys)
+        key = keys.get(str(req.merchant_id))
+        if key is None:
+            raise HTTPException(422, "SOLPay 결제에 연결된 가맹점을 선택해 주세요.")
+        return approve_fixed(req, merchant, demo_at, key)
 
     with db.connect() as con:
         def record(result, reason=None, row=None, approval_no=None):
