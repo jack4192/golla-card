@@ -449,7 +449,7 @@ export default function App() {
     const completed = finished === 'yes' && savedConsent?.termsAgreed === true;
     await DemoStore.setItemAsync(SESSION_KEY, 'active');
     setAuthenticated(true);
-    setAllowAutomaticAds(completed && !firstSignupLogin);
+    setAllowAutomaticAds(false); // 2026-11-24 사용자 결정: 로그인 뒤 자동 팝업(오늘의 카드 추천·프로모션)은 띄우지 않는다. 혜택 탭 버튼으로만 연다
     setConsent(savedConsent);
     setOnboardingComplete(completed);
     setRoutineMode('onboarding');
