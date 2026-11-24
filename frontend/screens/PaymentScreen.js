@@ -816,6 +816,7 @@ export default function PaymentScreen({
       baseline={{ id: baseline.id, name: baseline.name, benefit: baseBenefit, reward: reward(baseBenefit) }}
       difference={difference}
       recommendationId={ai?.recommendationId ?? null}
+      onSelectCard={id => { const item = options.find(option => option.id === id); if (item) choose(item); }}
     />
   </>;
 }
