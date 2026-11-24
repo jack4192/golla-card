@@ -8,6 +8,7 @@ import dataclasses
 import json
 import os
 
+from engine.chat.openai_params import sampling
 from engine.chat.page_copy import CopySettings
 
 PROMPT_VERSION = "2026-11-23.1"
@@ -36,7 +37,7 @@ SCHEMA = {
 
 
 def settings_from_env() -> CopySettings:
-    """모델은 OPENAI_MODEL, 제한 시간은 PLACE_CLASSIFY_TIMEOUT_SEC (없으면 5초), 온도 0."""
+    """모델·생각 단계는 openai_params, 제한 시간은 PLACE_CLASSIFY_TIMEOUT_SEC (없으면 5초). 옛 모델(생각 단계 없음)이면 온도 0."""
     s = CopySettings.from_env(TIMEOUT_ENV)
     return dataclasses.replace(s, timeout_sec=float(os.environ.get(TIMEOUT_ENV, DEFAULT_TIMEOUT_SEC)), temperature=0.0)
 
@@ -55,7 +56,8 @@ class PlaceLLM:
         facts = {"text": text, "categories": categories, "brands": brands}
         try:
             resp = self.client.chat.completions.create(
-                model=self.settings.model, temperature=0, timeout=self.settings.timeout_sec,
+                model=self.settings.model, timeout=self.settings.timeout_sec,
+                **sampling(0, self.settings.reasoning_effort),
                 messages=[{"role": "system", "content": SYSTEM},
                           {"role": "user", "content": json.dumps(facts, ensure_ascii=False)}],
                 response_format={"type": "json_schema",
