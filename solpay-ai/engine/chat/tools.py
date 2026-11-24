@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from engine.benefit_calc import DAY_NAMES
+from engine.chat import history
 from engine.chat.new_card import recommend_new_cards
 from engine.chat.search import find_cards, find_categories, find_merchants, norm
 from engine.domain import KnownPayment
@@ -94,6 +95,36 @@ TOOL_SPECS = [
     _fn("find_merchant",
         "가맹점 이름으로 가맹점을 찾는다 (정확히 일치 → 브랜드 일치 → 부분 일치). 없으면 비슷한 업종을 돌려준다.",
         {"name": {"type": "string"}}, ["name"]),
+    # ---------- 고도화 2단계 (2026-11-24) ----------
+    _fn("get_spending",
+        "내 결제 기록을 기간·업종·카드로 모아 합계·건수, 업종별·카드별·브랜드별 금액, 직전 같은 길이 기간과의 비교(previous), "
+        "최근 결제 5건을 돌려준다. '이번 달 카페에 얼마 썼어?', '지난달보다 많이 쓴 업종은?', '어제 뭐로 냈어?' 같은 질문에 쓴다.",
+        {"period": {"type": "string", "enum": list(history.PERIODS), "description": "기간. 없으면 this_month"},
+         "category_name": {"type": "string", "description": "업종으로 좁힐 때 (예: '카페')"},
+         "card_name": {"type": "string", "description": "내 카드로 좁힐 때"}}),
+    _fn("review_payments",
+        "지난 결제를 처음부터 다시 계산해 결제마다 낸 카드로 받은 혜택과 가장 많이 받았을 카드를 비교한다 (카드 혜택만, 프로모션 제외). "
+        "'어제 스타벅스 결제 잘 낸 거야?', '이번 달 더 받을 수 있었던 결제 있어?' 같은 질문에 쓴다.",
+        {"period": {"type": "string", "enum": list(history.PERIODS), "description": "기간. 없으면 this_month"},
+         "category_name": {"type": "string"}, "merchant_name": {"type": "string", "description": "가맹점·브랜드 이름 (예: '스타벅스')"},
+         "only_missed": {"type": "boolean", "description": "더 받을 수 있었던 결제만, 차이가 큰 순서로"}}),
+    _fn("get_benefit_summary",
+        "받은 혜택을 정리한다. last_month: 지난달 카드별 받은 혜택, 이번 달 지금까지 혜택, 추천대로 냈다면 더 받았을 금액과 "
+        "엔진이 쓴 효과 문장(effect_sentences). this_year: 올해 달별·카드별 받은 혜택과 프로모션, 그때 다른 신한카드였다면 "
+        "더 받았을 금액 상위 카드(missed_top).",
+        {"period": {"type": "string", "enum": ["last_month", "this_year"], "description": "없으면 last_month"}}),
+    _fn("get_day_plan",
+        "오늘 시간대별 결제 화면 1순위 카드(앱 홈 시간 표시줄과 같은 계산)와 오늘 등록한 일정의 업종·시간을 돌려준다. "
+        "'저녁 7시엔 어떤 카드가 1순위야?', '오늘 일정에 맞춰 카드 정리해줘' 같은 질문에 쓴다.",
+        {"hour": {"type": "integer", "description": "그 시각(0~23)의 카드를 따로 볼 때. 예: 저녁 7시 → 19"}}),
+    _fn("compare_cards",
+        "사용자가 이름을 말한 카드들(6개 카드사 40종 아무거나, 2~4장, 한 장도 됨)을 최근 결제를 그 카드 한 장으로 했다고 보고 "
+        "월 평균 혜택·연회비·순혜택으로 비교하고, 미보유 신한카드는 1월부터 그 카드였다면 더 받았을 금액도 돌려준다. "
+        "'A랑 B 중 나한테 뭐가 나아?', 'X 만들면 한 달에 얼마 이득이야?' 같은 질문에 쓴다.",
+        {"card_names": {"type": "array", "items": {"type": "string"}, "description": "카드 이름들"},
+         "months": {"type": "integer", "description": "계산 기간(개월), 기본 3, 1~6"}}, ["card_names"]),
+    _fn("list_my_rules",
+        "저장된 결제 화면 규칙 목록(요약, 종류, 조건, 원래 요청 문장)을 돌려준다. '내가 만든 규칙 보여줘' 같은 질문에 쓴다.", {}),
 ]
 TOOL_NAMES = [t["function"]["name"] for t in TOOL_SPECS]
 
@@ -489,6 +520,147 @@ class ToolBox:
         self.blocks.append({"type": "pay_button", "user_card_id": first, "name": top["name"]})
         return out
 
+    # ---------- 9. 고도화 2단계 (2026-11-24) ----------
+    def get_spending(self, period: str | None = None, category_name: str | None = None,
+                     card_name: str | None = None) -> dict:
+        category = uc = None
+        if category_name:
+            found = self._category(None, category_name)
+            if isinstance(found, dict):
+                return found
+            category = found[0]
+        if card_name:
+            uc = self._my_card(card_name)
+            if isinstance(uc, dict):
+                return uc
+        try:
+            out = history.spending(self.context.payments, self.catalog, self.names, self.at, period or "this_month", category, uc)
+        except history.PeriodError as e:
+            raise ToolError(str(e))
+        self.blocks.append({"type": "spending_summary", "title": f"{out['period']} 결제" + (f" · {category_name}" if category else ""),
+                            "from": out["from"], "to": out["to"], "total": out["total"], "count": out["count"],
+                            "by_category": out["by_category"][:6], "previous_total": out["previous"]["total"]})
+        return out
+
+    def review_payments(self, period: str | None = None, category_name: str | None = None,
+                        merchant_name: str | None = None, only_missed: bool = False) -> dict:
+        category = brand = None
+        if merchant_name:
+            found = self._category(merchant_name, None)
+            if isinstance(found, dict):
+                return found
+            category, mid, _ = found
+            brand = self.catalog.brand_of(mid)
+            if brand is not None:
+                category = None                     # 브랜드로 거른다 (같은 브랜드의 다른 업종 가맹점도)
+        elif category_name:
+            found = self._category(None, category_name)
+            if isinstance(found, dict):
+                return found
+            category = found[0]
+        try:
+            out = history.review(self.context, self.catalog, self.service.engine.params, self.names, self.at,
+                                 period or "this_month", category, brand, bool(only_missed))
+        except history.PeriodError as e:
+            raise ToolError(str(e))
+        self.blocks.append({"type": "payment_review", "title": f"{out['period']} 결제 다시 보기",
+                            "count": out["count"], "best_card_count": out["best_card_count"],
+                            "missed_total": out["missed_total"], "rows": out["payments"]})
+        return out
+
+    def get_benefit_summary(self, period: str | None = None) -> dict:
+        period = period or "last_month"
+        if period == "last_month":
+            rep = self.service.monthly_report(self.user_id, self.at, None)
+            effect = rep.get("solpay_effect")
+            out = {"period": "지난달", "month": rep["prev_month"], "card_benefit_total": rep["totals"]["prev_month_benefit"],
+                   "this_month_so_far": rep["totals"]["this_month_benefit"],
+                   "cards": [{"name": c["name"], "benefit": c["prev_month"]["benefit"], "perf": c["prev_month"]["perf"]}
+                             for c in rep["cards"]],
+                   "effect_sentences": rep["summary"].get("effect", []),
+                   "note": "effect_sentences 는 엔진이 계산해 쓴 문장이다. 숫자를 바꾸지 말고 그대로 쓴다."}
+            if effect:
+                out["recommended_extra"] = {"card": effect["diff"]["card"], "next_month": effect["diff"]["next_month"],
+                                            "total": effect["diff"]["total"]}
+            self.blocks.append({"type": "benefit_summary", "title": f"{int(out['month'][5:])}월 받은 카드 혜택",
+                                "total": out["card_benefit_total"],
+                                "rows": [{"name": c["name"], "benefit": c["benefit"]} for c in out["cards"]],
+                                "lines": out["effect_sentences"]})
+            return out
+        if period != "this_year":
+            raise ToolError("period 는 last_month·this_year 중 하나입니다")
+        from datetime import date
+        out = history.year_totals(self.context, self.catalog, self.service.engine.params, self.names, self.at)
+        missed = self.service.missed_benefit(self.user_id, self.at, start=date(self.at.year, 1, 1))
+        out.update(period="올해", missed_top=[{"card_name": m["card_name"], "gain": m["gain"], "months": m["months"],
+                                              "replaces": m.get("replaces"), "message": m["message"]} for m in missed],
+                   note="엔진이 결제를 다시 계산한 값이라 앱 '올해 카드 결산'(결제 기록에 저장된 값의 합)과 조금 다를 수 있다. "
+                        "missed_top 은 그때 그 신한카드가 있었다면 더 받았을 금액(연회비 반영)이다.")
+        self.blocks.append({"type": "benefit_summary", "title": f"{out['year']}년 받은 혜택", "total": out["total"],
+                            "rows": out["by_card"], "by_month": out["by_month"],
+                            "lines": [m["message"].replace("이 카드", m["card_name"]) for m in out["missed_top"]]})
+        return out
+
+    def get_day_plan(self, hour: int | None = None) -> dict:
+        plan = self.service.day_placement(self.user_id, self.at.date(), self.at)
+        segments = [{"start": s["start"], "end": s["end"], "card": self.names.get(s["user_card_id"]),
+                     "message": s.get("message") or ""} for s in plan["segments"]]
+        schedules = [{"start": f"{s.start:%H:%M}", "end": f"{s.end:%H:%M}",
+                      "category_name": self.catalog.category_name(s.category), "amount": s.amount}
+                     for s in sorted(self.context.schedules, key=lambda s: s.start)]
+        out = {"day": plan["day"], "now": f"{self.at:%H:%M}", "segments": segments, "schedules": schedules,
+               "note": "segments 는 그 시간대 결제 화면 1순위 카드다. 일정이 없으면 하루 종일 같은 카드일 수 있다."}
+        if hour is not None:
+            at = f"{min(max(int(hour), 0), 23):02d}:00"
+            out["at_hour"] = next((s for s in segments if s["start"] <= at < s["end"]), segments[-1] if segments else None)
+        self.blocks.append({"type": "day_plan", "day": plan["day"], "rows": segments, "schedules": schedules})
+        return out
+
+    def compare_cards(self, card_names: list[str], months: int | None = None) -> dict:
+        picked = []
+        for name in card_names or []:
+            hits = find_cards(name, self.catalog, self.cards)
+            if not hits:
+                raise ToolError(f"'{name}'에 맞는 카드를 찾지 못했습니다")
+            if len(hits) > 1 and hits[0].name != name and len({h.card_id for h in hits}) > 1:
+                return {"candidates": [h.name for h in hits[:8]], "message": f"'{name}'이 어느 카드인지 되물어 주세요"}
+            if hits[0].card_id not in [c.card_id for c in picked]:
+                picked.append(self.catalog.cards[hits[0].card_id])
+        if not picked:
+            raise ToolError("비교할 카드 이름을 물어봐 주세요")
+        months = min(max(int(months or 3), 1), 6)
+        state = self.service.build_state(self.context, self.at)
+        out = recommend_new_cards(state, self.context.payments, self.at, months, cards=picked[:4])
+        from datetime import date
+        missed = {m["card_id"]: m for m in self.service.missed_benefit(self.user_id, self.at, start=date(self.at.year, 1, 1),
+                                                                       only={c.card_id for c in picked})}
+        owned = {c.card_id for c in self.cards}
+        for row in out["cards"]:
+            row["owned"] = row["card_id"] in owned
+            if row["card_id"] in missed:
+                row["since_january_gain"] = missed[row["card_id"]]["gain"]
+                row["since_january_message"] = missed[row["card_id"]]["message"]
+        self.blocks.append({"type": "new_card_list", "title": "이름을 말한 카드 비교 · 연회비 뺀 월 혜택", **out})
+        return {**out, "note": "monthly_benefit 은 최근 결제를 그 카드 한 장으로 했다면 받았을 월 평균 혜택, net_benefit 은 "
+                               "연회비÷12 를 뺀 값. since_january_gain 은 1월부터 그 카드였다면 더 받았을 금액(미보유 신한카드만)"}
+
+    def list_my_rules(self) -> dict:
+        raw = self.service.store.raw_rules(self.user_id)
+        rows = []
+        for rule in raw:
+            try:
+                rows.append({"summary": rule_summary(rule, self.names), "kind": RULE_LABEL.get(rule.get("rule_type"), "규칙"),
+                             "condition": condition_text(rule), "source_text": rule.get("source_text") or ""})
+            except (KeyError, TypeError, ValueError):
+                continue
+        self.blocks.append({"type": "rule_list", "rules": rows})
+        out = {"count": len(rows), "rules": rows}
+        if not rows:
+            out["note"] = "저장된 규칙이 없다. 챗봇에게 말하면 규칙 초안을 만들 수 있다 (예: '주말엔 KB 먼저 보여줘')"
+        else:
+            out["note"] = "규칙을 지우는 기능은 챗봇에 아직 없다"
+        return out
+
     # ---------- 8. 가맹점 검색 ----------
     def list_promotions(self, merchant_name: str | None = None, ending: str | None = None) -> dict:
         """지금 진행 중이고 내 카드 중 하나라도 받을 수 있는 프로모션. 엔진 계산과 같은 목록(팀 DB + promotions.yml)에서
@@ -725,6 +897,31 @@ def block_summary(blocks: list[dict]) -> str | None:
             top = b["cards"][0]
             return (f"최근 결제로 다시 계산하면 {top['name']}{_josa(top['name'], '이', '가')} 연회비를 빼고 "
                     f"월 평균 {top['net_benefit']:,}원으로 가장 커요.")
+        if kind == "spending_summary":
+            text = f"{b['title']}는 {b['count']}건, 모두 {b['total']:,}원이에요."
+            if b.get("by_category"):
+                top = b["by_category"][0]
+                text += f" 가장 많이 쓴 업종은 {top['category_name']} {top['amount']:,}원이에요."
+            return text
+        if kind == "payment_review":
+            if not b.get("count"):
+                return f"{b['title']}에서 비교할 결제가 없어요."
+            return (f"{b['title']} 결과 {b['count']}건 중 {b['best_card_count']}건은 가장 많이 받는 카드로 냈어요. "
+                    f"그 결제만 보면 더 받을 수 있었던 금액은 모두 {b['missed_total']:,}원이에요.")
+        if kind == "benefit_summary":
+            text = f"{b['title']}는 모두 {b['total']:,}원이에요."
+            if b.get("rows"):
+                top = b["rows"][0]
+                text += f" 가장 많이 받은 카드는 {top['name']} {top['benefit']:,}원이에요."
+            return text
+        if kind == "day_plan" and b.get("rows"):
+            parts = [f"{r['start']}~{r['end']}에는 {r['card']}" for r in b["rows"][:3]]
+            return "오늘 " + ", ".join(parts) + "가 결제 화면 1순위예요."
+        if kind == "rule_list":
+            rules = b.get("rules") or []
+            if not rules:
+                return "저장된 규칙이 없어요. 챗봇에게 말하면 규칙 초안을 만들 수 있어요."
+            return f"저장된 규칙은 {len(rules)}개예요. " + " ".join(r["summary"] for r in rules[:3])
         if kind == "promotion_list":
             rows = b.get("promotions") or []
             if not rows:
