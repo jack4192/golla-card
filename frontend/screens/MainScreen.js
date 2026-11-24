@@ -7,8 +7,8 @@ import WalletDeck from '../components/WalletDeck';
 import RecommendationLaunchPopup from '../components/RecommendationLaunchPopup';
 import AccountWithdrawal from '../components/AccountWithdrawal';
 import TodaySchedulePanel from '../components/TodaySchedulePanel';
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Dimensions, View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import YearEndReport from '../components/YearEndReport';
 import PaymentCardOrder from '../components/PaymentCardOrder';
@@ -263,6 +263,10 @@ export default function MainScreen({
   onSelectCard = () => {}
 }) {
   const [tab, setTab] = useState(initialTab || 'home');   // '일정 다시 확인'으로 돌아오면 오늘의 일정 탭 (2026-11-24)
+  // 홈 스크롤: 화면의 어떤 점(창 기준 y)을 가운데로 올릴 때 쓴다 (미리보기 중 '현재시간' 버튼 보여 주기, 2026-11-24)
+  const mainScrollRef = useRef(null);
+  const mainScrollY = useRef(0);
+  const scrollToWindowY = y => mainScrollRef.current?.scrollTo({ y: Math.max(0, mainScrollY.current + y - Dimensions.get('window').height / 2), animated: true });
   const [schedulePayment, setSchedulePayment] = useState(null);
   const [adRequest, setAdRequest] = useState(null);
   const [catalogQuery, setCatalogQuery] = useState('');
@@ -623,6 +627,7 @@ export default function MainScreen({
     cards={realWalletCards(currentCard, walletCards)}
     selectedCard={currentCard}
     onPay={openPaySheet}
+    scrollToWindowY={scrollToWindowY}
   />;
   // 연말 결산 바로가기
   const renderYearEndTile = () => <TouchableOpacity accessibilityRole="button" accessibilityLabel="올해 카드 결산 보기"
@@ -890,7 +895,8 @@ export default function MainScreen({
           onSelectCard={onSelectCard}
           onClose={() => selectTab(schedulePayment?.returnTab || 'home')}
           onOpenCards={() => selectTab('cards')}
-        /> : tab === 'cards' ? renderCards() : <ScrollView key={tab}
+        /> : tab === 'cards' ? renderCards() : <ScrollView key={tab} ref={mainScrollRef}
+          onScroll={event => { mainScrollY.current = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={32}
           style={[styles.mainScroll, Platform.OS === 'web' && cardDragging && styles.scrollLocked]}
           scrollEnabled={!cardDragging} contentContainerStyle={[styles.pageContent, styles.chatClearance]}
           showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">

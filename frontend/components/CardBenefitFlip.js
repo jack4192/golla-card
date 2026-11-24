@@ -25,22 +25,25 @@ function BenefitBack({ card, cards }) {
       .catch(() => { if (!stopped) setPlacement({ status: 'failed', result: null }); });
     return () => { stopped = true; };
   }, [options]);
-  const { scenario, selectedBenefit, difference } = useBenefitEstimate({ options, selected, baseline, placement });
+  const { scenario, selectedBenefit } = useBenefitEstimate({ options, selected, baseline, placement });
 
   if (!selected) return <Text style={s.backNote}>등록된 카드가 없어요.</Text>;
   if (placement.status === 'loading' || !scenario || !selectedBenefit) return <ActivityIndicator color="#FFFFFF" />;
   const known = Number.isFinite(selectedBenefit.value);
+  const aiMessage = String(placement.result?.message || '').trim();
+  // 뒷면은 AI 추천 문구만 (2026-11-24: 금액·절약 문구는 '내 카드' 위 상세 상자로). AI 문구가 없을 때만 거래 예시와 금액
+  if (aiMessage) {
+    return <View style={s.aiRow}>
+      <View style={s.aiBadge}><Text style={s.aiBadgeText}>AI 추천</Text></View>
+      <Text style={[s.aiText, s.aiTextOnly]} numberOfLines={3}>{aiMessage}</Text>
+    </View>;
+  }
   return <>
     <Text style={s.backEyebrow} numberOfLines={1}>이 거래의 예상 혜택 · {scenario.merchant} {won(scenario.amount)}</Text>
     <Text style={s.backLabel}>예상 혜택</Text>
     <Text style={[s.backAmount, !known && s.backAmountUnknown]} numberOfLines={1} adjustsFontSizeToFit>
       {known ? reward(selectedBenefit) : '조건 확인 필요'}
     </Text>
-    {/* 비교 대상을 밝힌다: 이 값은 'AI 추천 카드'가 아니라 지금 카드와 내 다른 카드(baseline)를 비교한 것 (PR #10 검토, 2026-11-24) */}
-    {difference !== null && <Text style={[s.backDiff, difference > 0 ? s.backDiffGood : s.backDiffNeutral]} numberOfLines={2}>
-      {difference > 0 ? baseline.name + '보다 ' + won(difference) + ' 더 아껴요'
-        : difference === 0 ? '비교 카드(' + baseline.name + ')와 혜택이 같아요' : '비교 카드(' + baseline.name + ')가 ' + won(-difference) + ' 더 유리해요'}
-    </Text>}
   </>;
 }
 
@@ -112,13 +115,15 @@ const s = StyleSheet.create({
   backActions: { position: 'absolute', justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 6 },
   calculator: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 30, paddingHorizontal: 10, borderRadius: 15, backgroundColor: 'rgba(255, 255, 255, 0.18)' },
   calculatorText: { fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
+  aiRow: { alignItems: 'center', gap: 4, marginBottom: 2 },
+  aiBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: '#2F6BFF' },
+  aiBadgeText: { fontSize: 10, fontWeight: '900', color: '#FFFFFF' },
+  aiText: { fontSize: 12, lineHeight: 16, fontWeight: '700', color: '#FFFFFF', textAlign: 'center' },
+  aiTextOnly: { fontSize: 15, lineHeight: 22, fontWeight: '800', paddingHorizontal: 4 },
   backEyebrow: { fontSize: 11, fontWeight: '700', color: 'rgba(255, 255, 255, 0.82)' },
   backLabel: { marginTop: 4, fontSize: 13, fontWeight: '800', color: '#FFFFFF' },
   backAmount: { fontSize: 32, fontWeight: '900', color: '#FFFFFF', letterSpacing: -0.5, textShadowColor: 'rgba(0, 0, 0, 0.35)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
   backAmountUnknown: { fontSize: 17 },
-  backDiff: { marginTop: 2, fontSize: 12, fontWeight: '800', textAlign: 'center' },
-  backDiffGood: { color: '#8BF5CB' },
-  backDiffNeutral: { color: 'rgba(255, 255, 255, 0.85)' },
   backNote: { fontSize: 13, color: '#FFFFFF' },
   hintRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 6 },
   hint: { fontSize: 12, fontWeight: '600', color: '#4A6390' },

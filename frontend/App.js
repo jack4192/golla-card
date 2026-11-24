@@ -251,6 +251,11 @@ export default function App() {
     if (screen !== 'Main') setMainTab('home');
     setCurrentScreen(screen);
   }, []);
+  // 로그인 직후에는 홈 대신 '오늘의 일정' 탭부터 보여 준다. 다른 탭으로는 아래 탭바로 이동 (2026-11-24)
+  const enterMainAfterLogin = () => {
+    navigate('Main');
+    setMainTab('schedule');
+  };
   const backFromRecommendation = () => {
     if (recommendBack === 'DailyRoutine') {
       navigate('DailyRoutine');
@@ -473,8 +478,10 @@ export default function App() {
 
     if (savedConsent?.termsAgreed !== true) {
       navigate('Agreement');
+    } else if (completed) {
+      enterMainAfterLogin();
     } else {
-      navigate(completed ? 'Main' : 'DailyRoutine');
+      navigate('DailyRoutine');
     }
   };
 
@@ -576,7 +583,8 @@ export default function App() {
 
     const completed = await DemoStore.getItemAsync(FINISHED_KEY) === 'yes';
     setOnboardingComplete(completed);
-    navigate(completed ? 'Main' : 'DailyRoutine');
+    if (completed) enterMainAfterLogin();
+    else navigate('DailyRoutine');
   });
 
   const handleRoutineContinue = () => {
