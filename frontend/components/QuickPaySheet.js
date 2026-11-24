@@ -10,6 +10,7 @@ import { ActivityIndicator, Animated, AppState, Image, Modal, PanResponder, Scro
 import { Ionicons } from '@expo/vector-icons';
 import { Codes, makeDemoCode, protectScreen, realWalletCards, reward, useBenefitEstimate } from '../screens/PaymentScreen';
 import { loadPlacementPreview } from '../utils/aiPlacement';
+import { cardReason } from '../utils/cardReasonCore';
 import { SERVER_MODE, api } from '../utils/api';
 import { serverCardLinks } from '../utils/serverCards';
 import { POLL_MS, codeFromServer, receiptFromRecent, shouldPoll } from '../utils/paymentCodeCore';
@@ -19,37 +20,45 @@ const CLOSE_DISTANCE = 80;
 
 const won = value => Number(value || 0).toLocaleString('ko-KR') + '원';
 
-// 결제 카드 아래 '이 카드를 고른 이유' 한두 줄 (2026-11-24). 홈 카드 뒷면과 같은 AI 미리보기(기록 없음)를 쓴다
-function CardReason({ options, selected }) {
-  const baseline = options.find(item => item.id !== selected?.id) || selected;
+// '선정 이유'에 쓸 배치 미리보기(홈 카드 뒷면과 같은 AI 미리보기, 기록 없음).
+// 결제 창을 열기 전에 미리 계산해 두고, 열 때마다 새로 묻되 새 답이 올 때까지 지난 답을 그대로 쓴다.
+// 창이 열린 뒤 칸이 늦게 생기면 화면 아래에 붙은 결제 창이 커지면서 QR 이 위로 밀린다 (2026-11-24 PR #12 보완)
+function usePlacementPreview(options, visible) {
+  const walletKey = options.map(card => String(card.id)).sort().join(',');
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+  const [opened, setOpened] = useState(0);
+  useEffect(() => { if (visible) setOpened(count => count + 1); }, [visible]);
   const [placement, setPlacement] = useState({ status: SERVER_MODE ? 'loading' : 'off', result: null });
   useEffect(() => {
-    if (!SERVER_MODE || !options.length) return undefined;
+    if (!SERVER_MODE || !walletKey) return undefined;
     let stopped = false;
-    loadPlacementPreview(options)
+    loadPlacementPreview(optionsRef.current)
       .then(result => { if (!stopped) setPlacement({ status: result ? 'ready' : 'off', result }); })
-      .catch(() => { if (!stopped) setPlacement({ status: 'failed', result: null }); });
+      .catch(() => { if (!stopped) setPlacement(previous => previous.result ? previous : { status: 'failed', result: null }); });
     return () => { stopped = true; };
-  }, [options]);
-  const { scenario, selectedBenefit } = useBenefitEstimate({ options, selected, baseline, placement });
-  if (!selected || placement.status === 'loading') return null;
-  const ai = placement.result;
-  const aiTop = ai?.topId && !ai.fallback ? ai.topId === selected.id : false;
-  const message = String(ai?.message || '').trim().replace(/!$/, '');
-  const benefit = Number.isFinite(selectedBenefit?.value) && selectedBenefit.value > 0 && scenario
-    ? scenario.merchant + '에서 ' + reward(selectedBenefit) + ' 혜택' : '';
-  const text = aiTop && message ? message
-    : aiTop ? 'AI가 지금 결제에 가장 잘 맞는 카드로 골랐어요' + (benefit ? ' · ' + benefit : '')
-    : '직접 고른 카드예요' + (benefit ? ' · ' + benefit : '');
-  return <View style={s.reason}>
-    <Ionicons name="bulb-outline" size={14} color="#B26A00" />
-    <Text style={s.reasonText} numberOfLines={2}><Text style={s.reasonHead}>선정 이유 </Text>{text}</Text>
-  </View>;
+  }, [walletKey, opened]);
+  return placement;
 }
 
-export default function QuickPaySheet({ visible, cards = [], cardId, context, onSelectCard, onClose, onOpenDetails, onPaid }) {
+export default function QuickPaySheet({ visible, cards = [], cardId, context, autoOn = true, onSelectCard, onClose, onOpenDetails, onPaid }) {
   const options = useMemo(() => realWalletCards(cards.find(card => card.id === cardId), cards), [cards, cardId]);
   const selected = options.find(card => card.id === cardId) || options[0];
+  // 결제 카드 아래 '선정 이유' (2026-11-24 사용자 결정 '맞을 때만 보이기'): 규칙은 utils/cardReasonCore.js
+  const [pickedId, setPickedId] = useState(null);   // 이 결제 창에서 직접 바꾼 카드
+  const placement = usePlacementPreview(options, visible);
+  const baseline = options.find(item => item.id !== selected?.id) || selected;
+  const { scenario, selectedBenefit } = useBenefitEstimate({ options, selected, baseline, placement });
+  const reasonBenefit = scenario?.aiExample && Number.isFinite(selectedBenefit?.value) && selectedBenefit.value > 0
+    ? scenario.merchant + '에서 ' + reward(selectedBenefit) + ' 혜택' : '';
+  const reasonText = cardReason({
+    selectedId: selected?.id,
+    ai: placement.status === 'ready' ? placement.result : null,
+    autoOn,
+    pickedHere: pickedId != null && pickedId === selected?.id,
+    fromSchedule: Boolean(context?.title),
+    benefit: reasonBenefit,
+  });
   const [code, setCode] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
@@ -142,6 +151,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
       setCode(null);
       setReceipt(null);
       setPicking(false);
+      setPickedId(null);
       return undefined;
     }
     dragY.setValue(0);
@@ -273,12 +283,15 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
               <Ionicons name={picking ? 'chevron-up' : 'chevron-down'} size={14} color="#245DE5" />
             </View>}
           </TouchableOpacity>
-          {!picking && <CardReason options={options} selected={selected} />}
+          {!picking && !paid && !!reasonText && <View style={s.reason}>
+            <Ionicons name="bulb-outline" size={14} color="#B26A00" />
+            <Text style={s.reasonText} numberOfLines={2}><Text style={s.reasonHead}>선정 이유 </Text>{reasonText}</Text>
+          </View>}
 
           {/* 카드를 고르는 동안에는 QR 대신 카드 목록을 보여줍니다. */}
           {picking && <ScrollView style={s.pickList} contentContainerStyle={s.pickContent}>
             {options.filter(card => card.id !== selected.id).map(card => <TouchableOpacity key={card.id} accessibilityRole="button"
-                onPress={() => { setPicking(false); onSelectCard?.(card.id); }} style={s.pickRow}>
+                onPress={() => { setPicking(false); setPickedId(card.id); onSelectCard?.(card.id); }} style={s.pickRow}>
               {!!card.image && <Image source={typeof card.image === 'string' ? { uri: card.image } : card.image} resizeMode="contain" style={s.pickImage} />}
               <Text style={s.pickName} numberOfLines={1}>{card.name}</Text>
             </TouchableOpacity>)}
