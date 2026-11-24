@@ -36,9 +36,10 @@ function BenefitBack({ card, cards }) {
     <Text style={[s.backAmount, !known && s.backAmountUnknown]} numberOfLines={1} adjustsFontSizeToFit>
       {known ? reward(selectedBenefit) : '조건 확인 필요'}
     </Text>
+    {/* 비교 대상을 밝힌다: 이 값은 'AI 추천 카드'가 아니라 지금 카드와 내 다른 카드(baseline)를 비교한 것 (PR #10 검토, 2026-11-24) */}
     {difference !== null && <Text style={[s.backDiff, difference > 0 ? s.backDiffGood : s.backDiffNeutral]} numberOfLines={2}>
-      {difference > 0 ? 'AI 추천 카드로 결제하면 ' + won(difference) + ' 절약돼요!'
-        : difference === 0 ? '비교 카드와 혜택이 같아요' : '비교 카드가 ' + won(-difference) + ' 더 유리해요'}
+      {difference > 0 ? baseline.name + '보다 ' + won(difference) + ' 더 아껴요'
+        : difference === 0 ? '비교 카드(' + baseline.name + ')와 혜택이 같아요' : '비교 카드(' + baseline.name + ')가 ' + won(-difference) + ' 더 유리해요'}
     </Text>}
   </>;
 }
