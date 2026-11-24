@@ -119,8 +119,10 @@ class ChatAgent:
             reply, retries = self._run(tb, message, history or [], screen, deadline, usage, detail)
         except Exception as e:                      # OpenAI 장애·시간 초과·응답 형식 오류
             return self._fallback(tb, message, started, usage, type(e).__name__)
-        if retries < 2 and detail is None and tb.calls and not _hinted(history or []):
-            reply = f"{reply}\n\n{DETAIL_HINT}"    # 대화에서 한 번만 (숫자가 없어 검사와 무관)
+        # 대화에서 한 번만 (숫자가 없어 검사와 무관). '자세히' 버튼이 있는 앱(screen.detail_button)에는 붙이지 않는다 (2026-11-24 3단계)
+        if (retries < 2 and detail is None and tb.calls and not _hinted(history or [])
+                and not (screen or {}).get("detail_button")):
+            reply = f"{reply}\n\n{DETAIL_HINT}"
         return self._response(tb, reply, False, started, usage, retries=retries, detail=detail)
 
     # ---------- LLM 반복 ----------
@@ -162,11 +164,11 @@ class ChatAgent:
         facts = lambda: guard.collect_facts(tb.results, message, [h.get("text") for h in history], tb.card_names(),
                                             tb.at.day, tb.at.month, tb.at.year)
         days_given = said_day(tb.user_words)
-        problems = guard.check(reply, facts(), tb.rule_draft is not None, days_given) if reply else ["빈 답변"]
+        problems = guard.check(reply, facts(), tb.has_draft(), days_given) if reply else ["빈 답변"]
         if not problems:
             return reply, 0
         # 초안 없이 저장을 안내했으면 다시 쓸 때 도구(draft_rule)를 부를 수 있게 한다. 그 밖에는 도구 없이 다시 쓴다.
-        need_tool = (tb.rule_draft is None and budget > 0
+        need_tool = (not tb.has_draft() and budget > 0
                      and any(p.startswith((guard.DRAFT_MISSING, guard.DAYS_GIVEN)) for p in problems))
         messages.append({"role": "assistant", "content": reply or ""})
         messages.append({"role": "user", "content": "[답변 검사] 다음 문제를 고쳐 같은 질문에 다시 답하세요."
@@ -176,7 +178,7 @@ class ChatAgent:
             reply2, _ = self._loop(tb, messages, deadline, usage, budget)
         else:
             reply2 = (self._call(messages, deadline, usage, tools=False).content or "").strip()
-        if reply2 and not guard.check(reply2, facts(), tb.rule_draft is not None, days_given):
+        if reply2 and not guard.check(reply2, facts(), tb.has_draft(), days_given):
             return reply2, 1
         # 검사에 두 번 걸리면 도구 결과로 만든 정해진 요약 문장 (앱이 표를 그리지 않아 '아래 표를 확인해 주세요'는 빈 답이었다)
         return (block_summary(tb.blocks) or NO_ANSWER_REPLY), 2
