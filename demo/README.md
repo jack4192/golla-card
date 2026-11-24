@@ -50,6 +50,17 @@ AI 엔진을 다른 주소나 포트로 켰다면 `SOLPAY_AI_URL` 로 알려 줍
 SOLPAY_AI_URL=http://127.0.0.1:8000 uvicorn app.main:app --port 8001
 ```
 
+### 휴대폰 시연을 한 번에 켜기 (2026-11-24)
+
+저장소 맨 위의 `run_phone_demo.sh` 가 DB(docker) → AI(8031) → 백엔드(8091) → 가상 POS(8000) → 앱 서버(8083, Expo Go QR) 를 차례로 켠다. 맥 주소는 실행할 때마다 찾아서 앱에 넣으므로 와이파이·핫스팟이 바뀌어도 다시 실행만 하면 된다. Ctrl+C 로 이 스크립트가 켠 서버를 모두 끈다.
+
+```bash
+./run_phone_demo.sh            # 개발 실행
+./run_phone_demo.sh --no-dev   # '화면 이동' 버튼·경고창 없이 (정식 앱처럼)
+```
+
+backend/.env 에 `POS_DEMO_TERMINAL_KEY` 가 있어야 하고(아래 가), AI 폴더는 `SOLPAY_AI_DIR` 로 바꿀 수 있다(기본 `~/Desktop/solpay/solpay-ai`). 가상 POS 파이썬 환경(`demo/.venv`)은 처음 실행할 때 만든다(인터넷 필요).
+
 ### SOL·Pay 앱 결제와 잇기 (2026-11-24)
 
 가상 POS 가 승인 요청을 SOL·Pay 백엔드(`/api/v1/pos/payments`)로 보내는 방법은 두 가지다. 둘 다 없으면 예전처럼 이 데모 서버가 발급한 코드만 승인한다.
