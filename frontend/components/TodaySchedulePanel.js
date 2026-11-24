@@ -212,14 +212,15 @@ function HomeScheduleRibbon({ nowButtonRef, start, clockTime, nowMinute, viewMin
 
 // 오늘의 일정 '이 카드를 쓰면 좋은 이유' (2026-11-24). 순서: 그 시각 AI 배치 안내(풀어 씀) → 카드 대표 혜택 → 기본 문구
 const cleanBenefit = name => String(name || '').replace(/^(?:DAY|NIGHT|WEEKEND|주말)\s+/i, '').trim();
-// AI 안내를 '왜 좋은지'가 보이게 풀어 쓴다 (2026-11-24). 실적 안내는 결제하면 무엇이 좋아지는지까지 붙인다
+// AI 안내를 '왜 좋은지'가 보이게 풀어 쓴다 (2026-11-24). 실적 안내는 결제하면 무엇이 좋아지는지까지 붙인다.
+//   이 일정 업종에 이 카드 할인이 있는지는 여기서 모르므로 '할인을 받는다'고 장담하지 않는다 (PR #11 검토)
 function explainAiNote(note) {
   const text = String(note || '').replace(/!$/, '').trim();
   if (/실적 달성까지 [\d,]+원 남았어요/.test(text)) {
-    return text + '. 이 일정 결제를 이 카드로 하면 실적이 채워져 다음 달 할인 혜택을 받기 쉬워져요.';
+    return text + '. 이 일정 결제를 이 카드로 하면 실적을 채우는 데 보탬이 돼 다음 달 혜택을 받기 쉬워져요.';
   }
   if (/실적을 이미 채웠어요/.test(text)) {
-    return text + '. 이번 달 혜택 조건을 이미 넘겨서, 이 카드로 결제하면 할인을 바로 받을 수 있어요.';
+    return text + '. 이번 달 실적 조건은 이미 넘겨서, 이 카드 혜택을 받는 데 실적 걱정은 없어요.';
   }
   return /[.요]$/.test(text) ? text : text + '.';
 }
@@ -227,7 +228,7 @@ function whyThisCard({ card, segmentNote, catalog }) {
   if (segmentNote) return explainAiNote(segmentNote);
   const top = (catalog?.benefits || []).map(benefit => cleanBenefit(benefit.name)).filter(Boolean);
   const unique = [...new Set(top)].slice(0, 2);
-  if (unique.length) return `${unique.join(' · ')} 등 생활 혜택이 많아서, 이 일정처럼 따로 혜택 카드가 없는 결제에도 두루 쓰기 좋아요.`;
+  if (unique.length) return `${unique.join(' · ')} 등의 혜택이 있는 카드라, 이 일정처럼 따로 맞는 혜택 카드가 없는 결제에 쓰기 좋아요.`;
   if (catalog?.description) return catalog.description;
   return `${card?.name || '이 카드'}로 결제하면 이번 달 실적을 채워 다음 달 혜택을 받는 데 도움이 돼요.`;
 }
@@ -678,8 +679,10 @@ export default function TodaySchedulePanel({
         {/* 큰 카드: 누르면 뒤집혀 '이 거래의 예상 혜택' (결제 화면과 같은 계산, 2026-11-24). 카드 그림만 뒤집힌다 */}
         {artwork && <View style={styles.homeCardStage}>
           <View pointerEvents="none" style={styles.homeCardHalo} />
-          {/* '실제 혜택 계산하기'는 뺐다 (2026-11-24 사용자 요청). 계산기(ActualBenefitCalc)는 파일만 남겨 둠 */}
-          <CardBenefitFlip card={card} cards={cards} artwork={artwork} artworkStyle={[styles.homeArtwork, styles.homeScheduledArtwork]} />
+          {/* '실제 혜택 계산하기'는 홈에서 빼고 결제 화면 예상 혜택 아래로 옮겼다 (2026-11-24 사용자 요청).
+              뒷면 AI 문구는 자동 배치가 켜져 있고 미리보기가 아닐 때만 (지금 시각 1순위 카드 이야기라서, PR #11 검토) */}
+          <CardBenefitFlip card={card} cards={cards} artwork={artwork} artworkStyle={[styles.homeArtwork, styles.homeScheduledArtwork]}
+            showAiMessage={autoOn && !scrubbing} />
         </View>}
         <Text style={[styles.homeCardName, card && styles.homeCardCaption]}>{card?.name || '등록된 카드가 없습니다'}</Text>
         {scrubPayment && <Text style={styles.homeScrubPayment} numberOfLines={1}>{paymentLine(scrubPayment)}</Text>}

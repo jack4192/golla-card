@@ -1,9 +1,8 @@
-import { orderCards } from '../components/PaymentCardOrder';
 import PaymentBenefitChat from '../components/PaymentBenefitChat';
 import BenefitDetailBox from '../components/BenefitDetailBox';
 import ActualBenefitCalc from '../components/ActualBenefitCalc';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import makeQR from 'qrcode-generator';
@@ -381,9 +380,7 @@ export default function PaymentScreen({
   const [receipt, setReceipt] = useState(null);
   const [imageError, setImageError] = useState(false);
   const [imageRetry, setImageRetry] = useState(0);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [calcOpen, setCalcOpen] = useState(false);   // '실제 혜택 계산하기' 창 (2026-11-24)
-  const [cardDragActive, setCardDragActive] = useState(false);
   // AI 카드 배치 (서버 모드). status: off(데모 모드) / loading / ready / failed
   const [placement, setPlacement] = useState({ status: SERVER_MODE ? 'loading' : 'off', result: null });
   const userPicked = useRef(false);   // 사용자가 직접 카드를 고르면 AI 가 다시 바꾸지 않는다
@@ -417,7 +414,6 @@ export default function PaymentScreen({
   ];
   const ai = placement.result;
   const aiTop = ai?.topId && !ai.fallback ? options.find(item => item.id === ai.topId) : null;
-  const orderedOptions = ai && !ai.fallback ? orderCards(options, ai.order) : options;
   const source = selected?.image;
   const seconds = payment ? Math.max(0, Math.ceil((payment.expiresAt - now) / 1000)) : 0;
   const expired = !payment || seconds === 0 || payment.status !== 'pending' || payment.cardId !== selected?.id || payment.contextKey !== contextKey;
@@ -593,8 +589,7 @@ export default function PaymentScreen({
       </View>;
   }
   return <>
-    <ScrollView style={[s.screen, Platform.OS === 'web' && cardDragActive && s.scrollLocked]}
-      scrollEnabled={!cardDragActive} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+    <ScrollView style={s.screen} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
       <View style={s.container}>
         <View style={s.header}>
           <TouchableOpacity accessibilityRole="button" onPress={close}>
@@ -689,9 +684,16 @@ export default function PaymentScreen({
             ? selected.id === schedule.cardId
               ? '오늘 일정의 업종과 관련된 혜택이 있는 보유 카드예요.'
               : '결제 카드를 바꿨어요. 바꾸기 전과 같은 일정·금액으로 혜택을 확인할 수 있어요.'
+            : placement.status === 'loading' ? ''
+            // 1순위 카드면 AI 안내 문구만 ('AI가 …골랐어요' 같은 설명 문장은 수정사항2 5번대로 넣지 않는다, PR #11 검토)
             : aiTop && selected.id === aiTop.id
-              ? (ai.message ? ai.message + ' ' : '') + 'AI가 지금 결제에 가장 잘 맞는 카드로 골랐어요.'
+              ? ai.message || '지금 결제에 맞춰 맨 앞에 둔 카드예요.'
               : '지갑에서 직접 고른 카드예요.'}
+          // 추천을 불러오는 중·못 불러옴·대체 응답이면 한 줄 알린다 (PR #11 검토: AI 상자와 함께 빠졌던 안내)
+          status={scheduleScenario && !scheduleAi ? ''
+            : placement.status === 'loading' ? '추천 카드를 정하고 있어요.'
+            : placement.status === 'failed' ? '추천을 불러오지 못해 지금 고른 카드로 계산했어요.'
+            : placement.status === 'ready' && ai?.fallback ? '추천 응답이 없어 지금 고른 카드로 계산했어요.' : ''}
           details={[
             selectedBenefit && scenario && Number.isFinite(selectedBenefit.value) && selectedBenefit.unit === 'KRW' && selectedBenefit.value > 0
               && '계산: ' + won(scenario.amount) + ' 결제 → ' + won(selectedBenefit.value) + ' 혜택 → 실제로 내는 돈 약 ' + won(Math.max(0, scenario.amount - selectedBenefit.value)),
@@ -728,30 +730,6 @@ export default function PaymentScreen({
 
       </View>
     </ScrollView>
-    <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
-      <TouchableOpacity activeOpacity={1} accessibilityLabel="카드 선택 닫기" style={s.sheetBackdrop} onPress={() => setPickerOpen(false)}>
-        <TouchableOpacity activeOpacity={1} style={s.sheet}>
-          <Text style={s.heading}>결제할 카드 선택</Text>
-          <ScrollView style={s.sheetList}>
-            {orderedOptions.map(item => {
-              const active = item.id === selected.id;
-              return <TouchableOpacity key={item.id} accessibilityRole="button" accessibilityState={{ selected: active }}
-                onPress={() => { choose(item); setPickerOpen(false); }} style={[s.sheetRow, active && s.sheetRowActive]}>
-                <Image source={typeof item.image === 'string' ? { uri: item.image } : item.image} resizeMode="contain" style={s.sheetImage} />
-                <View style={s.sheetInfo}>
-                  <Text style={s.sheetName} numberOfLines={1}>{item.name}</Text>
-                  <Text style={s.sheetIssuer}>{item.issuer} · {item.type}</Text>
-                </View>
-                {active && <Text style={s.link}>사용 중</Text>}
-              </TouchableOpacity>;
-            })}
-          </ScrollView>
-          <TouchableOpacity accessibilityRole="button" onPress={() => setPickerOpen(false)} style={s.sheetClose}>
-            <Text style={s.link}>닫기</Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
     <PaymentBenefitChat
       key={JSON.stringify([contextKey, selected.id, baseline.id])}
       transaction={scenario.merchant + ' · ' + won(scenario.amount) + ' 결제 예시'}
@@ -770,7 +748,6 @@ const s = StyleSheet.create({
   },
   calcPrompt: { marginTop: 6, marginBottom: -4, fontSize: 13, lineHeight: 20, fontWeight: '700', color: '#4A5A75', textAlign: 'center' },
   calcOpenText: { fontSize: 15, fontWeight: '800', color: '#1D55D9' },
-  scrollLocked: { overflowY: 'hidden' },
   screen: {
     flex: 1,
     backgroundColor: "#F4F7FB"
@@ -826,63 +803,6 @@ const s = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '800'
-  },
-  sheetBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(12, 22, 44, 0.45)'
-  },
-  sheet: {
-    width: '100%',
-    maxWidth: 560,
-    alignSelf: 'center',
-    maxHeight: '75%',
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 28,
-    gap: 12
-  },
-  sheetList: {
-    flexGrow: 0
-  },
-  sheetRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 10,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    marginBottom: 6
-  },
-  sheetRowActive: {
-    backgroundColor: '#F1F6FF',
-    borderColor: '#245DE5'
-  },
-  sheetImage: {
-    width: 64,
-    height: 42
-  },
-  sheetInfo: {
-    flex: 1,
-    gap: 2
-  },
-  sheetName: {
-    color: '#14213D',
-    fontSize: 15,
-    fontWeight: '700'
-  },
-  sheetIssuer: {
-    color: '#687B97',
-    fontSize: 12
-  },
-  sheetClose: {
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#F1F4F9'
   },
   header: {
     flexDirection: 'row',
@@ -949,42 +869,6 @@ const s = StyleSheet.create({
   cardImage: {
     width: '100%',
     height: 220
-  },
-  aiBox: {
-    alignSelf: 'stretch',
-    backgroundColor: '#EEF4FF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#C9D9FF',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    gap: 6
-  },
-  aiHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8
-  },
-  aiBadge: {
-    backgroundColor: '#245DE5',
-    borderRadius: 999,
-    paddingVertical: 3,
-    paddingHorizontal: 9
-  },
-  aiBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800'
-  },
-  aiText: {
-    color: '#213F69',
-    fontSize: 14,
-    lineHeight: 22,
-    fontWeight: '600'
-  },
-  aiButton: {
-    alignSelf: 'flex-start',
-    paddingVertical: 4
   },
   cardName: {
     color: '#213F69',
