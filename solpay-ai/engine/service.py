@@ -427,8 +427,8 @@ class PlacementService:
         if day < now.date():
             raise ValueError("지난 날의 일정은 넣을 수 없습니다")
         names = self.engine.catalog.category_names
-        brands = {m.brand_code for m in self.engine.catalog.merchants.values() if m.brand_code}
         pairs = self._place_pairs()
+        brands = {brand for _, brand in pairs}
         parsed = []
         for i, raw in enumerate(items):
             if raw["category"] not in names or raw["category"] == "ALL":
@@ -578,12 +578,10 @@ class PlacementService:
         return out
 
     def _place_pairs(self) -> set[tuple[str, str]]:
-        """카탈로그 가맹점의 (업종, 브랜드 코드) 쌍. 써브웨이처럼 두 업종에 걸친 브랜드가 있어 쌍으로 본다."""
-        pairs = self.__dict__.get("_pairs")
-        if pairs is None:
-            pairs = self.__dict__["_pairs"] = {(m.category, m.brand_code) for m in self.engine.catalog.merchants.values()
-                                               if m.brand_code}
-        return pairs
+        """(업종, 브랜드 코드) 쌍. 써브웨이처럼 두 업종에 걸친 브랜드가 있어 쌍으로 본다.
+        가맹점 목록에 더해 카드 혜택 대상 브랜드(가맹점이 없는 LG트윈스 등)도 일정에 받는다 (2026-11-24 '야구')."""
+        from engine.place import known_brand_pairs
+        return known_brand_pairs(self.engine.catalog)
 
     def _classify_new(self, q: str, llm) -> tuple[dict, bool]:
         """(사용자와 무관한 분류, 캐시해도 되는지). OpenAI 가 실패한 결과는 캐시하지 않는다 (다음에 다시 시도)."""
