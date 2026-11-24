@@ -10,7 +10,7 @@
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from engine.benefit_calc import DAY_NAMES
 from engine.chat.new_card import recommend_new_cards
@@ -88,7 +88,9 @@ TOOL_SPECS = [
     _fn("list_promotions",
         "지금 진행 중이고 내 카드로 받을 수 있는 카드사 이벤트·마이샵 프로모션을 돌려준다 (가맹점, 혜택, 기간, 받을 수 있는 내 카드). "
         "'진행 중인 프로모션 알려줘', '스타벅스 이벤트 있어?' 같은 질문에 쓴다. 마이샵은 앱에서 켜야 받는 혜택이다.",
-        {"merchant_name": {"type": "string", "description": "가맹점·브랜드 이름으로 좁힐 때 (예: '스타벅스'). 없으면 전체"}}),
+        {"merchant_name": {"type": "string", "description": "가맹점·브랜드 이름으로 좁힐 때 (예: '스타벅스'). 없으면 전체"},
+         "ending": {"type": "string", "enum": ["this_week", "7days", "this_month"],
+                    "description": "끝나는 때로 거를 때: this_week=이번 주 일요일까지, 7days=오늘부터 7일 안, this_month=이번 달 말까지"}}),
     _fn("find_merchant",
         "가맹점 이름으로 가맹점을 찾는다 (정확히 일치 → 브랜드 일치 → 부분 일치). 없으면 비슷한 업종을 돌려준다.",
         {"name": {"type": "string"}}, ["name"]),
@@ -286,9 +288,10 @@ class ToolBox:
         else:
             if not amount or amount <= 0:
                 return {"need": "amount", "message": "결제 금액을 물어봐 주세요"}
-            ev = self.service.evaluate_payment(self.user_id, self.at, category, int(amount), None, merchant_id)
+            ev = self.service.evaluate_payment(self.user_id, self.at, category, int(amount), None, merchant_id, detail=True)
             rows = [{"user_card_id": c["user_card_id"], "name": self.names[c["user_card_id"]],
-                     "benefit": c["benefit"] - c["promotion"], "promotion": c["promotion"], "total": c["benefit"]}
+                     "benefit": c["benefit"] - c["promotion"], "promotion": c["promotion"], "total": c["benefit"],
+                     "applied": _applied(c["applied"], int(amount), self.catalog)}
                     for c in ev["cards"]]
             basis = f"{merchant or self.catalog.category_name(category)} {int(amount):,}원 결제"
         if not rows:
@@ -304,7 +307,7 @@ class ToolBox:
             out.update(target_card=t["name"], target_total=t["total"], difference=best["total"] - t["total"])
         self.blocks.append({"type": "card_compare", "basis": basis,
                             "rows": [{"user_card_id": r["user_card_id"], "name": r["name"], "benefit": r["benefit"],
-                                      "promotion": r["promotion"]} for r in rows]})
+                                      "promotion": r["promotion"], "total": r["total"]} for r in rows]})
         return out
 
     # ---------- 3. 실적·한도 ----------
@@ -462,13 +465,14 @@ class ToolBox:
         if not self.cards:
             raise ToolError("등록한 카드가 없어 추천할 카드가 없습니다")
         r = self.service.preview(self.user_id, self.at, KnownPayment(category, amount, mid))
-        ev = self.service.evaluate_payment(self.user_id, self.at, category, amount, None, mid)
+        ev = self.service.evaluate_payment(self.user_id, self.at, category, amount, None, mid, detail=True)
         value = {c["user_card_id"]: c for c in ev["cards"]}
         first = r.cards[0].user_card_id
         rows = [{"user_card_id": c.user_card_id, "name": self.names[c.user_card_id],
                  "benefit": value[c.user_card_id]["benefit"] - value[c.user_card_id]["promotion"],
                  "promotion": value[c.user_card_id]["promotion"],
-                 "promotion_label": value[c.user_card_id]["promotion_label"]} for c in r.cards]
+                 "promotion_label": value[c.user_card_id]["promotion_label"],
+                 "applied": _applied(value[c.user_card_id]["applied"], amount, self.catalog)} for c in r.cards]
         best_now = max(rows, key=lambda x: x["benefit"] + x["promotion"])
         top = rows[0]
         basis = f"{merchant or self.catalog.category_name(category)} {amount:,}원"
@@ -480,15 +484,16 @@ class ToolBox:
                        highest_now_total=best_now["benefit"] + best_now["promotion"],
                        difference=best_now["benefit"] + best_now["promotion"] - out["recommended_total"],
                        why_not_highest="추천 카드는 실적 구간을 지키는 기본 카드라 이번 결제 혜택이 조금 작아도 먼저 둔다")
-        self.blocks.append({"type": "card_compare", "basis": basis,
+        self.blocks.append({"type": "card_compare", "basis": basis, "recommended": top["name"],
                             "rows": [{k: x[k] for k in ("user_card_id", "name", "benefit", "promotion")} for x in rows]})
         self.blocks.append({"type": "pay_button", "user_card_id": first, "name": top["name"]})
         return out
 
     # ---------- 8. 가맹점 검색 ----------
-    def list_promotions(self, merchant_name: str | None = None) -> dict:
+    def list_promotions(self, merchant_name: str | None = None, ending: str | None = None) -> dict:
         """지금 진행 중이고 내 카드 중 하나라도 받을 수 있는 프로모션. 엔진 계산과 같은 목록(팀 DB + promotions.yml)에서
         '확인 필요'(응모·신규 조건 등) 행사는 빼고, 같은 번호가 두 번 있으면 한 번만 보여 준다. 끝나는 날이 가까운 순."""
+        last = _ending_day(self.at.date(), ending)       # 끝나는 때로 거르기 (2026-11-24 고도화 1단계)
         promotions = self.service._all_promotions(self.context)
         word = norm(merchant_name) if merchant_name else ""
         rows, seen = [], set()
@@ -511,6 +516,8 @@ class ToolBox:
                    "cards": cards, "logo_url": p.logo_url}
             if p.min_amount:
                 row["min_amount"] = p.min_amount
+            if last is not None and row["end"] > last:
+                continue
             rows.append(row)
         rows.sort(key=lambda r: (r["end"], r["brand"]))
         self.blocks.append({"type": "promotion_list", "promotions": rows})
@@ -518,6 +525,10 @@ class ToolBox:
         if not rows:
             out["note"] = (f"'{merchant_name}' 에서 지금 내 카드로 받을 수 있는 프로모션이 없다" if merchant_name
                            else "지금 내 카드로 받을 수 있는 진행 중인 프로모션이 없다")
+            if last is not None:
+                out["note"] += f" ({last} 까지 끝나는 것 기준)"
+        if last is not None:
+            out["ending_by"] = last
         if any(r["kind"] == "마이샵" for r in rows):
             out["myshop_note"] = "마이샵은 앱에서 그 가맹점을 켜야 받는 혜택이다"
         return out
@@ -585,6 +596,40 @@ def brand_index(catalog) -> dict[str, str]:
 
 # ---------- 문구 ----------
 
+def _ending_day(today, ending: str | None) -> str | None:
+    """프로모션 끝나는 때 조건 → 마지막 날 'YYYY-MM-DD' (없으면 None, 모르는 값이면 ToolError)."""
+    if not ending:
+        return None
+    if ending == "this_week":
+        last = today + timedelta(days=6 - today.weekday())
+    elif ending == "7days":
+        last = today + timedelta(days=7)
+    elif ending == "this_month":
+        last = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    else:
+        raise ToolError(f"ending 은 this_week·7days·this_month 중 하나입니다: {ending}")
+    return f"{last:%Y-%m-%d}"
+
+
+def _applied(b, amount: int, catalog) -> dict | None:
+    """이 결제에 적용된 카드 혜택의 근거 (챗봇이 '어떻게 계산됐는지' 설명할 때). 받는 혜택이 없으면 None.
+    before_limit 은 할인율·정액만 적용한 금액이고, 실제 benefit 이 이보다 작으면 건당·월·통합 한도 때문이다."""
+    if b is None:
+        return None
+    out = {"name": b.name or ", ".join(_targets(b, catalog)), "value": _value_text(b)}
+    if b.rate is not None:
+        out["before_limit"] = int(round(amount * b.rate))
+    elif b.amount is not None:
+        out["before_limit"] = min(int(b.amount), amount)
+    if b.max_per_tx:
+        out["max_per_payment"] = b.max_per_tx
+    if b.min_amount:
+        out["min_payment"] = b.min_amount
+    if b.row_cap:
+        out["monthly_limit"] = b.row_cap
+    return out
+
+
 def _value_text(b) -> str:
     if b.rate is not None:
         return f"{b.rate * 100:g}%"
@@ -636,6 +681,57 @@ def target_text(rule: dict, names: dict[int, str]) -> str:
     if rule["rule_type"] == "preference":
         return f"실적 가치 {rule['settings'].get('w2')}배"
     return ""
+
+
+def _md(day: str) -> str:
+    """'2026-11-30' → '11월 30일' (연도 숫자를 문장에 넣지 않는다)."""
+    _, m, d = day.split("-")
+    return f"{int(m)}월 {int(d)}일"
+
+
+def block_summary(blocks: list[dict]) -> str | None:
+    """검사에 두 번 걸린 답 대신 쓰는 정해진 요약 문장. 마지막으로 요약할 수 있는 화면 요소의 숫자만 쓴다 (2026-11-24).
+    앱은 표(blocks)를 그리지 않으므로 '아래 표를 확인해 주세요'는 빈 답이었다."""
+    for b in reversed(blocks or []):
+        kind = b.get("type")
+        if kind == "card_compare" and b.get("rows"):
+            rows = [{**r, "total": r.get("total", r["benefit"] + r["promotion"])} for r in b["rows"]]
+            pick = next((r for r in rows if r["name"] == b.get("recommended")), None)
+            if pick is not None:
+                head = f"{b['basis']} 결제는 {pick['name']}{_josa(pick['name'], '을', '를')} 추천해요. 예상 혜택은 {pick['total']:,}원이에요."
+            else:
+                pick = max(rows, key=lambda r: r["total"])
+                where = f"{b['basis']}으로" if "기준" in b["basis"] else f"{b['basis']} 결제로"
+                head = f"{where} 비교하면 {pick['name']}{_josa(pick['name'], '이', '가')} {pick['total']:,}원으로 가장 커요."
+            others = [f"{r['name']} {r['total']:,}원" for r in sorted(rows, key=lambda r: -r["total"]) if r is not pick][:2]
+            return head + (f" 다른 카드는 {', '.join(others)}이에요." if others else "")
+        if kind == "score_table" and b.get("rows"):
+            top = b["rows"][0]
+            text = f"지금 결제 화면 1순위는 {top['name']}이고 예상 혜택은 {top['expected_total']:,}원이에요."
+            if len(b["rows"]) > 1:
+                second = b["rows"][1]
+                text += f" 2순위 {second['name']}의 예상 혜택은 {second['expected_total']:,}원이에요."
+            return text
+        if kind == "card_status" and b.get("rows"):
+            parts = [f"{r['name']} {r['this_month_perf']:,}원" for r in b["rows"]]
+            return f"이번 달 실적은 {', '.join(parts)}이에요."
+        if kind == "benefit_list" and b.get("name"):
+            text = f"{b['name']}의 연회비는 {b['annual_fee']:,}원이에요." if b.get("annual_fee") is not None else f"{b['name']}의 혜택이에요."
+            names = [x["name"] for x in b.get("benefits") or [] if x.get("name")][:3]
+            return text + (f" 주요 혜택은 {', '.join(names)}이에요." if names else "")
+        if kind == "new_card_list":
+            if not b.get("cards"):
+                continue
+            top = b["cards"][0]
+            return (f"최근 결제로 다시 계산하면 {top['name']}{_josa(top['name'], '이', '가')} 연회비를 빼고 "
+                    f"월 평균 {top['net_benefit']:,}원으로 가장 커요.")
+        if kind == "promotion_list":
+            rows = b.get("promotions") or []
+            if not rows:
+                return "지금 내 카드로 받을 수 있는 프로모션이 없어요."
+            first = "; ".join(f"{r['brand']} {r['benefit']}({_md(r['end'])}까지)" for r in rows[:3])
+            return f"지금 내 카드로 받을 수 있는 프로모션은 {len(rows)}개예요. 끝나는 날이 가까운 것은 {first}이에요."
+    return None
 
 
 def _josa(word: str, with_final: str, without: str) -> str:

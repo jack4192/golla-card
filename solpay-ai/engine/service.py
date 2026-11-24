@@ -319,8 +319,9 @@ class PlacementService:
         return out
 
     def evaluate_payment(self, user_id: int, at, category: str, amount: int, used_card: int | None = None,
-                         merchant_id: int | None = None) -> dict:
-        """이 결제를 카드마다 했을 때 받는 카드 혜택과 프로모션. 결제 전 상태로 계산한다."""
+                         merchant_id: int | None = None, detail: bool = False) -> dict:
+        """이 결제를 카드마다 했을 때 받는 카드 혜택과 프로모션. 결제 전 상태로 계산한다.
+        detail=True 면 카드마다 적용된 혜택(Benefit, 없으면 None)을 applied 로 붙인다 (챗봇 계산 근거용, API 응답에는 없음)."""
         from engine.benefit_calc import SOLPAY, evaluate
         context = self.store.context(user_id, at)
         state = self.build_state(context, at)
@@ -328,10 +329,11 @@ class PlacementService:
         if not state.cards:                 # 등록한 카드가 없으면 비교할 것이 없다
             return {"cards": [], "best_card": None, "best_benefit": 0, "used_card": used_card, "used_benefit": None,
                     "used_promotion": None}
-        values, promos, labels = {}, {}, {}
+        values, promos, labels, applied = {}, {}, {}, {}
         for uc in state.cards:
-            got, _ = evaluate(self.engine.catalog.cards[uc.card_id], category, amount, state.ledger[uc.user_card_id], at,
-                              self.engine.catalog.brand_of(merchant_id), SOLPAY)
+            got, applied[uc.user_card_id] = evaluate(self.engine.catalog.cards[uc.card_id], category, amount,
+                                                     state.ledger[uc.user_card_id], at,
+                                                     self.engine.catalog.brand_of(merchant_id), SOLPAY)
             promo = 0
             if merchant_id is not None:
                 for p in self._all_promotions(context):
@@ -340,7 +342,8 @@ class PlacementService:
                         promo, labels[uc.user_card_id] = v, p.label()
             values[uc.user_card_id], promos[uc.user_card_id] = got + promo, promo
         best = max(state.cards, key=lambda c: (values[c.user_card_id], -c.display_order)).user_card_id
-        return {"cards": [{"user_card_id": k, "benefit": v, "promotion": promos[k], "promotion_label": labels.get(k)}
+        return {"cards": [{"user_card_id": k, "benefit": v, "promotion": promos[k], "promotion_label": labels.get(k),
+                           **({"applied": applied[k] if v - promos[k] > 0 else None} if detail else {})}
                           for k, v in values.items()],
                 "best_card": best, "best_benefit": values[best],
                 "used_card": used_card, "used_benefit": values.get(used_card) if used_card is not None else None,

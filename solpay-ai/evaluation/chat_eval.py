@@ -6,6 +6,8 @@
 
 설계서 묶음: 추천 이유·가정 계산 10, 실적·혜택 조회 10, 규칙 8, 카드 추천·정확한 계산 10, 이어지는 질문 6, 범위 밖·주입 6,
 앱 사용법·프로모션 8 (2026-11-23 추가: 앱 사용법도 AI 가 답한다는 결정).
+2026-11-24 고도화 1단계: 자세한 설명 6 (답이 5문장 이상이어야 정답), 카드 용어 4, 프로모션 기간 2 → 70문항.
+보통 답·자세한 답의 평균 문장 수도 잰다 (기본 답을 지금보다 자세히, '자세히'를 입력하면 더 자세히).
 질문의 카드 이름은 데모 1번(신한카드 Discount Plan+, 신한카드 SOL트래블 체크, KB ALL 카드) 기준이다.
 seen=True 는 프롬프트를 고칠 때 본 17문항, False 는 처음 보는 33문항이다 (과적합 확인용).
 
@@ -26,7 +28,7 @@ import time
 from datetime import datetime
 
 from engine.chat import guard
-from engine.chat.agent import ChatAgent, openai_client
+from engine.chat.agent import DETAIL_HINT, ChatAgent, openai_client
 from engine.chat.tools import ToolBox
 from engine.loader import ARTIFACTS
 
@@ -34,13 +36,16 @@ STARBUCKS = [{"role": "user", "text": "스타벅스에서 6천 원 결제할 건
              {"role": "assistant", "text": "스타벅스 6,000원이면 신한카드 Discount Plan+가 유리해요. 600원을 받을 수 있어요."}]
 
 
-def C(group, q, tools, history=(), rule=None, key=None, seen=False, ask_word=None, guide_words=(), screen="pay"):
+def C(group, q, tools, history=(), rule=None, key=None, seen=False, ask_word=None, guide_words=(), screen="pay",
+      detail=False):
     return {"group": group, "q": q, "tools": tools, "history": list(history), "rule": rule, "key": key, "seen": seen,
-            "ask_word": ask_word, "guide_words": tuple(guide_words), "screen": screen}
+            "ask_word": ask_word, "guide_words": tuple(guide_words), "screen": screen, "detail": detail}
 
 
 R, S, RU, P, F, X = "추천 이유·가정 계산", "실적·혜택 조회", "규칙", "카드 추천·정확한 계산", "이어지는 질문", "범위 밖·주입"
 A = "앱 사용법·프로모션"
+D, T = "자세한 설명", "카드 용어"
+DETAIL_MIN_SENTENCES = 5
 CASES = [
     # 추천 이유·가정 계산 10
     C(R, "왜 이 카드가 1순위야?", {"explain_ranking"}, seen=True),
@@ -131,15 +136,33 @@ CASES = [
     C(X, "신용점수 올리려면 카드를 몇 장 써야 해?", None),
     # 앱 사용법·프로모션 8 (홈 챗봇에서 연다). 앞 6개는 프롬프트를 쓰며 본 질문, 뒤 2개는 처음 보는 질문
     C(A, "일정은 어떻게 추가해?", "guide", guide_words=("일정 추가",), seen=True, screen="home"),
-    C(A, "카드 등록은 어떻게 해?", "guide", guide_words=("보유 카드로 등록",), seen=True, screen="cards"),
+    # 2026-11-24: '보유 카드로 등록' 버튼을 없애고 '카드 신청'으로 안내하므로 기준 말을 바꿈
+    C(A, "카드 등록은 어떻게 해?", "guide", guide_words=("카드 등록", "카드 신청"), seen=True, screen="cards"),
     C(A, "결제 카드 바꾸는 법 알려줘", "guide", guide_words=("다른 카드로 변경", "카드 변경", "내 카드"), seen=True, screen="home"),
     C(A, "혜택은 어디서 봐?", "guide", guide_words=("혜택 탭",), seen=True, screen="benefits"),
     C(A, "진행 중인 프로모션 알려줘", {"list_promotions"}, seen=True, screen="home"),
     C(A, "지금 결제하기 좋은 카드 알려줘", {"explain_ranking"}, seen=True, screen="home"),
     C(A, "올해 카드로 얼마 아꼈는지 어디서 봐?", "guide", guide_words=("올해 카드 결산", "연말 결산"), screen="home"),
     C(A, "스타벅스에서 하는 이벤트 있어?", {"list_promotions"}, screen="home"),
+    # 프로모션 기간 2 (2026-11-24)
+    C(A, "이번 주에 끝나는 프로모션 있어?", {"list_promotions"}, screen="home"),
+    C(A, "이번 달 안에 끝나는 이벤트 알려줘", {"list_promotions"}, screen="home"),
+    # 자세한 설명 6 (2026-11-24): '자세히'를 입력하면 5문장 이상, 숫자는 도구 결과만
+    C(D, "1순위 카드 이유 자세히 알려줘", {"explain_ranking"}, detail=True),
+    C(D, "스타벅스에서 6천 원 결제하면 어떤 카드가 좋은지 자세히 설명해줘", {"recommend_for_payment"},
+      key=("recommend_for_payment", {"merchant_name": "스타벅스", "amount": 6000}, "recommended_total"), detail=True),
+    C(D, "자세히", {"recommend_for_payment", "simulate_payment"}, STARBUCKS, detail=True),
+    C(D, "이번 달 실적 상황 자세히 알려줘", {"get_card_status"}, detail=True),
+    C(D, "음식점에서 13,000원 결제하면 Discount Plan+ 혜택이 어떻게 계산되는지 자세히 알려줘",
+      {"recommend_for_payment", "simulate_payment"}, detail=True),
+    C(D, "내 소비에 맞는 새 카드 추천 결과 자세히 설명해줘", {"recommend_new_card"}, detail=True),
+    # 카드 용어 4 (2026-11-24): 도구 없이 거절하지 않고 뜻을 설명
+    C(T, "전월 실적이 뭐야?", "guide", guide_words=("지난달",), screen="home"),
+    C(T, "통합 할인 한도가 뭐야?", "guide", guide_words=("한 달",), screen="home"),
+    C(T, "마이샵이 뭐야?", "guide", guide_words=("켜",), screen="home"),
+    C(T, "실적 채우기 방식 중에 주력 카드 우선이 뭐야?", "guide", guide_words=("구간",), screen="home"),
 ]
-assert len(CASES) == 58
+assert len(CASES) == 70
 
 # 거절 문구. '공개할 수는 없습니다' 처럼 '-는', '-습니다' 꼴도 잡는다
 REFUSAL = ("도와드릴 수", "답할 수 없", "답할 수는 없", "알려 드릴 수 없", "알려드릴 수 없", "제공할 수 없", "제공할 수는 없",
@@ -162,15 +185,25 @@ def expected_number(service, user_id: int, at: datetime, key) -> float | None:
         return None
 
 
+def sentences(reply: str) -> int:
+    """문장 수 ('자세히' 안내 문장은 빼고). 마침표·물음표·느낌표로 끝나는 한글 문장을 센다."""
+    text = reply.replace(DETAIL_HINT, "")
+    return sum(1 for s in re.split(r"(?<=[.?!])\s+|\n+", text) if re.search(r"[가-힣]", s))
+
+
 def has_number(reply: str, value: float) -> bool:
     return any(guard._known(v, {value}) for v, _ in guard.numbers_in_text(reply) if v)
 
 
+# 안내·용어 답의 거절 판단은 범위 밖 거절 문구만 본다. '한도에 닿으면 더 받기 어려워요' 같은 설명이 거절로 잡히지 않게 (2026-11-24)
+GUIDE_REFUSAL = ("도와드릴 수", "답할 수 없", "답할 수는 없", "알려 드릴 수 없", "알려드릴 수 없", "제공할 수 없", "확인할 수 없")
+
+
 def guide_ok(reply: str, rule: dict | None, words) -> bool:
-    """앱 사용 안내 채점: 거절하지 않고, 규칙 초안을 만들지 않고, 안내 말 중 하나가 있어야 한다.
+    """앱 사용 안내·카드 용어 채점: 거절하지 않고, 규칙 초안을 만들지 않고, 안내 말 중 하나가 있어야 한다.
     따옴표는 빼고 본다 ('혜택' 탭 → 혜택 탭)."""
     plain = re.sub(r"[\'\"‘’“”]", "", reply)
-    return not any(w in reply for w in REFUSAL) and rule is None and any(w in plain for w in words)
+    return not any(w in reply for w in GUIDE_REFUSAL) and rule is None and any(w in plain for w in words)
 
 
 def rule_matches(rule: dict | None, want: dict) -> bool:
@@ -219,23 +252,31 @@ def main() -> None:
             tool_ok = bool(tools & c["tools"])
         rule_ok = None if c["rule"] is None else rule_matches(rule, c["rule"])
         num_ok = None if c["key"] is None else (want is not None and has_number(reply, want))
-        ok = tool_ok and rule_ok is not False and num_ok is not False
+        n_sent = sentences(reply)
+        detail_ok = (n_sent >= DETAIL_MIN_SENTENCES) if c["detail"] else None
+        ok = tool_ok and rule_ok is not False and num_ok is not False and detail_ok is not False
         rows.append({"group": c["group"], "question": c["q"], "seen": c["seen"], "ok": ok, "tool_ok": tool_ok,
-                     "rule_ok": rule_ok, "number_ok": num_ok, "expected_number": want, "tools": sorted(tools),
+                     "rule_ok": rule_ok, "number_ok": num_ok, "detail_ok": detail_ok, "sentences": n_sent,
+                     "hinted": DETAIL_HINT in reply, "expected_number": want, "tools": sorted(tools),
                      "reply": reply, "rule": rule, "fallback": out["fallback"], "retries": out["log"].get("retries", 0),
                      "ms": ms, "tokens": out["log"]["tokens_in"] + out["log"]["tokens_out"],
                      "prompt_version": out["log"].get("prompt_version")})
-        marks = "".join(m for m, v in (("도구X ", not tool_ok), ("규칙X ", rule_ok is False), ("숫자X ", num_ok is False)) if v)
+        marks = "".join(m for m, v in (("도구X ", not tool_ok), ("규칙X ", rule_ok is False), ("숫자X ", num_ok is False),
+                                       ("짧음X ", detail_ok is False)) if v)
         rule_text = f" · 규칙 {rule['rule_type']} {rule.get('condition') or ''} {rule.get('settings') or ''}" if rule else ""
         want_text = f" · 정답 {want:,.0f}" if want is not None else ""
         print(f"{'O' if ok else 'X'} {marks}[{c['group']}{'' if c['seen'] else ' · 새'}] {c['q']}\n"
-              f"   도구 {sorted(tools)} · {ms}ms · 다시 쓰기 {rows[-1]['retries']}{rule_text}{want_text}\n   {reply}")
+              f"   도구 {sorted(tools)} · {ms}ms · 다시 쓰기 {rows[-1]['retries']} · {n_sent}문장{rule_text}{want_text}\n   {reply}")
     summary = summarize(rows)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     out_dir = ARTIFACTS / "reports"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "chat_eval_latest.json").write_text(json.dumps({"summary": summary, "rows": rows}, ensure_ascii=False,
                                                               indent=2), encoding="utf-8")
+
+
+def _mean(xs: list) -> float | None:
+    return round(statistics.mean(xs), 1) if xs else None
 
 
 def summarize(rows: list[dict]) -> dict:
@@ -252,7 +293,12 @@ def summarize(rows: list[dict]) -> dict:
         "규칙 종류 정확도": rate([r["rule_ok"] for r in rows if r["rule_ok"] is not None]),
         "정답 숫자 포함률": rate([r["number_ok"] for r in rows if r["number_ok"] is not None]),
         "숫자 검사 첫 통과율": rate([r["retries"] == 0 for r in rows]),
-        "표만 보여 준 답(검사 2회 실패)": sum(r["retries"] == 2 for r in rows),
+        "요약 문장으로 바꾼 답(검사 2회 실패)": sum(r["retries"] == 2 for r in rows),
+        "자세한 답 5문장 이상": rate([r["detail_ok"] for r in rows if r.get("detail_ok") is not None]),
+        "평균 문장 수(보통 답, 도구 사용)": _mean([r["sentences"] for r in rows
+                                          if r.get("detail_ok") is None and r["tools"] and r.get("sentences") is not None]),
+        "평균 문장 수(자세한 답)": _mean([r["sentences"] for r in rows if r.get("detail_ok") is not None]),
+        "'자세히' 안내 붙은 답": sum(bool(r.get("hinted")) for r in rows),
         "fallback": sum(r["fallback"] for r in rows),
         "묶음별 정답률": {g: rate(v) for g, v in groups.items()},
         "응답 시간 중앙값(ms)": int(statistics.median(times)), "최대(ms)": max(times),
