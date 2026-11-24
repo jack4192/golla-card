@@ -190,7 +190,8 @@ SOLPAY_STORE=teamdb uv run uvicorn engine.api:app --port 8001
 | `SOLPAY_DATABASE_URL` | DB 주소 |
 | `SOLPAY_TEAM_DB_DIR` | 팀 DB 형식 CSV 폴더 (기본 `../카드서비스_DB_1년`) |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | OpenAI 키와 모델 (기본 `gpt-4o-mini`) |
-| `SOLPAY_INTERNAL_TOKEN` | 넣으면 `X-Internal-Token` 헤더를 검사한다 |
+| `SOLPAY_INTERNAL_TOKEN` | 넣으면 `X-Internal-Token` 헤더를 검사한다. **안 넣으면 같은 컴퓨터(127.0.0.1)에서 온 요청만 받는다** (배포에서는 꼭 넣는다, 2026-11-24) |
+| `SOLPAY_DEV_TOOLS` | `on` 이면 개발 화면 `/dev`, API 명세 `/docs`·`/openapi.json`, 시연용 `/internal/dev/reset`·`/internal/payments` 를 연다. 기본은 꺼짐 (2026-11-24) |
 
 ## 평가 결과 (가상 데이터, 365명 1년)
 
