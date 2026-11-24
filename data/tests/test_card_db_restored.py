@@ -40,5 +40,10 @@ def test_새_번호가_겹치지_않는다():
     for name, key in (("benefits.csv", "benefit_id"), ("benefit_tiers.csv", "benefit_tier_id"), ("benefit_targets.csv", "target_id")):
         ids = [r[key] for r in rows(name)]
         assert len(ids) == len(set(ids)), name
-    assert max(int(r["benefit_tier_id"]) for r in rows("benefit_tiers.csv")) == 694
-    assert max(int(r["target_id"]) for r in rows("benefit_targets.csv")) == 674
+    # 되살린 6줄은 카드 1~40 의 마지막 번호다. 2026-11-24 신한카드 4장(41~44, 혜택 290~)은 그 다음 번호부터 쓴다.
+    old = lambda r: int(r["benefit_id"]) <= 289
+    tiers, targets = rows("benefit_tiers.csv"), rows("benefit_targets.csv")
+    assert max(int(r["benefit_tier_id"]) for r in tiers if old(r)) == 694
+    assert max(int(r["target_id"]) for r in targets if old(r)) == 674
+    assert min(int(r["benefit_tier_id"]) for r in tiers if not old(r)) == 695
+    assert min(int(r["target_id"]) for r in targets if not old(r)) == 675
