@@ -56,6 +56,15 @@ def test_장소_일정_초안(tb):
                                                      "end": "16:00", "title": ""}
 
 
+def test_야구도_장소_일정_업종(tb):          # 2026-11-24: 앱 장소 일정 빠른 선택에 '야구'(baseball)를 더함
+    tb.user_words = "내일 6시부터 9시까지 야구 일정 넣어줘"
+    tb.run("draft_schedule", {"day": "tomorrow", "kind": "place", "place_category": "baseball", "start": "18:00",
+                              "end": "21:00", "source_text": tb.user_words})
+    b = _block(tb, "schedule_draft")
+    assert b["input"]["category"] == "baseball" and "야구" in b["summary"]
+    assert "baseball 야구" in prompts.system_prompt(AT, ["KB ALL 카드"])
+
+
 def test_장소_일정의_끝_시간을_말하지_않았으면_되묻기(tb):
     tb.user_words = "오늘 3시에 카페 일정 추가해줘"
     for args in ({"start": "15:00"}, {"start": "15:00", "end": "16:00"}):     # 끝 시간을 지어내도 받지 않는다

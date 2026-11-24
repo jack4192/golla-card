@@ -37,7 +37,8 @@ EVENT_TYPES = {"hospital": "병원 예약", "half_day": "반차·조퇴", "day_o
                "travel": "외출·여행", "shopping": "쇼핑·장보기", "refuel": "주유·충전", "other": "기타"}
 PLACE_TYPES = {"cafe": "커피", "restaurant": "식사", "pcroom": "PC방", "travel": "여행·숙박", "train": "기차",
                "intercity": "시외·고속버스", "transport": "버스·지하철", "taxi": "택시", "convenience": "편의점",
-               "delivery": "배달", "fuel": "주유·충전", "shopping": "쇼핑", "medical": "병원·약국", "other": "기타"}
+               "delivery": "배달", "fuel": "주유·충전", "shopping": "쇼핑", "medical": "병원·약국", "baseball": "야구",
+               "other": "기타"}
 SCHEDULE_DAYS_AHEAD = 30
 
 
