@@ -47,6 +47,7 @@ class PosPaymentServiceTest {
     private static final LocalDateTime DEMO_NOW = LocalDateTime.parse(FIXED_AT);
     private static final String KEY = "terminal-key-1";
     private static final String CODE = "123456789012345678";
+    private static final String DEMO_KEY = "demo-terminal-key-0123456789";   // 시연용 만능 키 (16자 이상)
 
     record Terminal(Long terminalId, Long merchantId, String merchantName, String category) implements TerminalRow {
         public Long getTerminalId() { return terminalId; }
@@ -72,8 +73,13 @@ class PosPaymentServiceTest {
         userCards = mock(UserCardRepository.class);
         cards = mock(CardRepository.class);
         calculator = mock(BenefitCalculator.class);
-        service = new PosPaymentService(pos, codes, payments, userCards, cards, calculator, new AmountPolicy(), hasher, FIXED_AT);
+        service = service(DEMO_KEY);
         when(pos.findTerminal(HashUtil.sha256Hex(KEY))).thenReturn(List.of(new Terminal(5L, 77L, "스타벅스 강남점", "CAFE")));
+    }
+
+    private PosPaymentService service(String demoKey) {
+        return new PosPaymentService(pos, codes, payments, userCards, cards, calculator, new AmountPolicy(), hasher,
+                FIXED_AT, demoKey);
     }
 
     private static PosPaymentRequest request(String key, String code, Integer amount) throws Exception {
@@ -81,6 +87,13 @@ class PosPaymentServiceTest {
         set(req, "terminalKey", key);
         set(req, "code", code);
         set(req, "amount", amount);
+        return req;
+    }
+
+    private static PosPaymentRequest demoRequest(String key, Long merchantId, String category) throws Exception {
+        PosPaymentRequest req = request(key, "12-34", 5000);       // 형식이 틀려 바로 거절 — 어느 가맹점으로 갔는지만 본다
+        set(req, "merchantId", merchantId);
+        set(req, "category", category);
         return req;
     }
 
@@ -185,5 +198,56 @@ class PosPaymentServiceTest {
         assertThat(res.getAmount() % 100).isZero();
         verify(pos, never()).nextApprovalNo();
         verify(calculator, never()).calculate(any(), any(), any(), any(), any(), anyInt(), any());
+    }
+
+    // ---------- 시연용 만능 키 (2026-11-24 사용자 결정: 가상 POS 에서 아무 가맹점이나 골라 결제) ----------
+
+    @Test
+    @DisplayName("시연용 만능 키면 POS 가 고른 가맹점의 단말기로 결제한다")
+    void demoKeyUsesChosenMerchant() throws Exception {
+        when(pos.findTerminalByMerchant(90L)).thenReturn(List.of(new Terminal(9L, 90L, "CU 강남역점", "CONVENIENCE")));
+
+        PosPaymentResponse res = service.pay(demoRequest(DEMO_KEY, 90L, null));
+
+        assertThat(res.getMerchantName()).isEqualTo("CU 강남역점");
+        verify(pos).insertDeclined(eq(9L), anyString(), eq(5000), eq(DEMO_NOW), eq("INVALID_FORMAT"));
+        verify(pos, never()).findTerminal(any());
+    }
+
+    @Test
+    @DisplayName("시연용 만능 키에 업종만 주면 그 업종 가맹점 중 하나, 없는 가맹점이면 404")
+    void demoKeyCategoryAndUnknownMerchant() throws Exception {
+        when(pos.findRandomTerminalInCategory("CAFE")).thenReturn(List.of(new Terminal(7L, 70L, "투썸플레이스", "CAFE")));
+        when(pos.findTerminalByMerchant(999L)).thenReturn(List.of());
+
+        assertThat(service.pay(demoRequest(DEMO_KEY, null, "CAFE")).getMerchantName()).isEqualTo("투썸플레이스");
+        assertThatThrownBy(() -> service.pay(demoRequest(DEMO_KEY, 999L, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode().getStatus().value())
+                .isEqualTo(404);
+    }
+
+    @Test
+    @DisplayName("진짜 단말기 키는 POS 가 가맹점을 보내도 자기 가맹점으로만 결제한다")
+    void realKeyIgnoresMerchant() throws Exception {
+        PosPaymentResponse res = service.pay(demoRequest(KEY, 90L, "CONVENIENCE"));
+
+        assertThat(res.getMerchantName()).isEqualTo("스타벅스 강남점");
+        verify(pos, never()).findTerminalByMerchant(any());
+        verify(pos, never()).findRandomTerminalInCategory(any());
+    }
+
+    @Test
+    @DisplayName("만능 키를 설정하지 않았거나 16자보다 짧으면 꺼져 있다 (그 키는 없는 단말기로 403)")
+    void demoKeyOffWhenBlankOrShort() throws Exception {
+        for (String configured : new String[]{"", "   ", "short-key"}) {
+            PosPaymentService off = service(configured);
+            String sent = configured.isBlank() ? DEMO_KEY : configured;
+            assertThatThrownBy(() -> off.pay(demoRequest(sent, 90L, null)))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode().getStatus().value())
+                    .isEqualTo(403);
+        }
+        verify(pos, never()).findTerminalByMerchant(any());
     }
 }
