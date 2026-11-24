@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SERVER_CATEGORY, fromServerCategory, toServerCategory } from '../scheduleCategory.js';
 
-const APP_CATEGORIES = ['cafe', 'restaurant', 'pcroom', 'travel', 'train', 'intercity', 'transport', 'taxi', 'convenience', 'delivery', 'fuel', 'shopping', 'medical', 'other'];
+const APP_CATEGORIES = ['cafe', 'restaurant', 'pcroom', 'travel', 'train', 'intercity', 'transport', 'taxi', 'convenience', 'delivery', 'fuel', 'shopping', 'medical', 'baseball', 'other'];
 // 서버(DB categories)에 실제로 있는 업종 코드 중 앱이 쓰는 것
 const SERVER_CODES = ['CAFE', 'RESTAURANT', 'OTHER', 'TRAVEL_AGENCY', 'INTERCITY_TRANSIT', 'TRANSIT', 'TAXI', 'CONVENIENCE', 'DELIVERY', 'FUEL', 'ONLINE_SHOPPING', 'HOSPITAL'];
 
@@ -49,4 +49,11 @@ test('앱에 없는 서버 업종은 기타로 보여 주고 업종 이름을 �
 test('일반 업종에 붙은 이름은 그대로 보낸다', () => {
   assert.deepEqual(toServerCategory({ category: 'cafe', title: '' }), { category: 'CAFE', title: null });
   assert.deepEqual(toServerCategory({ category: 'cafe', title: '스타벅스 강남' }), { category: 'CAFE', title: '스타벅스 강남' });
+});
+
+// 2026-11-24 '야구' 추가 (LG트윈스 신한카드 체크). 서버에는 PC방처럼 '기타 + 이름'으로 보내고, 백엔드가 이름을 AI 분류에 넘기면
+// AI 가 '공연/문화 티켓 + LG트윈스'로 정한다.
+test('야구는 기타 + 이름 야구로 주고받는다', () => {
+  assert.deepEqual(toServerCategory({ category: 'baseball' }), { category: 'OTHER', title: '야구' });
+  assert.deepEqual(fromServerCategory({ category: 'OTHER', title: '야구' }), { category: 'baseball', title: '' });
 });

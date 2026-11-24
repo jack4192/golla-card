@@ -19,11 +19,12 @@ export const SERVER_CATEGORY = {
   fuel: 'FUEL',
   shopping: 'ONLINE_SHOPPING',
   medical: 'HOSPITAL',
+  baseball: 'OTHER',          // 2026-11-24: 백엔드가 이름 '야구'를 AI 분류에 넘겨 공연/문화 티켓 + LG트윈스로 정한다
   other: 'OTHER',
 };
 
 // 서버에서는 한 업종으로 합쳐지는 앱 업종. 다시 읽을 때 구분할 수 있게 일정 이름을 정해 보낸다.
-const MARKER_TITLE = { train: '기차', pcroom: 'PC방' };
+const MARKER_TITLE = { train: '기차', pcroom: 'PC방', baseball: '야구' };
 
 // 서버 업종 → 앱 업종 (이름으로 구분하는 것과 OTHER 는 fromServerCategory 에서 따로 본다)
 const APP_CATEGORY = {
