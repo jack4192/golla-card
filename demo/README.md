@@ -8,7 +8,7 @@
 실제 서비스의 `앱 → Spring → FastAPI 추천 엔진` 구조를 그대로 따릅니다. 이 데모 서버가 Spring 역할을 합니다.
 
 ```
-결제 화면(/pay)·가상 POS(/pos)
+가상 POS(/pos)  ── 카메라로 앱 QR·바코드 찍기
         │
         ▼
 데모 서버 (demo/, 포트 8000)  ── 토큰 발급, POS 승인, 거래 저장
@@ -40,8 +40,8 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-- 결제 화면: http://localhost:8000/pay
-- 가상 POS: http://localhost:8000/pos
+- 가상 POS: http://localhost:8000/pos (주소 맨 앞 / 로 들어와도 POS 로 간다)
+- 결제 데모 화면(/pay)은 2026-11-24 에 뺐다. 결제 코드는 SOL·Pay 앱의 QR 결제 창에서 만든다.
 - API 문서: http://localhost:8000/docs
 
 AI 엔진을 다른 주소나 포트로 켰다면 `SOLPAY_AI_URL` 로 알려 줍니다.
@@ -50,8 +50,19 @@ AI 엔진을 다른 주소나 포트로 켰다면 `SOLPAY_AI_URL` 로 알려 줍
 SOLPAY_AI_URL=http://127.0.0.1:8000 uvicorn app.main:app --port 8001
 ```
 
-휴대폰으로 결제 화면을 띄우려면 노트북과 휴대폰을 같은 와이파이에 두고
-`DEMO_HOST=0.0.0.0 ./run_demo.sh`로 실행한 뒤 휴대폰에서 `http://<노트북 IP>:8000/pay`를 엽니다.
+### SOL·Pay 앱 결제와 잇기 (2026-11-24)
+
+가맹점별 POS 단말기 키를 `SOLPAY_FIXED_TERMINAL_KEYS` 에 JSON 으로 주면, 가상 POS 가 승인 요청을 백엔드(`http://127.0.0.1:8080/api/v1/pos/payments`)로 보낸다. 이때 가맹점 목록에는 키가 있는 가맹점만 나온다.
+
+```bash
+SOLPAY_FIXED_TERMINAL_KEYS='{"164":"<단말기 키>"}' uvicorn app.main:app --port 8000
+```
+
+키를 주지 않으면 예전처럼 이 데모 서버가 발급한 코드만 승인한다.
+
+### 카메라로 찍기
+
+승인 요청 아래 "카메라로 QR·바코드 찍기" 를 누르면 카메라로 QR·Code128 을 읽어 번호를 채우고 바로 승인 요청을 보낸다. 브라우저에 BarcodeDetector 가 없으면 ZXing(jsDelivr)을 불러오므로 인터넷이 필요하다. 카메라는 localhost 또는 https 에서만 켜진다 (Claude 앱 안 브라우저는 카메라를 막으므로 크롬 등 일반 브라우저로 연다).
 
 ## 시연 순서
 
