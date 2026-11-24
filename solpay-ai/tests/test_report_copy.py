@@ -582,8 +582,9 @@ def test_writer_장애면_정해진_문구():
 def test_설정_환경_변수(monkeypatch):
     monkeypatch.setenv("REPORT_COPY_TIMEOUT_SEC", "3")
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_REASONING_EFFORT", raising=False)
     s = CopySettings.from_env(ReportCopyWriter.settings_env)
-    assert s.timeout_sec == 3 and s.model == "gpt-4o-mini"
+    assert s.timeout_sec == 3 and s.model == "gpt-6.1-terra" and s.reasoning_effort == "none"
     assert ReportCopyWriter.prompt_version == "2026-11-22.7" and PageCopyWriter.settings_env == "PAGE_COPY_TIMEOUT_SEC"
 
 

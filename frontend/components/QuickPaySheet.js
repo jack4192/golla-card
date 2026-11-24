@@ -2,8 +2,8 @@
 // 결제 화면으로 넘어가지 않고, 화면 아래에서 QR·바코드만 간결하게 보여줍니다.
 // - 열리면 60초짜리 결제 코드를 발급하고, 시간이 지나면 '새 코드 받기'로 다시 발급합니다.
 //   서버 모드는 서버가 발급한 코드(2026-11-24, 결제 API)이고, 데모 모드는 기기에서 만든 예시 코드입니다.
-// - 서버 모드: 2초마다 코드 상태를 확인해 가상 POS 에서 결제되면 알아채고, '이 코드로 결제'로 앱에서 바로 결제할 수도 있습니다.
-//   일정에서 연 결제는 그 일정 업종의 가맹점에서 결제합니다. 결제가 끝나면 결과를 보여 주고 onPaid 로 홈을 새로 고칩니다.
+// - 서버 모드: 2초마다 코드 상태를 확인해 가상 POS 에서 결제되면 알아채고, 결과를 보여 준 뒤 onPaid 로 홈을 새로 고칩니다.
+//   앱에서 바로 결제하는 '이 코드로 결제(시연)' 버튼은 최종본에서 뺐습니다 (2026-11-24 사용자 요청). 결제는 가상 POS 로만.
 // - 카드 변경은 시트 안에서 바로 하고, 자세한 혜택 비교는 '혜택 자세히 보기'로 기존 결제 화면을 엽니다.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, AppState, Image, Modal, PanResponder, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -11,7 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Codes, makeDemoCode, protectScreen, realWalletCards } from '../screens/PaymentScreen';
 import { SERVER_MODE, api } from '../utils/api';
 import { serverCardLinks } from '../utils/serverCards';
-import { POLL_MS, codeFromServer, declineMessage, receiptFromPayment, receiptFromRecent, serverCategoryOf, shouldPoll } from '../utils/paymentCodeCore';
+import { POLL_MS, codeFromServer, receiptFromRecent, shouldPoll } from '../utils/paymentCodeCore';
 
 const CODE_SECONDS = 60;
 const CLOSE_DISTANCE = 80;
@@ -26,11 +26,10 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
   const [picking, setPicking] = useState(false);
-  const [paying, setPaying] = useState(false);
   const [receipt, setReceipt] = useState(null);   // 결제가 끝나면 { merchantName, amount, totalDiscount, ... }
   const sequence = useRef(0);
   const codeRef = useRef(null);       // 지금 보여 주는 코드 (닫을 때 서버 코드 취소용)
-  const finished = useRef(null);      // 결과를 보여 준 코드 번호 (상태 확인·시연 버튼이 겹쳐도 한 번만)
+  const finished = useRef(null);      // 결과를 보여 준 코드 번호 (상태 확인이 겹쳐도 한 번만)
   const onPaidRef = useRef(onPaid);
   onPaidRef.current = onPaid;
   const dragY = useRef(new Animated.Value(0)).current;
@@ -107,7 +106,6 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
       cancelServerCode();
       setCode(null);
       setReceipt(null);
-      setPaying(false);
       setPicking(false);
       return undefined;
     }
@@ -125,7 +123,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
     let stopped = false;
     const tokenId = code.tokenId;
     const timer = setInterval(async () => {
-      if (stopped || paying || !shouldPoll(codeRef.current, null) || codeRef.current?.tokenId !== tokenId) return;
+      if (stopped || !shouldPoll(codeRef.current, null) || codeRef.current?.tokenId !== tokenId) return;
       try {
         const status = await api.paymentTokenStatus(tokenId);
         if (stopped || status?.status !== 'COMPLETED' || finished.current === tokenId) return;
@@ -139,28 +137,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
       stopped = true;
       clearInterval(timer);
     };
-  }, [visible, code?.tokenId, receipt, paying]);
-
-  // '이 코드로 결제': 앱에서 바로 가상 결제한다. 일정에서 연 결제는 그 일정 업종의 가맹점에서.
-  const payNow = async () => {
-    const current = codeRef.current;
-    if (!SERVER_MODE || !current?.server || paying || Date.now() >= current.expiresAt) return;
-    setPaying(true);
-    setError('');
-    try {
-      const res = await api.payWithToken(current.tokenId, { category: serverCategoryOf(context?.category) });
-      const result = receiptFromPayment(res);
-      if (!result) {
-        setError(declineMessage(res?.declineReason));
-        return;
-      }
-      finish(current.tokenId, result);
-    } catch (problem) {
-      setError(problem?.message || '결제하지 못했어요. 다시 시도해 주세요.');
-    } finally {
-      setPaying(false);
-    }
-  };
+  }, [visible, code?.tokenId, receipt]);
 
   // 남은 시간 표시, 앱이 백그라운드로 가면 시간만 갱신
   useEffect(() => {
@@ -232,20 +209,13 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
             {generating ? <ActivityIndicator color="#245DE5" style={s.loading} />
               : code ? <Codes value={code.value} inactive={expired} /> : null}
           </View>
-          <Text style={s.notice}>
-            {SERVER_MODE ? '가상 결제용 코드예요. 가상 POS 에서 읽거나 아래 버튼으로 결제해 볼 수 있어요. 실제 카드 결제는 되지 않아요.'
-              : 'QR·바코드는 예시이며 실제 결제에 사용할 수 없어요.'}
-          </Text>
-          {SERVER_MODE && <TouchableOpacity accessibilityRole="button" accessibilityLabel="이 코드로 결제"
-            disabled={generating || paying || expired || !code?.server} onPress={payNow}
-            style={[s.payButton, (generating || paying || expired || !code?.server) && s.dim]}>
-            {paying ? <ActivityIndicator color="#FFFFFF" /> : <Text style={s.payText}>이 코드로 결제</Text>}
-          </TouchableOpacity>}
+          {/* 서버 모드의 '가상 결제용 코드예요…' 안내는 뺀다 (2026-11-24 사용자 요청). 서버 없는 예시 모드만 안내 */}
+          {!SERVER_MODE && <Text style={s.notice}>QR·바코드는 예시이며 실제 결제에 사용할 수 없어요.</Text>}
           </>}
           {!!error && <Text style={s.error} accessibilityRole="alert">{error}</Text>}
 
           <View style={s.actions}>
-            <TouchableOpacity accessibilityRole="button" disabled={generating || paying} onPress={issue} style={[s.secondary, (generating || paying) && s.dim]}>
+            <TouchableOpacity accessibilityRole="button" disabled={generating} onPress={issue} style={[s.secondary, generating && s.dim]}>
               <Ionicons name="refresh" size={16} color="#245DE5" />
               <Text style={s.secondaryText}>{paid ? '새 결제 코드 받기' : expired ? '새 코드 받기' : '코드 다시 발급'}</Text>
             </TouchableOpacity>
@@ -296,8 +266,6 @@ const s = StyleSheet.create({
   timer: { fontSize: 18, fontWeight: '800', color: '#245DE5' },
   timerExpired: { color: '#C53D56' },
   timerPaid: { color: '#1E8E5A' },
-  payButton: { minHeight: 48, borderRadius: 14, backgroundColor: '#245DE5', alignItems: 'center', justifyContent: 'center', marginTop: 4 },
-  payText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   receipt: { borderRadius: 16, backgroundColor: '#F1FAF5', borderWidth: 1, borderColor: '#CDEBDB', padding: 16, gap: 6 },
   receiptHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   receiptTitle: { fontSize: 17, fontWeight: '800', color: '#16324F' },
