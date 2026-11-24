@@ -1,0 +1,95 @@
+# v2 사용자 유형과 데모 사용자 (2026-11-22 사용자 결정). 기본 personas.yml 위에 겹쳐 쓴다.
+archetypes:
+  HOMEMAKER:
+    name: 전업주부
+    habit: { habit: 0.85, random: 0.15 }
+    choice_model: { type: category_habit, main_prob: 0.3 }
+  SELFEMP:
+    name: 자영업자
+    habit: { habit: 0.85, random: 0.15 }
+    choice_model: { type: category_habit, main_prob: 0.4 }
+  SHIFT:
+    name: 교대근무
+    habit: { habit: 0.85, random: 0.15 }
+    choice_model: { type: main_card }
+  FIELD:
+    name: 영업·외근직
+    habit: { habit: 0.85, random: 0.15 }
+    choice_model: { type: category_habit, main_prob: 0.5 }
+  RETIRED:
+    name: 은퇴자
+    habit: { habit: 0.85, random: 0.15 }
+    choice_model: { type: category_habit, main_prob: 0.3 }
+
+# 데모 사용자: 소비 패턴·월 지출(amount_level)은 v1 그대로, 카드만 사용자가 고른 3~5장 구성 (2026-11-22)
+# 모두의카드를 가진 사람은 그 카드를 K-패스 등록 카드이자 교통 대표 카드로 둔다
+demo_users:
+  - id: 1
+    display_name: 데모 사용자 1
+    archetype: OFFICE
+    age_band: 30s
+    gender: F
+    zones: { home: BANGBAE, work: GANGNAM, weekend: SEONGSU }
+    kpass_tier: general
+    cards: [SH_DISCOUNT_PLAN_PLUS, KB_ALL, SH_MODU, SH_SOL_TRAVEL_CHECK]
+    amount_level: 0.892
+    kpass_card: SH_MODU
+    transit_default: SH_MODU
+    special: [golf, car]
+    note: 30대 사무직 4장. Discount Plan+ 오전 카페·점심 10%, KB ALL 전 업종 1%, 모두의카드 교통·편의점, SOL트래블 편의점 5%의 경쟁
+
+  - id: 2
+    display_name: 데모 사용자 2
+    archetype: STUDENT
+    age_band: 20s
+    gender: M
+    zones: { home: SILLIM, work: SINCHON, weekend: HONGDAE }
+    kpass_tier: youth
+    cards: [SH_CHEOUM_CHECK, SH_MODU, KB_NORI2_CHECK]
+    amount_level: 0.702
+    kpass_card: SH_MODU
+    transit_default: SH_MODU
+    special: []
+    note: 대학생 3장 (체크 2 + 첫 신용카드). 처음 체크 카페·편의점·푸드 적립, 모두의카드 교통·편의점, 노리2 커피 10%의 경쟁
+
+  - id: 3
+    display_name: 데모 사용자 3
+    archetype: HOMEMAKER
+    age_band: 50s
+    gender: F
+    zones: { home: JEONGJA, work: null, weekend: JEONGJA }
+    kpass_tier: general
+    cards: [SH_SOLMATE_SOL_PLAN_CHECK, NH_ALLWONDERFUL_DC, BC_THE_OIL, HANA_HERO_CHECK, SH_SIMPLE_PLAN]
+    amount_level: 0.844
+    kpass_card: null
+    transit_default: null
+    special: [pet, car]
+    note: 50대 전업주부 5장. SOL Plan 체크 병원·마트·카페, 올원더풀 병원·약국 10%, 더 오일 주유·외식, HERO 관리비·마트, Simple Plan 1%의 경쟁
+
+  - id: 4
+    display_name: 데모 사용자 4
+    archetype: NIGHTOWL
+    age_band: 20s
+    gender: M
+    zones: { home: MANGWON, work: GASAN, weekend: MANGWON }
+    kpass_tier: youth
+    cards: [SH_DISCOUNT_PLAN, SH_MODU, HANA_HERO_CHECK, KB_CHECKCHECK]
+    amount_level: 0.697
+    kpass_card: SH_MODU
+    transit_default: SH_MODU
+    special: [pet]
+    note: 20대 야근 직장인 4장. Discount Plan 심야 배달·편의점 10%, 모두의카드 5%, HERO 구독, 첵첵 CU·간편결제의 경쟁
+
+  - id: 5
+    display_name: 데모 사용자 5
+    archetype: REMOTE
+    age_band: 30s
+    gender: M
+    zones: { home: YEONNAM, work: null, weekend: YEONNAM }
+    kpass_tier: general
+    cards: [SH_MODU, HANA_MOVING_ONLINE, NH_ZGM_SAVE_CHECK, BC_THE_OIL, SH_SOLLINK_POINT_PLAN_CHECK]
+    amount_level: 0.726
+    kpass_card: SH_MODU
+    transit_default: SH_MODU
+    special: [car]
+    note: 30대 재택 5장. 모두의카드 간편결제 5%, MOVING ONLINE 온라인·커피, zgm 저장체크 온라인 3%·카페 4%, 더 오일 주유·온라인쇼핑, SOL LINK 편의점의 경쟁
