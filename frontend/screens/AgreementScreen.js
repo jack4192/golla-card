@@ -132,7 +132,7 @@ export default function AgreementScreen({
           <Text style={styles.hint}>선택 항목을 건너뛰어도 홈, 일정 관리와 일과 기반 카드 추천을 이용할 수 있어요.</Text>
           <CheckRow
             title="[선택] 알림 수신 동의"
-            description="아침 일정과 혜택 알림을 받아볼 수 있어요."
+            description="매일 오전 7시에 일정 입력 안내를 받아볼 수 있어요."
             checked={morningNotificationAgreed}
             disabled={busy}
             onPress={() => toggleChoice('morningNotificationAgreed')}

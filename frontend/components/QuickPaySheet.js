@@ -2,7 +2,7 @@
 // 결제 화면으로 넘어가지 않고, 화면 아래에서 QR·바코드만 간결하게 보여줍니다.
 // - 열리면 60초짜리 결제 코드를 발급하고, 시간이 지나면 '새 코드 받기'로 다시 발급합니다.
 //   서버 모드는 서버가 발급한 코드(2026-11-24, 결제 API)이고, 데모 모드는 기기에서 만든 예시 코드입니다.
-// - 서버 모드: 2초마다 코드 상태를 확인해 가상 POS 에서 결제되면 알아채고, '이 코드로 결제(시연)'로 앱에서 바로 결제할 수도 있습니다.
+// - 서버 모드: 2초마다 코드 상태를 확인해 가상 POS 에서 결제되면 알아채고, '이 코드로 결제'로 앱에서 바로 결제할 수도 있습니다.
 //   일정에서 연 결제는 그 일정 업종의 가맹점에서 결제합니다. 결제가 끝나면 결과를 보여 주고 onPaid 로 홈을 새로 고칩니다.
 // - 카드 변경은 시트 안에서 바로 하고, 자세한 혜택 비교는 '혜택 자세히 보기'로 기존 결제 화면을 엽니다.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -141,7 +141,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
     };
   }, [visible, code?.tokenId, receipt, paying]);
 
-  // '이 코드로 결제(시연)': 앱에서 바로 결제한다. 일정에서 연 결제는 그 일정 업종의 가맹점에서.
+  // '이 코드로 결제': 앱에서 바로 가상 결제한다. 일정에서 연 결제는 그 일정 업종의 가맹점에서.
   const payNow = async () => {
     const current = codeRef.current;
     if (!SERVER_MODE || !current?.server || paying || Date.now() >= current.expiresAt) return;
@@ -236,10 +236,10 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
             {SERVER_MODE ? '가상 결제용 코드예요. 가상 POS 에서 읽거나 아래 버튼으로 결제해 볼 수 있어요. 실제 카드 결제는 되지 않아요.'
               : 'QR·바코드는 예시이며 실제 결제에 사용할 수 없어요.'}
           </Text>
-          {SERVER_MODE && <TouchableOpacity accessibilityRole="button" accessibilityLabel="이 코드로 결제, 시연"
+          {SERVER_MODE && <TouchableOpacity accessibilityRole="button" accessibilityLabel="이 코드로 결제"
             disabled={generating || paying || expired || !code?.server} onPress={payNow}
             style={[s.payButton, (generating || paying || expired || !code?.server) && s.dim]}>
-            {paying ? <ActivityIndicator color="#FFFFFF" /> : <Text style={s.payText}>이 코드로 결제 (시연)</Text>}
+            {paying ? <ActivityIndicator color="#FFFFFF" /> : <Text style={s.payText}>이 코드로 결제</Text>}
           </TouchableOpacity>}
           </>}
           {!!error && <Text style={s.error} accessibilityRole="alert">{error}</Text>}

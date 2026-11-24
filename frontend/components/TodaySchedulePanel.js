@@ -15,7 +15,6 @@ import { loadDayPlacement } from '../utils/dayTimeline';
 import { loadTodayPayments } from '../utils/payments';
 import { MAX_MINUTE, STEP_MINUTES, cardChangeDots, minuteOfDay, minuteToRatio, paymentAt, paymentDots, paymentLine, ratioToMinute, scrubbedCard, timeLabel } from '../utils/dayTimelineCore';
 import { aiWindowKey, inAiWindow, scheduleAiExample, scheduleAiMatch } from '../utils/scheduleAiCore';
-import { SCHEDULE_SAMPLES } from '../data/samplePayment';
 import { resolveWalletProduct } from './WalletProductCard';
 import SpecialScheduleModal from './SpecialScheduleModal';
 import { CATEGORIES, categoryLabel, dailyBasicSchedule, dateKey, deleteEvent, effectiveDetailedRoutine, eventBenefitCategories, eventEndDate, eventTimeCaption, eventTitle, isTodayConfirmed, makeSignals, readEvents, readProfile, shiftDate } from '../utils/routineData';
@@ -225,11 +224,8 @@ export default function TodaySchedulePanel({
   onOpenCards,
   cardList = null,
   paymentsList = null,   // 홈 '최근 이용내역' (서버 모드, MainScreen 이 넣는다)
-  headerRight = null,    // 홈 '내 지갑' 제목 오른쪽 (자동 배치 스위치, 2026-11-24 수정사항)
+  headerRight = null,    // 홈 '카드 추천' 제목 오른쪽 (자동 배치 스위치)
   onOpenSchedule,
-  sampleActive,
-  onStartSample,
-  onEndSample,
   cards = [],
   selectedCard,
   home = false,
@@ -346,10 +342,6 @@ export default function TodaySchedulePanel({
   const products = cards.map(toScheduleProduct);
   const selectedProduct = resolveWalletProduct(selectedCard);
   const canPayWithSelected = cards.some(card => card.id === selectedCard?.id);
-  const sample = SCHEDULE_SAMPLES.find(item => item.id === sampleActive);
-  const sampleMatch = sample && findScheduleCard([sample.category], sample.cards.map(toScheduleProduct),
-    new Date(`${day}T${sample.start}:00`));
-  const sampleCard = sample && (sampleMatch?.card || sample.cards[0]);
   // 일정 업종의 카드: 서버 모드에서 AI 계산이 있으면 그것을, 아직 없거나 데모 모드면 앱 계산을 쓴다.
   const matchFor = (categories, when) => {
     if (SERVER_MODE && categories.length && categories.every(category => aiByCategory[category] !== undefined)) {
@@ -589,7 +581,7 @@ export default function TodaySchedulePanel({
     const cardAction = card ? '다른 카드로 변경' : '카드 등록';
     return <View style={styles.home}>
       <View style={styles.homeHeadRow}>
-        <Text accessibilityRole="header" style={styles.headline}>내 지갑</Text>
+        <Text accessibilityRole="header" style={styles.headline}>카드 추천</Text>
         {headerRight}
       </View>
       <View style={[styles.homeCard, styles.homeCardScheduled]}>
@@ -658,38 +650,8 @@ export default function TodaySchedulePanel({
     {disabled ? <Text style={styles.hint}>개발자 미리보기</Text>
       : loading ? <Text style={styles.hint}>일정을 불러오는 중이에요.</Text>
         : !!error ? <Text style={styles.hint}>{error}</Text>
-          : sample ? <View style={styles.empty}>
-            <Text style={styles.blue}>예시 일정 · 저장되지 않아요</Text>
-            <View style={styles.sampleChoices}>
-              {SCHEDULE_SAMPLES.map(item => <TouchableOpacity key={item.id} accessibilityRole="button"
-                accessibilityState={{ selected: item.id === sample.id }}
-                style={[styles.sampleChoice, item.id === sample.id && styles.sampleSelected]}
-                onPress={() => onStartSample?.(item.id)}>
-                <Text style={styles.blue}>{item.caption}</Text>
-              </TouchableOpacity>)}
-            </View>
-            <View style={styles.timelineButton}>
-              <View style={styles.entryIcon}><Ionicons name={categoryIcons[sample.category]} size={21} color="#2059C7" /></View>
-              <Text style={styles.title}>{sample.start}~{sample.end} {sample.title}</Text>
-            </View>
-            <View style={styles.recommendation}>
-              <Text style={styles.blue}>추천 카드</Text>
-              <View style={styles.cardPreview}>
-                <Image source={sampleCard.image} resizeMode="contain" fadeDuration={0} style={styles.productImage} accessibilityLabel={sampleCard.name + ' 상품 이미지'} />
-                <View style={styles.entryText}>
-                  <Text style={styles.title}>{sampleCard.name}</Text>
-                  {!!sampleMatch && <Text style={styles.offer}>{sampleMatch.label}</Text>}
-                </View>
-              </View>
-            </View>
-            <TouchableOpacity accessibilityRole="button" style={styles.secondary} onPress={onEndSample}>
-              <Text style={styles.blue}>예시 닫기</Text>
-            </TouchableOpacity>
-          </View> : timeline.length === 0 ? <View style={styles.empty}>
+          : timeline.length === 0 ? <View style={styles.empty}>
             <Text style={styles.title}>등록된 일정이 없어요</Text>
-            {onStartSample && <TouchableOpacity accessibilityRole="button" style={styles.secondary} onPress={() => onStartSample(SCHEDULE_SAMPLES[0].id)}>
-              <Text style={styles.white}>예시 일정 확인</Text>
-            </TouchableOpacity>}
           </View> : <View style={styles.timeline}>
             {timeline.map(row => {
               const expanded = activeKey === row.key;
@@ -873,9 +835,6 @@ const styles = StyleSheet.create({
   },
   homeSchedule:{flexDirection:'row',alignItems:'center',gap:8,minHeight:56,padding:10},
   homeScheduleText:{flex:1,minWidth:0,color:'#526783',fontSize:13,textAlign:'right'},
-  sampleChoices:{flexDirection:'row',flexWrap:'wrap',justifyContent:'center',gap:6},
-  sampleChoice:{minHeight:44,justifyContent:'center',paddingHorizontal:10,borderRadius:14},
-  sampleSelected:{backgroundColor:'#E2EDFF'},
   hero:{flexDirection:'row',alignItems:'center',gap:14,marginBottom:9},
   headline:{fontSize:33,lineHeight:41,letterSpacing:-1.2,fontWeight:'800',color:'#13213E'},
   homeHeadRow:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},

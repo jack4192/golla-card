@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -18,7 +18,7 @@ import { SERVER_MODE, api, clearToken, readToken, setSessionExpiredHandler } fro
 import { SESSION_EXPIRED_MESSAGE, startupKeepsSession } from './utils/sessionCore';
 import { addServerCardByCode, registerServerCard, removeServerCard, resetServerCards } from './utils/serverCards';
 import { applySignupJob, rememberSignupJob } from './utils/signupJob';
-import { cancelPhoneNotifications, requestPhonePermission } from './utils/notifications';
+import { addMorningNotificationOpenListener, cancelPhoneNotifications, requestPhonePermission, syncPhoneNotifications } from './utils/notifications';
 import {
   deleteDemoData,
   hasPendingReset,
@@ -152,6 +152,7 @@ export default function App() {
   const [consentDraft, setConsentDraft] = useState(null);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [scheduleEditor, setScheduleEditor] = useState({});
+  const [morningSchedulePending, setMorningSchedulePending] = useState(false);
   const [routineMode, setRoutineMode] = useState('onboarding');
   // '일정 맞춤 추천'에서 '‹ 일정 다시 확인'을 누르면 돌아갈 곳 (2026-11-24 수정사항):
   //   'DailyRoutine' = 일정 관리(가입 흐름·일정 관리에서 다음), 그 밖은 메인의 그 탭('schedule' = 오늘의 일정, 'home')
@@ -245,11 +246,11 @@ export default function App() {
     Keyboard.dismiss();
   }, [currentScreen, previewScreen]);
 
-  const navigate = screen => {
+  const navigate = useCallback(screen => {
     setShowDevMenu(false);
     if (screen !== 'Main') setMainTab('home');
     setCurrentScreen(screen);
-  };
+  }, []);
   const backFromRecommendation = () => {
     if (recommendBack === 'DailyRoutine') {
       navigate('DailyRoutine');
@@ -771,6 +772,8 @@ export default function App() {
     try {
       await waitForWalletWrites();
 
+      if (scope === 'account') await cancelPhoneNotifications().catch(() => {});
+
       // '동의 철회 및 이 기기의 계정 초기화': 서버 모드면 서버의 필수 동의도 철회합니다 (2026-11-24). 실패해도 기기 초기화는 계속
       if (scope === 'account' && SERVER_MODE) {
         await api.saveAgreement(false).catch(() => {});
@@ -794,11 +797,27 @@ export default function App() {
     }
   };
 
-  const openRoutine = (date, entryId) => {
+  const openRoutine = useCallback((date, entryId) => {
     setScheduleEditor({ date, entryId });
     setRoutineMode('edit');
     navigate('DailyRoutine');
-  };
+  }, [navigate]);
+
+  const morningNotificationAgreed = consent?.termsAgreed === true && consent.morningNotificationAgreed === true;
+  useEffect(() => {
+    if (authenticated) syncPhoneNotifications({ agreed: morningNotificationAgreed }).catch(() => {});
+  }, [authenticated, morningNotificationAgreed]);
+
+  useEffect(() => addMorningNotificationOpenListener(() => setMorningSchedulePending(true)), []);
+  useEffect(() => {
+    if (!morningSchedulePending || isRestoring || !authenticated || consent?.termsAgreed !== true ||
+      privacyOpen || ['Login', 'SignUp', 'Agreement'].includes(currentScreen)) return;
+    setMorningSchedulePending(false);
+    setPreviewScreen(null);
+    setPreviewWallet(null);
+    if (onboardingComplete) openRoutine();
+    else navigate('DailyRoutine');
+  }, [morningSchedulePending, isRestoring, authenticated, consent, privacyOpen, currentScreen, onboardingComplete, openRoutine, navigate]);
 
   // 개발자 체험용 이동. 실제 로그인 상태는 변경하지 않습니다.
   const previewGo = screen => {
@@ -999,6 +1018,7 @@ export default function App() {
       case 'DailyRoutine':
         return (
           <DetailedRoutineScreen
+            key={scheduleEditor.date || 'today'}
             {...scheduleEditor}
             onContinue={handleRoutineContinue}
             onBack={() =>
@@ -1042,6 +1062,7 @@ export default function App() {
               onRegisterCard={handleRegisterCard}
               onRemoveCard={handleRemoveCard}
               onLogout={handleLogout}
+              onConsentChange={setConsent}
               allowAutomaticAds={allowAutomaticAds}
               scheduleDisabled={Boolean(previewScreen) || privacyOpen}
               onEditRoutine={openRoutine}
