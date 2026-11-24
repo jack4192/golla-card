@@ -1,7 +1,8 @@
-import PaymentCardOrder, { orderCards } from '../components/PaymentCardOrder';
 import PaymentBenefitChat from '../components/PaymentBenefitChat';
+import BenefitDetailBox from '../components/BenefitDetailBox';
+import ActualBenefitCalc from '../components/ActualBenefitCalc';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import makeQR from 'qrcode-generator';
@@ -353,7 +354,7 @@ export function useBenefitEstimate({ options, selected, baseline, schedule = nul
   const selectedBenefit = estimates.find(row => row.card.id === selected?.id)?.benefit;
   const baseBenefit = estimates.find(row => row.card.id === baseline?.id)?.benefit;
   const difference = selected?.id === baseline?.id ? null : comparePayment(selectedBenefit, baseBenefit);
-  return { scheduleScenario, scheduleAi, scenario, contextKey, estimates, selectedBenefit, baseBenefit, difference };
+  return { scheduleScenario, scheduleAi, scenario, contextKey, aiRows, estimates, selectedBenefit, baseBenefit, difference };
 }
 
 export default function PaymentScreen({
@@ -379,8 +380,7 @@ export default function PaymentScreen({
   const [receipt, setReceipt] = useState(null);
   const [imageError, setImageError] = useState(false);
   const [imageRetry, setImageRetry] = useState(0);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [cardDragActive, setCardDragActive] = useState(false);
+  const [calcOpen, setCalcOpen] = useState(false);   // '실제 혜택 계산하기' 창 (2026-11-24)
   // AI 카드 배치 (서버 모드). status: off(데모 모드) / loading / ready / failed
   const [placement, setPlacement] = useState({ status: SERVER_MODE ? 'loading' : 'off', result: null });
   const userPicked = useRef(false);   // 사용자가 직접 카드를 고르면 AI 가 다시 바꾸지 않는다
@@ -395,7 +395,7 @@ export default function PaymentScreen({
   const selected = options.find(item => item.id === selectedId) || options[0];
   const baseline = options.find(item => item.id === baselineId) || options[0];
   // 예상 혜택 계산은 홈 카드 뒷면과 같이 쓴다 (useBenefitEstimate, 2026-11-24)
-  const { scheduleScenario, scheduleAi, scenario, contextKey, estimates, selectedBenefit, baseBenefit, difference }
+  const { scheduleScenario, scheduleAi, scenario, contextKey, aiRows, estimates, selectedBenefit, baseBenefit, difference }
     = useBenefitEstimate({ options, selected, baseline, schedule, placement, scenarioId, assume });
   const estimateGroups = [
     {
@@ -414,7 +414,6 @@ export default function PaymentScreen({
   ];
   const ai = placement.result;
   const aiTop = ai?.topId && !ai.fallback ? options.find(item => item.id === ai.topId) : null;
-  const orderedOptions = ai && !ai.fallback ? orderCards(options, ai.order) : options;
   const source = selected?.image;
   const seconds = payment ? Math.max(0, Math.ceil((payment.expiresAt - now) / 1000)) : 0;
   const expired = !payment || seconds === 0 || payment.status !== 'pending' || payment.cardId !== selected?.id || payment.contextKey !== contextKey;
@@ -590,8 +589,7 @@ export default function PaymentScreen({
       </View>;
   }
   return <>
-    <ScrollView style={[s.screen, Platform.OS === 'web' && cardDragActive && s.scrollLocked]}
-      scrollEnabled={!cardDragActive} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+    <ScrollView style={s.screen} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
       <View style={s.container}>
         <View style={s.header}>
           <TouchableOpacity accessibilityRole="button" onPress={close}>
@@ -641,28 +639,7 @@ export default function PaymentScreen({
             {' · '}실제 상품 이미지
           </Text>
 
-          {placement.status !== 'off' && <View style={s.aiBox} accessibilityLiveRegion="polite">
-              <View style={s.aiHead}>
-                <View style={s.aiBadge}><Text style={s.aiBadgeText}>AI 추천</Text></View>
-                {placement.status === 'loading' && <ActivityIndicator size="small" color="#245DE5" />}
-              </View>
-
-              {placement.status === 'loading' && <Text style={s.aiText}>카드 순서를 정하고 있어요.</Text>}
-              {placement.status === 'failed' && <Text style={s.aiText}>추천을 불러오지 못해 지갑 순서대로 보여 드려요.</Text>}
-              {placement.status === 'ready' && !!ai?.fallback && <Text style={s.aiText}>추천 응답이 없어 지갑 순서대로 보여 드려요.</Text>}
-              {placement.status === 'ready' && !ai?.fallback && !aiTop && <Text style={s.aiText}>순서를 정할 수 있는 카드가 아직 없어요.</Text>}
-              {placement.status === 'ready' && !!aiTop && selected.id === aiTop.id && <Text style={s.aiText}>
-                  {ai.message || '지금 결제에 맞는 카드를 맨 앞에 뒀어요.'}
-                </Text>}
-              {placement.status === 'ready' && !!aiTop && selected.id !== aiTop.id && <>
-                  <Text style={s.aiText}>
-                    맨 앞에 둔 추천 카드는 {aiTop.name}예요.
-                  </Text>
-                  <TouchableOpacity accessibilityRole="button" onPress={() => choose(aiTop)} style={s.aiButton}>
-                    <Text style={s.link}>이 카드로 바꾸기</Text>
-                  </TouchableOpacity>
-                </>}
-            </View>}
+          {/* 'AI 추천' 상자는 뺐다 (2026-11-24, 홈 카드 뒷면에서 보여 준다) */}
 
         </View>
 
@@ -700,32 +677,39 @@ export default function PaymentScreen({
             {error}
           </Text>}
 
-        <Text style={s.scrollHint}>
-          아래에서 카드 선택 이유와 상세 혜택을 확인하세요 ↓
-        </Text>
+        {/* 예상 혜택 + 카드 선정 이유를 한 상자로 (2026-11-24). 가맹점·금액·비교는 상자 본문에 있으니 상세 내역에는 겹치지 않는 것만 */}
+        <BenefitDetailBox scenario={scenario} selected={selected} baseline={baseline} selectedBenefit={selectedBenefit}
+          baseBenefit={baseBenefit} difference={difference} aiRows={aiRows} scheduleScenario={scheduleScenario}
+          why={scheduleScenario && !scheduleAi
+            ? selected.id === schedule.cardId
+              ? '오늘 일정의 업종과 관련된 혜택이 있는 보유 카드예요.'
+              : '결제 카드를 바꿨어요. 바꾸기 전과 같은 일정·금액으로 혜택을 확인할 수 있어요.'
+            : placement.status === 'loading' ? ''
+            // 1순위 카드면 AI 안내 문구만 ('AI가 …골랐어요' 같은 설명 문장은 수정사항2 5번대로 넣지 않는다, PR #11 검토)
+            : aiTop && selected.id === aiTop.id
+              ? ai.message || '지금 결제에 맞춰 맨 앞에 둔 카드예요.'
+              : '지갑에서 직접 고른 카드예요.'}
+          // 추천을 불러오는 중·못 불러옴·대체 응답이면 한 줄 알린다 (PR #11 검토: AI 상자와 함께 빠졌던 안내)
+          status={scheduleScenario && !scheduleAi ? ''
+            : placement.status === 'loading' ? '추천 카드를 정하고 있어요.'
+            : placement.status === 'failed' ? '추천을 불러오지 못해 지금 고른 카드로 계산했어요.'
+            : placement.status === 'ready' && ai?.fallback ? '추천 응답이 없어 지금 고른 카드로 계산했어요.' : ''}
+          details={[
+            selectedBenefit && scenario && Number.isFinite(selectedBenefit.value) && selectedBenefit.unit === 'KRW' && selectedBenefit.value > 0
+              && '계산: ' + won(scenario.amount) + ' 결제 → ' + won(selectedBenefit.value) + ' 혜택 → 실제로 내는 돈 약 ' + won(Math.max(0, scenario.amount - selectedBenefit.value)),
+            selectedBenefit?.reason && '계산 기준: ' + String(selectedBenefit.reason).replace(/^AI 엔진 계산\s*·?\s*/, ''),
+            selectedBenefit?.condition && selectedBenefit.condition !== selectedBenefit.reason && selectedBenefit.condition,
+          ]} />
+        {/* 예상 혜택 아래 '실제 혜택 계산하기': 업종·금액을 직접 넣어 지금 고른 카드 혜택 계산 (2026-11-24) */}
+        <Text style={s.calcPrompt}>예상 혜택과 실제 혜택은 얼마나 다를까요?{'\n'}결제할 곳과 금액을 넣고 직접 확인해 보세요!</Text>
+        {calcOpen
+          ? <ActualBenefitCalc key={selected.id} card={selected} cards={options} onClose={() => setCalcOpen(false)} />
+          : <TouchableOpacity accessibilityRole="button" onPress={() => setCalcOpen(true)} style={s.calcOpen}>
+              <Ionicons name="calculator-outline" size={17} color="#1D55D9" />
+              <Text style={s.calcOpenText}>실제 혜택 계산하기</Text>
+            </TouchableOpacity>}
 
-        <PaymentCardOrder cards={options} selectedId={selected.id} syncSelection={false}
-          onSelect={id => { const item = options.find(option => option.id === id); if (item) choose(item); }}
-          onDragActiveChange={setCardDragActive}
-          aiOrder={!auto.on || ai?.fallback ? null : ai?.order} />
-
-        <View style={s.box}>
-          <Text style={s.heading}>카드 선정 이유</Text>
-
-          <Text style={s.text}>
-            {scheduleScenario && !scheduleAi
-              ? selected.id === schedule.cardId
-                ? '오늘 일정의 업종과 관련된 혜택이 있는 보유 카드예요.'
-                : '결제 카드를 바꿨어요. 바꾸기 전과 같은 일정·금액으로 혜택을 확인할 수 있어요.'
-              : aiTop && selected.id === aiTop.id
-                ? '지금 결제에 맞춰 맨 앞에 둔 카드(' + selected.name + ')로 결제해요.' + (ai.message ? ' ' + ai.message : '')
-                : '지갑에서 선택한 카드(' + selected.name + ')로 결제해요.'}
-          </Text>
-
-          {!!selectedBenefit?.name && <BenefitLine name={selectedBenefit.name}
-            value={Number.isFinite(selectedBenefit.value) ? reward(selectedBenefit) : ''}
-            details={[selectedBenefit.reason, selectedBenefit.condition]} />}
-        </View>
+        {/* '내 카드 · N장' 순서 목록과 '카드 선정 이유' 상자는 결제 상세에서 뺐다 (2026-11-24, 이유는 예상 혜택 상자 안에) */}
 
         <View style={s.box}>
           <Text style={s.heading}>카드 상세 혜택</Text>
@@ -746,30 +730,6 @@ export default function PaymentScreen({
 
       </View>
     </ScrollView>
-    <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
-      <TouchableOpacity activeOpacity={1} accessibilityLabel="카드 선택 닫기" style={s.sheetBackdrop} onPress={() => setPickerOpen(false)}>
-        <TouchableOpacity activeOpacity={1} style={s.sheet}>
-          <Text style={s.heading}>결제할 카드 선택</Text>
-          <ScrollView style={s.sheetList}>
-            {orderedOptions.map(item => {
-              const active = item.id === selected.id;
-              return <TouchableOpacity key={item.id} accessibilityRole="button" accessibilityState={{ selected: active }}
-                onPress={() => { choose(item); setPickerOpen(false); }} style={[s.sheetRow, active && s.sheetRowActive]}>
-                <Image source={typeof item.image === 'string' ? { uri: item.image } : item.image} resizeMode="contain" style={s.sheetImage} />
-                <View style={s.sheetInfo}>
-                  <Text style={s.sheetName} numberOfLines={1}>{item.name}</Text>
-                  <Text style={s.sheetIssuer}>{item.issuer} · {item.type}</Text>
-                </View>
-                {active && <Text style={s.link}>사용 중</Text>}
-              </TouchableOpacity>;
-            })}
-          </ScrollView>
-          <TouchableOpacity accessibilityRole="button" onPress={() => setPickerOpen(false)} style={s.sheetClose}>
-            <Text style={s.link}>닫기</Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
     <PaymentBenefitChat
       key={JSON.stringify([contextKey, selected.id, baseline.id])}
       transaction={scenario.merchant + ' · ' + won(scenario.amount) + ' 결제 예시'}
@@ -782,7 +742,12 @@ export default function PaymentScreen({
   </>;
 }
 const s = StyleSheet.create({
-  scrollLocked: { overflowY: 'hidden' },
+  calcOpen: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, alignSelf: 'stretch', minHeight: 48,
+    borderRadius: 14, borderWidth: 1.5, borderColor: '#B9CCF2', backgroundColor: '#FFFFFF',
+  },
+  calcPrompt: { marginTop: 6, marginBottom: -4, fontSize: 13, lineHeight: 20, fontWeight: '700', color: '#4A5A75', textAlign: 'center' },
+  calcOpenText: { fontSize: 15, fontWeight: '800', color: '#1D55D9' },
   screen: {
     flex: 1,
     backgroundColor: "#F4F7FB"
@@ -838,63 +803,6 @@ const s = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '800'
-  },
-  sheetBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(12, 22, 44, 0.45)'
-  },
-  sheet: {
-    width: '100%',
-    maxWidth: 560,
-    alignSelf: 'center',
-    maxHeight: '75%',
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 28,
-    gap: 12
-  },
-  sheetList: {
-    flexGrow: 0
-  },
-  sheetRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 10,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    marginBottom: 6
-  },
-  sheetRowActive: {
-    backgroundColor: '#F1F6FF',
-    borderColor: '#245DE5'
-  },
-  sheetImage: {
-    width: 64,
-    height: 42
-  },
-  sheetInfo: {
-    flex: 1,
-    gap: 2
-  },
-  sheetName: {
-    color: '#14213D',
-    fontSize: 15,
-    fontWeight: '700'
-  },
-  sheetIssuer: {
-    color: '#687B97',
-    fontSize: 12
-  },
-  sheetClose: {
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#F1F4F9'
   },
   header: {
     flexDirection: 'row',
@@ -961,42 +869,6 @@ const s = StyleSheet.create({
   cardImage: {
     width: '100%',
     height: 220
-  },
-  aiBox: {
-    alignSelf: 'stretch',
-    backgroundColor: '#EEF4FF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#C9D9FF',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    gap: 6
-  },
-  aiHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8
-  },
-  aiBadge: {
-    backgroundColor: '#245DE5',
-    borderRadius: 999,
-    paddingVertical: 3,
-    paddingHorizontal: 9
-  },
-  aiBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800'
-  },
-  aiText: {
-    color: '#213F69',
-    fontSize: 14,
-    lineHeight: 22,
-    fontWeight: '600'
-  },
-  aiButton: {
-    alignSelf: 'flex-start',
-    paddingVertical: 4
   },
   cardName: {
     color: '#213F69',
@@ -1124,11 +996,6 @@ const s = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 12,
     fontWeight: '700'
-  },
-  scrollHint: {
-    color: '#8A9AB1',
-    fontSize: 12,
-    textAlign: 'center'
   },
   detail: {
     borderTopWidth: 1,

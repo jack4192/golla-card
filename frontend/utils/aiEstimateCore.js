@@ -26,6 +26,27 @@ export function evaluateRequest(scenario, merchants = []) {
     : { category_code: scenario.categoryCode, amount: scenario.amount };
 }
 
+// '실제 혜택 계산하기'에 직접 넣은 결제할 곳 → 무엇으로 계산할지 (PR #11 검토, 2026-11-24).
+//   evaluateRequest 의 '이름이 그 말로 시작하는 첫 가맹점'을 쓰면 '카페'→카페베네, '배달'→배달의민족처럼 업종 말이 브랜드가 된다.
+//   AI 가맹점 이름에는 지점이 붙어 있어('스타벅스 강남역점') 끝의 '… 점'을 뗀 브랜드 이름으로도 비교한다.
+//   ① 가맹점 이름이나 브랜드 이름과 똑같으면(띄어쓰기·대소문자 무시) 그 가맹점 (지점이 여럿이면 첫 지점)
+//   ② 아니면 category (일정 입력과 같은 업종 분류 결과, 분류 안 되면 null)
+//   ③ 그래도 없으면 앞부분이 맞는 브랜드가 하나뿐일 때만 그 가맹점 (스타→스타벅스). 두 글자 미만은 찾지 않는다
+//   merchants: AI 가맹점 목록 [{ merchant_id, name, category_code }]. 반환: { merchant, brand } | { category } | null
+const brandOf = name => String(name || '').trim().replace(/\s+\S+점$/, '');
+export function matchPlace(text, merchants = [], category = null) {
+  const q = norm(text);
+  if (!q) return null;
+  const list = Array.isArray(merchants) ? merchants : [];
+  const found = item => ({ merchant: item, brand: brandOf(item.name) });
+  const exact = list.find(item => norm(item.name) === q) || list.find(item => norm(brandOf(item.name)) === q);
+  if (exact) return found(exact);
+  if (category) return { category };
+  if (q.length < 2) return null;
+  const prefixed = list.filter(item => norm(brandOf(item.name)).startsWith(q));
+  return new Set(prefixed.map(item => norm(brandOf(item.name)))).size === 1 ? found(prefixed[0]) : null;
+}
+
 // AI 배치 응답의 example(1순위 카드 문구가 가리키는 거래) → 결제 화면 예시 거래. 업종·금액이 없으면 null.
 //   category·brand 는 앱 자체 계산이 혹시 불려도 아무 혜택도 맞추지 않게 하는 빈 정규식이다 (계산은 AI 로만 한다).
 export function exampleScenario(example) {
