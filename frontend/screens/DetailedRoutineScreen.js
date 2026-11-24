@@ -107,10 +107,8 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
   const timelineTop = useRef(0);
 
   // 시간 칸에 타이핑 중인 글자(칸을 벗어나면 09:30 형식으로 맞춰 반영)
-  const [extraOpen, setExtraOpen] = useState(false);   // '추가 옵션'(메모) 펼침
   const edit = event => {
     setForm({ category: event.category, start: event.start, end: event.end, title: event.title || activityNames[event.category] || '', memo: event.memo || '' });
-    setExtraOpen(Boolean(event.memo));
     setEditing(event.id);
     setEditorOpen(true);
     setError('');
@@ -154,7 +152,6 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
     setSavedRange(null);
     setEditing(null);
     const next = { ...empty, start: toTime(from), end: toTime(Math.min(DAY_END, from + 60)) };
-    setExtraOpen(false);
     setForm(next);
     setError('');
     setEditorOpen(true);
@@ -365,7 +362,7 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
                 <Ionicons name="close" size={26} color="#385988" accessible={false} />
               </TouchableOpacity>
             </View>
-            {/* 오늘의 일정 '일과 입력' 창과 같은 모양 (2026-11-24): 날짜 → 시간 휠 → 일정 직접 입력 → 추가 옵션 → 취소/일정 추가 */}
+            {/* 오늘의 일정 '일과 입력' 창과 같은 모양 (2026-11-24): 날짜 → 시간 휠 → 일정 직접 입력 → 취소/일정 추가 (추가 옵션은 뺌) */}
             {/* 날짜·시간 휠은 창 위쪽에 고정: 휠을 굴릴 때 창 전체가 같이 움직이지 않게 (2026-11-24) */}
             <View style={s.editorFixed}>
               <Text style={s.todayLabel}>{dateHeading(scheduleDate)}</Text>
@@ -384,18 +381,6 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
                   maxLength={ROUTINE_TITLE_LIMIT} editable={!disabled} placeholder="예: 헬스장, 영화관, 병원 예약"
                   placeholderTextColor="#697C98" returnKeyType="done" />
               </View>
-              <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: extraOpen }}
-                onPress={() => setExtraOpen(value => !value)} style={s.extraToggle}>
-                <Text style={s.blue}>{extraOpen ? '추가 옵션 접기' : '추가 옵션'}</Text>
-                <Ionicons name={extraOpen ? 'chevron-up' : 'chevron-down'} size={14} color="#245DE5" accessible={false} />
-              </TouchableOpacity>
-              {extraOpen && <>
-                <Text style={s.stepLabel}>메모 <Text style={s.stepHint}>(선택)</Text></Text>
-                <TextInput accessibilityLabel="일정 메모" value={form.memo || ''} editable={!disabled}
-                  onChangeText={memo => setForm(current => ({ ...current, memo }))} style={[s.input, s.memo]}
-                  placeholder="예: 오후 반차 후 병원" placeholderTextColor="#697C98"
-                  maxLength={80} multiline textAlignVertical="top" />
-              </>}
             </ScrollView>
             {!!error && <Text accessibilityRole="alert" style={s.danger}>{error}</Text>}
             {confirmRemove ? <>
@@ -512,10 +497,7 @@ const s = StyleSheet.create({
   editorFixed: { gap: 12 },
   todayLabel: { paddingVertical: 8, textAlign: 'center', color: '#385988', fontSize: 15, fontWeight: '700', backgroundColor: '#F1F5FC', borderRadius: 12 },
   stepLabel: { fontSize: 14, fontWeight: '800', color: '#29456B' },
-  stepHint: { fontSize: 12, fontWeight: '400', color: '#5A6E89' },
   timeWheels: { flexDirection: 'row', gap: 12 },
-  extraToggle: { flexDirection: 'row', alignSelf: 'center', alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 36 },
-  memo: { minHeight: 76, paddingTop: 12, textAlign: 'left', paddingHorizontal: 14 },
   editorActions: { flexDirection: 'row', alignItems: 'stretch', gap: 6 },
   editorCancel: { backgroundColor: '#EDF3FF', borderRadius: 24, paddingHorizontal: 18, minHeight: 52, justifyContent: 'center' },
   editorCancelText: { color: '#245DE5', fontSize: 13, fontWeight: '800' },
