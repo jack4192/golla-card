@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import * as Store from './demoStore';
 import { SERVER_MODE, api } from './api';
 import { fromServerCategory, toServerCategory } from './scheduleCategory';
+import { serverCacheEvents } from './eventCacheCore';
 
 export const ROUTINE_KEY = 'solpay_routine_profile_v1';
 export const EVENTS_KEY = 'solpay_routine_exceptions_v1';
@@ -446,6 +447,12 @@ export async function readEvents() {
   return readLocalEvents();
 }
 
+// 일정 저장·삭제 때 쓰는 기기 목록: 서버 모드는 서버 복사본이라 느슨하게(모양만), 데모 모드는 엄격하게 (2026-11-24)
+async function readEventsForWrite() {
+  if (SERVER_MODE) return serverCacheEvents(await readJson(EVENTS_KEY, []));
+  return readLocalEvents();
+}
+
 async function readLocalEvents() {
   const events = await readJson(EVENTS_KEY, []);
 
@@ -551,8 +558,8 @@ export const saveEvent = input => writeEventRecord(async () => {
     throw Error('일정 이름을 직접 입력해주세요.');
   }
 
-  // 서버 모드에서도 방금 불러와 기기에 복사해 둔 목록을 기준으로 합니다.
-  const events = await readLocalEvents();
+  // 서버 모드에서도 방금 불러와 기기에 복사해 둔 목록을 기준으로 합니다 (복사본의 이상한 줄 때문에 막히지 않게 느슨하게 읽음).
+  const events = await readEventsForWrite();
   const old = input.id
     ? events.find(event => event.id === input.id)
     : null;
@@ -611,7 +618,8 @@ export const deleteEvent = id => writeEventRecord(async () => {
       if (error?.status !== 404) throw error;
     }
   }
-  const events = await readLocalEvents();
+  // 서버 삭제가 성공했으면 성공이다. 기기 복사본은 이상한 줄이 있어도 이 일정만 빼고 정리한다 (2026-11-24)
+  const events = await readEventsForWrite();
 
   await writeJson(
     EVENTS_KEY,
