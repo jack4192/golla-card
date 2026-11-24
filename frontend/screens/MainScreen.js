@@ -249,6 +249,7 @@ const SettingsToggle = ({
 export default function MainScreen({
   onLogout,
   onConsentChange,
+  onOpenPrivacy,
   onOpenChat,
   onEditRoutine,
   onViewBenefits,
@@ -848,6 +849,8 @@ export default function MainScreen({
           minute: '2-digit'
         })} />
           <SettingsItem icon="refresh-outline" title="화면 설정 초기화" subtitle="혜택 알림·진동만 기본값으로 복원" onPress={resetViewSettings} />
+          {/* 맨 위 줄에 있던 데이터 관리를 여기로 옮김 (2026-11-24 사용자 요청) */}
+          {onOpenPrivacy && <SettingsItem icon="shield-checkmark-outline" title="데이터 관리" subtitle="기록 삭제·동의 철회·이 기기 계정 초기화" onPress={onOpenPrivacy} />}
           <SettingsItem icon="log-out-outline" title="로그아웃" subtitle="이메일과 비밀번호로 다시 로그인" onPress={() => setExitOpen(true)} />
         </SettingsGroup>
 
