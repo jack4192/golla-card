@@ -36,13 +36,19 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
+  // 위쪽 손잡이를 잡고 내리면 닫는다 (2026-11-24: 폰에서 잡히도록 손잡이 영역을 넓히고, 닫힐 때 아래로 미끄러지게)
+  const springBack = () => Animated.spring(dragY, { toValue: 0, useNativeDriver: false }).start();
   const pan = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+    onPanResponderTerminationRequest: () => false,
     onPanResponderMove: (_, gesture) => dragY.setValue(Math.max(0, gesture.dy)),
     onPanResponderRelease: (_, gesture) => {
-      if (gesture.dy > CLOSE_DISTANCE || gesture.vy > 1.2) onCloseRef.current?.();
-      else Animated.spring(dragY, { toValue: 0, useNativeDriver: false }).start();
+      if (gesture.dy > CLOSE_DISTANCE || gesture.vy > 1.0) {
+        Animated.timing(dragY, { toValue: 700, duration: 180, useNativeDriver: false }).start(() => onCloseRef.current?.());
+      } else springBack();
     },
+    onPanResponderTerminate: springBack,
   })).current;
 
   const showCode = next => {
@@ -172,7 +178,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
     <View style={s.backdrop}>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="결제 닫기" activeOpacity={1} style={s.backdropTouch} onPress={onClose} />
       <Animated.View style={[s.sheet, { transform: [{ translateY: dragY }] }]} accessibilityViewIsModal>
-        <View {...pan.panHandlers} style={s.handleArea}><View style={s.handle} /></View>
+        <View {...pan.panHandlers} style={s.handleArea} accessibilityLabel="아래로 끌어 닫기"><View style={s.handle} /></View>
 
         {!selected ? <View style={s.empty}>
           <Text style={s.emptyText}>결제에 사용할 수 있는 카드가 없어요. 카드 탭에서 카드를 등록해주세요.</Text>
@@ -258,8 +264,9 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
 const s = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(12, 22, 44, 0.45)' },
   backdropTouch: { ...StyleSheet.absoluteFillObject },
-  sheet: { width: '100%', maxWidth: 560, alignSelf: 'center', maxHeight: '92%', backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: 24, gap: 12 },
-  handleArea: { alignItems: 'center', paddingTop: 10, paddingBottom: 2 },
+  sheet: { width: '100%', maxWidth: 560, alignSelf: 'center', maxHeight: '82%', backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: 24, gap: 12 },
+  // 손잡이 둘레를 넓게(시트 폭 전체·높이 약 36px) 잡을 수 있게
+  handleArea: { alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch', marginHorizontal: -20, paddingTop: 14, paddingBottom: 14, marginBottom: -10 },
   handle: { width: 44, height: 5, borderRadius: 3, backgroundColor: '#D3DBE7' },
   headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   heading: { fontSize: 18, fontWeight: '800', color: '#14213D' },

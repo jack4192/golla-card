@@ -15,7 +15,9 @@ export function evaluateRequest(scenario, merchants = []) {
     return code && code !== 'OTHER' ? { category_code: code, amount: scenario.amount } : null;
   }
   if (scenario.namedMerchant) {
-    const merchant = merchants.find(item => norm(item.name).startsWith(norm(scenario.merchant)));
+    // 업종 코드도 주면 그 업종 가맹점만 (예: '이마트' + MART → 이마트24(편의점) 말고 이마트, 2026-11-24)
+    const merchant = merchants.find(item => norm(item.name).startsWith(norm(scenario.merchant))
+      && (!scenario.categoryCode || item.category_code === scenario.categoryCode));
     return merchant ? { category_code: merchant.category_code, merchant_id: merchant.merchant_id, amount: scenario.amount } : null;
   }
   if (!scenario.categoryCode) return null;
