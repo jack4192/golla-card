@@ -7,6 +7,7 @@ import { orderButton, orderHint, syncAction } from '../utils/autoPlacementCore';
 const ROW_GAP = 12;
 const CARDS_PER_PAGE = 5;
 const IS_WEB = Platform.OS === 'web';
+const CardRow = IS_WEB ? Animated.View : View;
 
 export function validateCardOrder(raw) {
   if (raw === null) return [];
@@ -41,7 +42,7 @@ export async function persistCardOrder(ids) {
   await saveWalletCardOrder(value);
   return value.ids;
 }
-function CardThumb({
+const CardThumb = React.memo(function CardThumb({
   card
 }) {
   const [failed, setFailed] = useState(false);
@@ -53,7 +54,7 @@ function CardThumb({
       uri: card.image
     } : card.image} style={s.image} resizeMode="contain" accessibilityLabel={card.name + ' 카드 이미지'} onError={() => setFailed(true)} /> : <Text style={s.hint}>이미지 확인 필요</Text>}
     </View>;
-}
+});
 export default function PaymentCardOrder({
   cards = [],
   selectedId,
@@ -66,13 +67,17 @@ export default function PaymentCardOrder({
   autoOn,
   onAutoChange,
   // 끄는 동안 true (홈 화면이 스크롤을 잠근다: 폰에서 끌기와 화면 스크롤이 겹쳐 카드가 튀던 문제, 2026-11-24 수정사항2)
-  onDragActiveChange
+  onDragActiveChange,
+  // 화면 스크롤 위치를 돌려주는 함수 (홈). 폰에서는 끄는 동안 화면이 같이 스크롤될 수 있어, 손가락 이동에 스크롤 이동을 더해
+  // 카드가 손가락을 그대로 따라가게 한다 (2026-11-24 'Expo 앱에서 카드 순서를 바꾸면 카드가 튐')
+  getScrollY
 }) {
   const [savedIds, setSavedIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [readError, setReadError] = useState('');
   const [error, setError] = useState('');
   const [draggedId, setDraggedId] = useState(null);
+  const [nativeDrag, setNativeDrag] = useState(null);
   const drag = useRef(null);
   const rows = useRef(new Map());
   const writeRevision = useRef(0);
@@ -93,8 +98,9 @@ export default function PaymentCardOrder({
   const lastAiShown = useRef(null);
   if (usingAi) lastAiShown.current = ordered.map(card => String(card.id));
   const previousAuto = useRef(autoOn);
-  const visibleCards = ordered.slice(0, visibleCount);
-  const nextPageSize = Math.min(CARDS_PER_PAGE, ordered.length - visibleCards.length);
+  const displayedCards = !IS_WEB && draggedId !== null && drag.current ? drag.current.cards : ordered;
+  const visibleCards = displayedCards.slice(0, visibleCount);
+  const nextPageSize = Math.min(CARDS_PER_PAGE, displayedCards.length - visibleCards.length);
   const orderedRef = useRef(ordered);
   orderedRef.current = ordered;
   const firstId = ordered[0]?.id;
@@ -142,6 +148,8 @@ export default function PaymentCardOrder({
       }
     }
   };
+  const getScrollYRef = useRef(getScrollY);
+  getScrollYRef.current = getScrollY;
   const dragActive = useRef(onDragActiveChange);
   dragActive.current = onDragActiveChange;
   useEffect(() => {
@@ -150,7 +158,11 @@ export default function PaymentCardOrder({
     return () => {
       mounted.current = false;
       revision.current++;
-      if (drag.current) dragActive.current?.(false);   // 끄는 중에 화면을 떠나도 홈 스크롤 잠금을 푼다
+      if (drag.current) {
+        if (drag.current.frame != null) cancelAnimationFrame(drag.current.frame);
+        drag.current = null;
+        dragActive.current?.(false);
+      }
     };
   }, []);
 
@@ -198,13 +210,11 @@ export default function PaymentCardOrder({
 
   const rowFor = id => {
     if (!rows.current.has(id)) {
-      rows.current.set(id, { y: new Animated.Value(0), height: 88 });
+      rows.current.set(id, { y: IS_WEB ? new Animated.Value(0) : null, height: 88 });
     }
     return rows.current.get(id);
   };
 
-  // 폰에서도 JS 로 움직인다: 끝낼 때 새 순서와 위치 0 을 한 번에 그려야 카드가 두 번 튀지 않는다 (네이티브 드라이버는
-  // 값이 따로 반영돼 한 프레임 동안 옛 위치가 남았다, 2026-11-24 수정사항2 'Expo 에서 여러 카드가 움직임')
   const animate = (row, toValue) => Animated.timing(row.y, {
     toValue,
     duration: 150,
@@ -216,34 +226,53 @@ export default function PaymentCardOrder({
     if (drag.current || loading || readError) return false;
     const cards = orderedRef.current;
     const from = cards.findIndex(card => card.id === id);
-    if (from < 0) return false;
+    if (from < 0 || from >= visibleCount) return false;
 
     const measuredRows = cards.slice(0, visibleCount).map(card => rowFor(card.id));
+    if (IS_WEB) {
+      for (const row of measuredRows) { row.y.stopAnimation(); row.y.setValue(0); }
+    }
     let top = 0;
     const tops = measuredRows.map(row => {
       const position = top;
       top += row.height + ROW_GAP;
       return position;
     });
-    drag.current = { id, pointerId, startY, cards, rows: measuredRows, tops, from, to: from, settling: false };
+    const scrollStart = getScrollYRef.current?.() ?? 0;
+    drag.current = { id, pointerId, startY, scrollStart, cards, rows: measuredRows, tops, from, to: from, distance: 0, frame: null, settling: false };
     setDraggedId(id);
     onDragActiveChange?.(true);
     return true;
   };
 
-  const moveDrag = dy => {
+  const moveDrag = fingerDy => {
     const session = drag.current;
     if (!session || session.settling) return;
+    // 손가락 이동 + 그동안 화면이 스크롤된 만큼 = 목록 안에서 카드가 움직일 거리
+    const dy = fingerDy + ((getScrollYRef.current?.() ?? session.scrollStart) - session.scrollStart);
+    if (!Number.isFinite(dy)) return;
     const { rows, tops, from } = session;
     const last = rows.length - 1;
     const distance = Math.max(-tops[from], Math.min(topForDrop(session, last), dy));
-    rows[from].y.setValue(distance);
-
     let to = from;
     while (to > 0 && distance < (topForDrop(session, to - 1) + topForDrop(session, to)) / 2) to -= 1;
     while (to < last && distance > (topForDrop(session, to + 1) + topForDrop(session, to)) / 2) to += 1;
-    if (to === session.to) return;
+    const changedSlot = to !== session.to;
     session.to = to;
+    if (!IS_WEB) {
+      session.distance = distance;
+      if (session.frame == null) {
+        session.frame = requestAnimationFrame(() => {
+          session.frame = null;
+          if (drag.current === session && !session.settling) {
+            setNativeDrag({ from, to: session.to, distance: session.distance, rows });
+          }
+        });
+      }
+      return;
+    }
+    rows[from].y.setValue(distance);
+    if (!changedSlot) return;
     rows.forEach((row, index) => {
       if (index !== from) animate(row, shiftForDrop(session, index)).start();
     });
@@ -256,26 +285,31 @@ export default function PaymentCardOrder({
     const { cards, rows, from } = session;
     const to = cancel ? from : session.to;
     session.to = to;
-    Animated.parallel(rows.map((row, index) => animate(row,
-      index === from ? topForDrop(session, to) : shiftForDrop(session, index)
-    ))).start(() => {
-      if (!mounted.current) return;
-      onDragActiveChange?.(false);
-      if (drag.current !== session) return;
+    const finish = () => {
+      if (!mounted.current || drag.current !== session) return;
       const currentCards = orderedRef.current;
-      if (currentCards.length === cards.length && cards.every((card, index) => card.id === currentCards[index].id)) {
-        // 그 사이 목록이 바뀌었으면 저장하지 않는다 (아래 레이아웃 효과가 위치를 되돌려 지금 순서가 보인다)
+      if (!cancel && currentCards.length === cards.length && cards.every((card, index) => card.id === currentCards[index].id)) {
         requestMove(cards, from, to);
       }
-      // 새 순서와 '위치 0'(아래 transform)이 같은 그리기에 들어간다
       setDraggedId(null);
-    });
+      dragActive.current?.(false);
+    };
+    if (!IS_WEB) {
+      if (session.frame != null) cancelAnimationFrame(session.frame);
+      // 일반 View에 숫자 좌표를 써서 목록 순서와 이동 좌표를 같은 렌더에서 확정한다.
+      setNativeDrag(null);
+      finish();
+      return;
+    }
+    Animated.parallel(rows.map((row, index) => animate(row,
+      index === from ? topForDrop(session, to) : shiftForDrop(session, index)
+    ))).start(finish);
   };
 
   // Clear transforms after React applies the new list order.
   useLayoutEffect(() => {
     if (draggedId !== null || !drag.current) return;
-    for (const row of drag.current.rows) row.y.setValue(0);
+    if (IS_WEB) for (const row of drag.current.rows) row.y.setValue(0);
     drag.current = null;
   }, [draggedId]);
 
@@ -330,7 +364,10 @@ export default function PaymentCardOrder({
         onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: () => dragCallbacks.current.startDrag(id),
         onPanResponderMove: (_, gesture) => dragCallbacks.current.moveDrag(gesture.dy),
-        onPanResponderRelease: () => dragCallbacks.current.finishDrag(),
+        onPanResponderRelease: (_, gesture) => {
+          dragCallbacks.current.moveDrag(gesture.dy);
+          dragCallbacks.current.finishDrag();
+        },
         onPanResponderTerminate: () => dragCallbacks.current.finishDrag(true),
       });
     }
@@ -384,10 +421,11 @@ export default function PaymentCardOrder({
             <Text style={s.link}>{selected ? '✓ 현재 결제 카드' : '\u00A0'}</Text>
           </View>
         </>;
-        // 끄는 중에만 움직이는 값(row.y)을 붙인다. 끝나면 새 순서와 위치 0 이 한 번에 그려진다
-        return <Animated.View key={card.id}
+        const translateY = IS_WEB ? (draggedId === null ? 0 : row.y)
+          : nativeDrag ? (index === nativeDrag.from ? nativeDrag.distance : shiftForDrop(nativeDrag, index)) : 0;
+        return <CardRow key={card.id}
             onLayout={event => { row.height = event.nativeEvent.layout.height; }}
-            style={[s.item, { transform: [{ translateY: draggedId !== null ? row.y : 0 }] }, draggedId === card.id && s.dragging]}>
+            style={[s.item, { transform: [{ translateY }] }, draggedId === card.id && s.dragging]}>
             {/* 홈은 카드를 눌러도 순서가 바뀌지 않는다 ('순서 변경'에서만). 결제 화면은 누르면 그 카드로 결제 */}
             {homeMode ? <View accessible accessibilityLabel={index + 1 + '번 ' + card.name + (selected ? ', 현재 결제 카드' : '')}
                 style={s.itemButton}>{body}</View>
@@ -403,7 +441,7 @@ export default function PaymentCardOrder({
                 style={[s.handle, draggedId === card.id && s.grabbing]}>
                 <Text style={s.handleText}>☰</Text>
               </View>}
-          </Animated.View>;
+          </CardRow>;
       })}
 
       {nextPageSize > 0 && <TouchableOpacity accessibilityRole="button" disabled={draggedId !== null}

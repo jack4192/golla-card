@@ -6,7 +6,7 @@ export default function FlowHeading({children, icon, brand = false}) {
   if (brand) {
     return (
       <View style={styles.hero}>
-        <Text style={styles.wordmark}>SOL·Pay</Text>
+        <Text style={styles.wordmark}>Pay·Mate</Text>
         <View style={styles.halo} accessible={false}>
           <View style={styles.medallion}>
             <Ionicons name={icon} size={30} color="#104FE7" />

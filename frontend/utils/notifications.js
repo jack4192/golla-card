@@ -131,7 +131,7 @@ async function ensureChannel() {
   if (Platform.OS !== 'android') return;
   // 안드로이드 8.0 이상은 채널이 있어야 하고, 13 이상은 채널이 있어야 권한 창이 뜹니다.
   await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-    name: 'SOL·Pay 알림',
+    name: 'Pay·Mate 알림',
     importance: Notifications.AndroidImportance.DEFAULT,
   });
 }

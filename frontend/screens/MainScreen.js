@@ -251,7 +251,6 @@ export default function MainScreen({
   onConsentChange,
   onOpenPrivacy,
   onOpenChat,
-  onEditRoutine,
   onViewBenefits,
   scheduleDisabled = false,
   allowAutomaticAds = false,
@@ -447,7 +446,7 @@ export default function MainScreen({
     setPhoneNotifyBusy(true);
     try {
       if (value && !(await requestPhonePermission())) {
-        Alert.alert('알림 권한 필요', '휴대폰 설정에서 SOL·Pay(또는 Expo Go) 알림을 허용한 뒤 다시 켜주세요.');
+        Alert.alert('알림 권한 필요', '휴대폰 설정에서 Pay·Mate(또는 Expo Go) 알림을 허용한 뒤 다시 켜주세요.');
         return;
       }
       // 서버 모드: 알림 수신 동의를 서버에 먼저 저장합니다 (users.notification_agreed, 2026-11-24). 실패하면 바꾸지 않습니다.
@@ -615,14 +614,13 @@ export default function MainScreen({
     cardList={home ? <PaymentCardOrder cards={homeWalletCards} selectedId={currentCard?.id}
       onSelect={onSelectCard} syncSelection={!paySheet}
       aiOrder={auto.on ? homeAiOrder : null} autoOn={auto.on} onAutoChange={auto.setOn}
-      onDragActiveChange={setCardDragging} /> : null}
+      onDragActiveChange={setCardDragging} getScrollY={() => mainScrollY.current} /> : null}
     headerRight={home ? <AutoPlacementSwitch on={auto.on} onChange={auto.setOn} /> : null}
     paymentsList={home && SERVER_MODE ? <RecentPayments refreshKey={aiRefresh} /> : null}
     onOpenSchedule={() => selectTab('schedule')}
     disabled={scheduleDisabled}
     aiRefresh={aiRefresh}
     autoOn={auto.on}
-    onEditRoutine={onEditRoutine}
     onViewBenefits={onViewBenefits}
     cards={realWalletCards(currentCard, walletCards)}
     selectedCard={currentCard}
@@ -870,7 +868,7 @@ export default function MainScreen({
               style={styles.iconCircle} onPress={() => selectTab('home')}>
               <Ionicons name="arrow-back" size={21} color="#244E9C" accessible={false} />
             </TouchableOpacity>}
-            <Text style={[styles.brand,{color:tab === 'cards' ? "#FFFFFF" : "#134CCA",fontSize:27}]}>SOL·Pay</Text>
+            <Text style={[styles.brand,{color:tab === 'cards' ? "#FFFFFF" : "#134CCA",fontSize:27}]}>Pay·Mate</Text>
           </View>
 
           <View style={styles.headerActions}>
@@ -896,7 +894,7 @@ export default function MainScreen({
           onClose={() => selectTab(schedulePayment?.returnTab || 'home')}
           onOpenCards={() => selectTab('cards')}
         /> : tab === 'cards' ? renderCards() : <ScrollView key={tab} ref={mainScrollRef}
-          onScroll={event => { mainScrollY.current = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={32}
+          onScroll={event => { mainScrollY.current = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={16}
           style={[styles.mainScroll, Platform.OS === 'web' && cardDragging && styles.scrollLocked]}
           scrollEnabled={!cardDragging} contentContainerStyle={[styles.pageContent, styles.chatClearance]}
           showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">

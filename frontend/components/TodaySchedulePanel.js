@@ -271,11 +271,10 @@ function findScheduleCard(categories, products, now) {
 
 // 탭을 옮겼다 돌아오면 이 화면이 새로 만들어진다. 지난 AI 계산을 기억해 두고 처음부터 보여 줘야
 // '앱 계산 카드 → AI 카드'로 그림이 잠깐 바뀌는 깜빡임이 없다 (새 계산이 오면 그때 바꾼다)
-const aiMemory = { byCategory: {}, preview: { key: '', result: null, estimates: null }, daySegments: null };
+const aiMemory = { byCategory: {}, preview: { key: '', result: null, estimates: null }, dayPlacement: null };
 
 export default function TodaySchedulePanel({
   scrollToWindowY,
-  onEditRoutine,
   onViewBenefits,
   onPay,
   onOpenCards,
@@ -328,8 +327,7 @@ export default function TodaySchedulePanel({
   // 홈 시간 표시줄 (2026-11-23 설계서 home-day-timeline): 옮긴 시각(분, null 이면 지금),
   //   하루 배치 구간(null 이면 읽는 중, [] 이면 실패·없음), 오늘 결제(결제 점)
   const [viewMinute, setViewMinute] = useState(null);
-  const [daySegments, setDaySegments] = useState(() => aiMemory.daySegments);
-  useEffect(() => { aiMemory.daySegments = daySegments; }, [daySegments]);
+  const [dayPlacement, setDayPlacement] = useState(() => aiMemory.dayPlacement);
   const [todayPayments, setTodayPayments] = useState([]);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
@@ -393,6 +391,13 @@ export default function TodaySchedulePanel({
   ));
   const signals = makeSignals(profile, events, day).map(signal => categoryLabel(signal.id));
   const refresh = () => setRevision(value => value + 1);
+  const applyScheduleChange = ({ saved, deletedId }) => {
+    setClock(new Date());
+    setEvents(previous => saved
+      ? [saved, ...previous.filter(item => item.id !== saved.id)]
+      : previous.filter(item => item.id !== deletedId));
+    refresh();
+  };
   const remove = async event => {
     if (disabled || deleteLock.current) return;
     deleteLock.current = true;
@@ -400,9 +405,8 @@ export default function TodaySchedulePanel({
     setDeleteError('');
     try {
       await deleteEvent(event.id);
-      setEvents(previous => previous.filter(item => item.id !== event.id));
+      applyScheduleChange({ deletedId: event.id });
       setConfirmDelete(null);
-      refresh();
     } catch {
       setDeleteError('일정을 삭제하지 못했어요. 다시 시도해주세요.');
     } finally {
@@ -532,16 +536,23 @@ export default function TodaySchedulePanel({
   // 홈 시간 표시줄: 날짜가 바뀌면 미리보기를 지금으로 돌린다
   useEffect(() => { setViewMinute(null); }, [day]);
   // 하루 배치: 날짜·지갑 카드·그날 일정이 바뀌거나 AI 쪽 상태가 바뀌면(aiRefresh) 다시 묻는다 (기록 없음)
-  const dayScheduleKey = timeline.filter(row => row.startDate).map(row => `${row.key}@${row.time}`).join('|');
+  const dayScheduleKey = JSON.stringify([day, walletKey, baseTimeline.map(row => [
+    row.key, row.startDate?.getTime(), row.endDate?.getTime(), row.cats, row.label, row.event?.memo,
+  ])]);
+  const daySegments = dayPlacement?.key === dayScheduleKey ? dayPlacement.segments : null;
   useEffect(() => {
-    if (!SERVER_MODE || disabled || !cards.length) return undefined;   // 홈·오늘의 일정 모두 (일정별 '왜 이 카드' 안내에도 쓴다)
+    if (!SERVER_MODE || disabled || loading || !cards.length) return undefined;
     let stopped = false;
-    // 다시 물을 때 지난 배치를 지우지 않는다: 지우면 카드가 바뀌는 점이 잠깐 사라졌다가 늦게 뜬다
-    loadDayPlacement(cards).then(segments => { if (!stopped) setDaySegments(segments || []); })
-      .catch(() => { if (!stopped) setDaySegments([]); });
+    const keep = segments => {
+      if (stopped) return;
+      const result = { key: dayScheduleKey, segments: segments || [] };
+      aiMemory.dayPlacement = result;
+      setDayPlacement(result);
+    };
+    loadDayPlacement(cards).then(keep).catch(() => keep([]));
     return () => { stopped = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [home, disabled, day, walletKey, dayScheduleKey, aiRefresh]);
+  }, [disabled, loading, dayScheduleKey, aiRefresh]);
   // 오늘 결제(결제 점): 1분 시계가 돌 때마다 다시 읽어 지나간 결제가 새로 보이게 한다. 실패하면 점을 숨긴다
   useEffect(() => {
     if (!home || !SERVER_MODE || disabled) return undefined;
@@ -585,21 +596,19 @@ export default function TodaySchedulePanel({
       const at = new Date(dayStart.getTime() + minute * 60 * 1000);
       const row = timeline.find(item => item.match && item.startDate && item.startDate <= at && at < item.endDate);
       if (row) return { card: row.match.card, note: row.match.label };
-      if (SERVER_MODE) return scrubbedCard({ segments: daySegments || [], minute, walletCards: cards, fallbackCard: selectedCard });
+      if (SERVER_MODE) {
+        if (daySegments == null) return { card: selectedCard, note: '이 시각 카드를 불러오는 중이에요' };
+        return scrubbedCard({ segments: daySegments, minute, walletCards: cards, fallbackCard: selectedCard });
+      }
       return { card: selectedCard, note: '' };
     };
-    let scrubbed = null;
-    if (scrubbing) {
-      scrubbed = SERVER_MODE && autoOn && daySegments == null
-        ? { card: selectedCard, note: '이 시각 카드를 불러오는 중이에요' }
-        : cardAtMinute(viewMinute);
-    }
+    const scrubbed = scrubbing ? cardAtMinute(viewMinute) : null;
     const minuteOf = date => Math.round((date - dayStart) / 60000);
     const changeBoundaries = [
       ...timeline.filter(row => row.match && row.startDate && row.endDate).flatMap(row => [minuteOf(row.startDate), minuteOf(row.endDate)]),
       ...(SERVER_MODE ? (daySegments || []).flatMap(segment => [segment.startMin, segment.endMin]) : []),
     ];
-    const changeDots = disabled || !autoOn || (SERVER_MODE && daySegments == null) ? []
+    const changeDots = disabled || !autoOn ? []
       : cardChangeDots(changeBoundaries, minute => cardAtMinute(minute).card?.id ?? null);
     // 하루를 카드가 바뀌는 시각으로 나눠, 가장 오래 쓰는 카드(평소 카드)와 다른 카드를 쓰는 구간만 캡슐로 보인다
     const cardSpans = (() => {
@@ -853,7 +862,7 @@ export default function TodaySchedulePanel({
     {!!error && <TouchableOpacity disabled={disabled} onPress={refresh}><Text style={styles.blue}>다시 불러오기</Text></TouchableOpacity>}
     <SpecialScheduleModal key={day} visible={!!open && !disabled} mode={open || 'add'}
       editingEvent={open === 'edit' ? editingEvent : null} onClose={() => setOpen(null)}
-      onChanged={refresh} onEditTimed={onEditRoutine} />
+      onChanged={applyScheduleChange} />
     </View>;
 }
 const styles = StyleSheet.create({

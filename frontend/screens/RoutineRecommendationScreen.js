@@ -257,7 +257,7 @@ export default function RoutineRecommendationScreen({
               <Ionicons name="chevron-back" size={17} color="#526176" accessible={false} />
               <Text style={s.backText}>일정 다시 확인</Text>
             </TouchableOpacity>
-            <Text style={s.wordmark}>SOL·Pay</Text>
+            <Text style={s.wordmark}>Pay·Mate</Text>
           </View>
           <Text accessibilityRole="header" style={s.heading}>일정 맞춤 추천</Text>
         </View>

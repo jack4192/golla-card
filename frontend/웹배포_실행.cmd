@@ -2,7 +2,7 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 echo ============================================
-echo  SOLPAY WEB DEMO: BUILD FOR AWS AMPLIFY
+echo  Pay-Mate Web Demo - Build for AWS Amplify
 echo ============================================
 if not exist node_modules (
   echo [1/4] Installing dependencies. This may take a few minutes.
