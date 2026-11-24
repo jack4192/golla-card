@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { realWalletCards, reward, useBenefitEstimate, won } from '../screens/PaymentScreen';
 import { SERVER_MODE } from '../utils/api';
 import { loadPlacementPreview } from '../utils/aiPlacement';
+import { dropCardName } from '../utils/cardReasonCore';
 
 const HALF_MS = 170;
 const CARD_RATIO = 1.52;   // 카드 그림 가로:세로 (TodaySchedulePanel homeArtwork 와 같다)
@@ -34,7 +35,8 @@ function BenefitBack({ card, cards, showAiMessage }) {
   const known = Number.isFinite(selectedBenefit.value);
   const ai = placement.result;
   const aiTop = showAiMessage && ai?.topId === selected.id && !ai?.fallback;
-  const aiMessage = aiTop ? String(ai?.message || '').trim() : '';
+  // 앞면에 카드가 보이니 설명 앞의 카드 이름은 뗀다 (2026-11-25 사용자 요청)
+  const aiMessage = aiTop ? dropCardName(String(ai?.message || '').trim(), selected.name) : '';
   if (aiMessage) {
     return <View style={s.aiRow}>
       <View style={s.aiBadge}><Text style={s.aiBadgeText}>AI 추천</Text></View>
