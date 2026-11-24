@@ -435,13 +435,13 @@ export default function App() {
   });
 
   // resumed: 로그인을 유지한 채 새로고침·앱을 다시 열어 들어온 경우 (가입을 마쳤으면 바로 홈)
-  const afterAuthentication = async ({ firstSignupLogin = false, resumed = false } = {}) => {
+  const afterAuthentication = async ({ resumed = false } = {}) => {
     let [savedConsent, finished] = await Promise.all([
       readConsent(),
       DemoStore.getItemAsync(FINISHED_KEY),
     ]);
 
-    // 서버 모드: 다른 기기에서 필수 동의를 했으면(users.mydata_agreed) 이 기기에서도 다시 묻지 않고 홈으로 (2026-11-24)
+    // 서버에 저장된 필수 동의를 이 기기에서도 적용합니다.
     if (SERVER_MODE && savedConsent?.termsAgreed !== true) {
       try {
         const restored = consentFromServer(await api.me(), savedConsent, ONBOARDING_OPTIONS_VERSION);
@@ -512,7 +512,7 @@ export default function App() {
       }
       await DemoStore.setItemAsync(LOGIN_EMAIL_KEY, address);
       await applySignupJob(address);
-      await afterAuthentication({ firstSignupLogin: switchedAccount });
+      await afterAuthentication();
       return;
     }
 
@@ -547,7 +547,7 @@ export default function App() {
     }
     await DemoStore.setItemAsync(LOGIN_EMAIL_KEY, customMatches ? 'custom' : DEMO_EMAIL);
     if (customMatches) await applySignupJob(address);
-    await afterAuthentication({ firstSignupLogin });
+    await afterAuthentication();
   });
 
   const handleAgreementNext = value => runAction(async () => {
@@ -826,6 +826,7 @@ export default function App() {
     setMorningSchedulePending(false);
     setPreviewScreen(null);
     setPreviewWallet(null);
+    if (currentScreen === 'DailyRoutine') return;
     if (onboardingComplete) openRoutine();
     else navigate('DailyRoutine');
   }, [morningSchedulePending, isRestoring, authenticated, consent, privacyOpen, currentScreen, onboardingComplete, openRoutine, navigate]);
@@ -973,10 +974,6 @@ export default function App() {
                 onRegisterCard={previewRegister}
                 onRemoveCard={previewRemove}
                 onLogout={() => previewGo('Login')}
-                onEditRoutine={(date, entryId) => {
-                  setScheduleEditor({ date, entryId });
-                  previewGo('DailyRoutine');
-                }}
                 onViewBenefits={() => {
                   setPreviewBack('schedule');
                   previewGo('RoutineRecommendation');
@@ -1032,11 +1029,7 @@ export default function App() {
             key={scheduleEditor.date || 'today'}
             {...scheduleEditor}
             onContinue={handleRoutineContinue}
-            onBack={() =>
-              navigate(
-                routineMode === 'edit' ? 'Main' : 'Agreement'
-              )
-            }
+            onBack={() => navigate(routineMode === 'edit' ? 'Main' : 'Agreement')}
           />
         );
 
@@ -1077,7 +1070,6 @@ export default function App() {
               onOpenPrivacy={openPrivacy}
               allowAutomaticAds={allowAutomaticAds}
               scheduleDisabled={Boolean(previewScreen) || privacyOpen}
-              onEditRoutine={openRoutine}
               onViewBenefits={() => {
                 setScheduleEditor({});
                 setRoutineMode('edit');

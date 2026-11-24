@@ -1,9 +1,14 @@
 import { registerRootComponent } from 'expo';
 
 import App from './App';
+import appConfig from './app.json';
 import React from 'react';
 import { Platform, SafeAreaView } from 'react-native';
 import WebErrorBoundary from './components/WebErrorBoundary';
+
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  document.title = appConfig.expo.name;
+}
 
 const RootApp = () => {
   const app = <WebErrorBoundary><App /></WebErrorBoundary>;

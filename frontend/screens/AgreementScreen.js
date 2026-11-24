@@ -107,7 +107,7 @@ export default function AgreementScreen({
       }
       if (!mounted.current) return;
       if (!granted) {
-        setMessage('폰 설정에서 SOL·Pay 알림을 허용해야 알림을 받을 수 있어요.');
+        setMessage('폰 설정에서 Pay·Mate 알림을 허용해야 알림을 받을 수 있어요.');
         return;
       }
     }

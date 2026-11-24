@@ -116,7 +116,7 @@ export default function PaymentBenefitChat({ transaction, selected, baseline, di
         <View accessibilityViewIsModal style={s.sheet}>
           <View style={s.header}>
             <View style={s.avatar}><Image source={avatar} resizeMode="contain" style={s.face} /></View>
-            <Text accessibilityRole="header" style={s.heading}>SOL Pay 도우미</Text>
+            <Text accessibilityRole="header" style={s.heading}>Pay·Mate 도우미</Text>
             <Pressable accessibilityRole="button" accessibilityLabel="챗봇 닫기" onPress={() => setVisible(false)} style={s.iconButton}>
               <Ionicons name="close" size={24} color="#142D4E" />
             </Pressable>
