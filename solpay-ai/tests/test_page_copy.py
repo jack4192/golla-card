@@ -384,3 +384,40 @@ def test_프롬프트_버전():
     assert "card.keyword" in SYSTEM and "amount_line" in SYSTEM and "fixed_reasons" in SYSTEM
     _, _, log = PageCopyWriter(FakeClient([json.dumps(GOOD, ensure_ascii=False)])).write(facts_of(page_dict()))
     assert log["prompt_version"] == PROMPT_VERSION
+
+
+# ---------- 2026-11-24: 관련 업종 카드의 조건 금액 줄 · 일반 카드 밝히기 ----------
+from dataclasses import replace as _replace
+
+from tests.test_recommendation_page import KB_MOVIE, MOVIE_10500, movie_catalog
+
+
+def movie_page_dict(brand=None):
+    """12시 영화 10,500원. 브랜드 없음: 새 영화 카드(CGV 1만 2천 원 이상 5천 원). 메가박스: 일반 1.5% 카드."""
+    cat = movie_catalog()
+    item = MOVIE_10500 if brand is None else _replace(MOVIE_10500, brand=brand)
+    return build_page(state_of(KB_MOVIE, catalog=cat), [], [item], [], [], NOW, TODAY).to_dict(cat, TODAY)
+
+
+def test_조건_금액으로_계산한_항목은_이상으로_쓴다():
+    card = movie_page_dict()["card"]
+    assert (card["related"], card["show_amount"], card["items"][0]["at_least"]) == (True, True, True)
+    facts = facts_of(movie_page_dict())
+    assert facts["card"]["amount_line"] == "12:00 영화 12,000원 이상 결제 시 → 5,000원 할인"
+    assert template_copy(facts)["card"]["amount_label"] == "12:00 영화 12,000원 이상 결제 시 → 5,000원 할인"
+
+
+def test_일반_카드는_업종_전용_혜택이_아니라고_밝힌다():
+    facts = facts_of(movie_page_dict(brand="MEGABOX"))
+    copy = template_copy(facts)["card"]
+    assert copy["summary"] == "오늘 12시 영화 일정에 쓸 영화 전용 혜택은 없지만, 모든 가맹점 1.5% 할인을 받을 수 있어요."
+    assert copy["reasons"] == ["영화 전용 혜택은 아니에요", "연회비 없음"]
+    assert template_copy(facts_of(page_dict()))["card"]["reasons"] == [FEE]      # 전용 혜택 카드는 그대로
+
+
+def test_일반_카드_밝히기는_대신_쓴_카드_줄을_지우지_않는다():
+    """최종 검토: 네 줄이 다 차면 '함께 받는 혜택' 줄을 빼고 1년 줄과 '대신 썼을 때' 줄은 함께 둔다 (1년 금액의 뜻이 바뀌지 않게)."""
+    card = {"general": True, "annual_fee": 0, "yearly_extra": 30_000, "yearly_months": 12, "replaces": "KB ALL",
+            "items": [{"category": "영화", "time": "12:00~13:00", "keyword": "모든 가맹점 1.5% 할인", "amount": 10_500},
+                      {"category": "카페/커피전문점", "time": "15:00~16:00", "keyword": "모든 가맹점 1.5% 할인", "amount": 5_000}]}
+    assert fixed_reasons(card) == ["영화 전용 혜택은 아니에요", "지난 1년 소비라면 30,000원 더", "KB ALL 대신 썼을 때 기준", "연회비 없음"]
