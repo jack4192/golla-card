@@ -280,7 +280,7 @@ def test_agent_rewrites_once_then_falls_back_to_table(service):
     agent, _ = _agent(service, [[_tool_call(1, "simulate_payment", {"card_name": "KB"})],
                                 "9,999원 손해예요.", "여전히 8,888원이에요."])
     out = agent.answer(DEMO, "KB로 내면 얼마 손해야?", AT)
-    assert out["reply"] == TABLE_REPLY and out["blocks"]
+    assert out["reply"] != TABLE_REPLY and out["blocks"]          # 앱이 표를 그리지 않으므로 요약 문장 (test_chat_detail)
 
 
 def test_agent_retries_with_tools_when_draft_is_missing(service):
