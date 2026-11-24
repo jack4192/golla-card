@@ -1,6 +1,7 @@
-// '이 거래의 예상 혜택' 상세 상자 (홈 '내 카드' 위 + 결제 화면 '내 카드' 위, 2026-11-24).
+// '이 거래의 예상 혜택' 상세 상자 (결제 화면 '혜택 자세히 보기', 2026-11-24. 홈 카드 뒷면은 AI 추천 문구 — CardBenefitFlip).
 // 값은 useBenefitEstimate(결제 화면) 결과를 그대로 받는다. 가맹점·금액, 예상 혜택, 비교 카드와 그 혜택, 얼마 절약되는지.
-// 결제 화면에서는 '카드 선정 이유'(why)와 '상세 내역'(details)도 이 상자 안에 합쳐 보여 준다 (2026-11-24).
+// '카드 선정 이유'(why)와 '상세 내역'(details)도 이 상자 안에 합쳐 보여 준다 (2026-11-24).
+// status: 추천을 불러오는 중·못 불러옴 같은 한 줄 안내 (없으면 '').
 // 모양 (2026-11-24 다듬음): 큰 금액 → 절약 배지 → 이 카드 vs 비교 카드 두 칸 → 고른 이유 → 상세 내역.
 // 결제 화면과 서로 불러오지 않도록(순환 import 방지) 금액 모양 함수도 여기 따로 둔다.
 import React, { useState } from 'react';
@@ -12,7 +13,7 @@ const reward = row => (Number.isFinite(row?.value)
   ? Number(row.value).toLocaleString('ko-KR') + (row.unit === 'KRW' ? '원' : row.unit === 'POINT' ? 'P' : ' ' + row.unit)
   : '혜택 조건 확인 필요');
 
-export default function BenefitDetailBox({ scenario, selected, baseline, selectedBenefit, baseBenefit, difference, exampleLine, aiRows, scheduleScenario, why, details, style }) {
+export default function BenefitDetailBox({ scenario, selected, baseline, selectedBenefit, baseBenefit, difference, exampleLine, aiRows, scheduleScenario, why, details, status, style }) {
   const [open, setOpen] = useState(false);
   if (!scenario || !selected || !selectedBenefit) return null;
   const rows = (details || []).filter(Boolean);
@@ -27,6 +28,7 @@ export default function BenefitDetailBox({ scenario, selected, baseline, selecte
         <Text style={s.chipText}>{scenario.merchant} · {won(scenario.amount)}</Text>
       </View>
     </View>
+    {!!status && <Text accessibilityLiveRegion="polite" style={s.statusLine}>{status}</Text>}
 
     <View style={s.hero}>
       {!!selectedBenefit.name && <Text style={s.name}>{selectedBenefit.name}</Text>}
@@ -125,4 +127,5 @@ const s = StyleSheet.create({
   dot: { width: 5, height: 5, marginTop: 8, borderRadius: 3, backgroundColor: '#1D55D9' },
   detailRow: { flex: 1, fontSize: 13, lineHeight: 20, color: '#33445F' },
   foot: { fontSize: 12, lineHeight: 18, color: '#7A889C' },
+  statusLine: { fontSize: 12, lineHeight: 18, fontWeight: '700', color: '#5A6E89' },
 });

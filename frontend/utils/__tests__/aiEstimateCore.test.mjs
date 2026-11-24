@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bestCardOf, chooseEstimateScenario, evaluateRequest, exampleBasisLine, exampleNote, exampleScenario, toEstimates } from '../aiEstimateCore.js';
+import { bestCardOf, chooseEstimateScenario, evaluateRequest, exampleBasisLine, exampleNote, exampleScenario, matchPlace, toEstimates } from '../aiEstimateCore.js';
 
 test('상자 아래 줄은 예시를 고른 근거에 맞게 말한다', () => {
   assert.equal(exampleBasisLine('promotion'), '추천 문구가 말하는 거래로 계산했어요. ');
@@ -78,4 +78,39 @@ test('안내 줄은 행사 문구이고 가능성이 0~1 사이일 때만', () =
   assert.equal(exampleNote({ ...ex, basis: 'benefit' }, '약 480원'), '');
   assert.equal(exampleNote(ex, '금액 없는 문구'), '');
   assert.equal(exampleNote(null, '약 480원'), '');
+});
+
+test('실제 혜택 계산기 입력: 이름·브랜드가 같으면 가맹점, 업종 말은 업종, 앞부분은 브랜드가 하나뿐일 때만 (PR #11 검토)', () => {
+  // AI 가맹점 목록처럼 지점이 붙은 이름
+  const merchants = [
+    { merchant_id: 1, name: '카페베네 역삼점', category_code: 'CAFE' },
+    { merchant_id: 2, name: '스타벅스 강남역점', category_code: 'CAFE' },
+    { merchant_id: 3, name: '스타벅스 판교점', category_code: 'CAFE' },
+    { merchant_id: 4, name: '이디야 성수점', category_code: 'CAFE' },
+    { merchant_id: 5, name: '이마트24 역삼점', category_code: 'CONVENIENCE' },
+    { merchant_id: 6, name: '이마트 에브리데이 강남점', category_code: 'SUPERMARKET' },
+    { merchant_id: 7, name: '이마트 성수점', category_code: 'MART' },
+    { merchant_id: 8, name: '배달의민족', category_code: 'DELIVERY' },
+    { merchant_id: 9, name: 'GS25 역삼점', category_code: 'CONVENIENCE' },
+  ];
+  // 업종 말은 그 말로 시작하는 브랜드(카페베네·배달의민족)가 아니라 업종으로
+  assert.deepEqual(matchPlace('카페', merchants, 'cafe'), { category: 'cafe' });
+  assert.deepEqual(matchPlace('배달', merchants, 'delivery'), { category: 'delivery' });
+  // 브랜드 이름이 같으면 업종 분류보다 가맹점이 먼저 (지점은 떼고, 띄어쓰기·대소문자 무시)
+  assert.deepEqual(matchPlace('스타벅스', merchants, 'cafe'), { merchant: merchants[1], brand: '스타벅스' });
+  assert.equal(matchPlace('이마트', merchants, 'shopping').merchant.merchant_id, 7);
+  assert.equal(matchPlace(' gs 25 ', merchants, 'convenience').merchant.merchant_id, 9);
+  assert.equal(matchPlace('배달의 민족', merchants, null).merchant.merchant_id, 8);
+  // 지점까지 적으면 그 지점
+  assert.equal(matchPlace('스타벅스 판교점', merchants, 'cafe').merchant.merchant_id, 3);
+  // 앞부분: 브랜드가 하나뿐이면(지점 여럿이어도) 그 가맹점, 여럿이면 모른다
+  assert.equal(matchPlace('스타', merchants, null).brand, '스타벅스');
+  assert.equal(matchPlace('이마', merchants, null), null);
+  // 한 글자, 아무것도 아닌 말, 빈 말
+  assert.equal(matchPlace('이', merchants, null), null);
+  assert.equal(matchPlace('동네 꽃집', merchants, null), null);
+  assert.equal(matchPlace('  ', merchants, 'cafe'), null);
+  // 가맹점 목록이 없으면(데모 모드·못 읽음) 업종만
+  assert.deepEqual(matchPlace('주유소', [], 'fuel'), { category: 'fuel' });
+  assert.equal(matchPlace('스타벅스', undefined, null), null);
 });

@@ -251,7 +251,8 @@ export default function App() {
     if (screen !== 'Main') setMainTab('home');
     setCurrentScreen(screen);
   }, []);
-  // 로그인 직후에는 홈 대신 '오늘의 일정' 탭부터 보여 준다. 다른 탭으로는 아래 탭바로 이동 (2026-11-24)
+  // 메인에 들어가면 홈 대신 '오늘의 일정' 탭부터 보여 준다 (2026-11-24). 로그인·약관 동의 직후뿐 아니라
+  // 로그인을 유지한 채 새로고침·앱을 다시 열 때(restore → afterAuthentication)도 같다 (PR #11 검토, 사용자 결정). 다른 탭은 아래 탭바로
   const enterMainAfterLogin = () => {
     navigate('Main');
     setMainTab('schedule');

@@ -1,6 +1,7 @@
 // 결제할 곳(직접 입력)과 결제 금액을 넣어 이 카드의 혜택을 계산한다 (2026-11-24: 업종 버튼 → 직접 입력).
-// - 입력한 말: ① 실제 가맹점 이름이면(스타벅스·이마트·GS25…) 그 가맹점으로 AI 에 묻고,
-//   ② 아니면 일정 입력과 같은 업종 분류(typedCategoryIds: 주유소→주유, 카페→카페 …)로 계산한다.
+// - 입력한 말은 matchPlace(aiEstimateCore)로 알아본다 (PR #11 검토: 앞부분만 맞춰 '카페'→카페베네가 되던 문제):
+//   ① 가맹점 이름과 똑같으면(스타벅스·이마트·GS25…) 그 가맹점, ② 아니면 일정 입력과 같은 업종 분류(주유소→주유, 카페→카페 …),
+//   ③ 그래도 없으면 앞부분이 맞는 브랜드가 하나뿐일 때만 그 가맹점(스타→스타벅스). 결과에는 찾은 브랜드 이름을 보여 준다.
 // - 서버 모드: AI 엔진 계산(이번 달 실적·한도·행사 반영). AI 가 답하지 못하면, 데모 모드: 앱 계산(결제 화면과 같은 estimatePayment).
 // - 내 다른 카드가 더 많이 주면 그 카드도 알려 준다.
 import React, { useMemo, useRef, useState } from 'react';
@@ -9,7 +10,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { estimatePayment, realWalletCards, reward, won } from '../screens/PaymentScreen';
 import { makeSchedulePaymentScenario } from '../utils/schedulePayment';
 import { isCustomCategory, typedCategoryIds } from '../utils/routineData';
-import { loadAiEstimates } from '../utils/aiEstimate';
+import { loadAiEstimates, loadAiMerchants } from '../utils/aiEstimate';
+import { matchPlace } from '../utils/aiEstimateCore';
 import { SERVER_MODE } from '../utils/api';
 
 const MAX_AMOUNT = 10000000;
@@ -19,7 +21,7 @@ const comma = text => (text ? Number(text).toLocaleString('ko-KR') : '');
 export default function ActualBenefitCalc({ card, cards, onClose }) {
   const [place, setPlace] = useState('');      // 결제할 곳 (직접 입력)
   const [amount, setAmount] = useState('');
-  const [result, setResult] = useState(null);     // { benefit, best, bestCard, source, merchant, amount }
+  const [result, setResult] = useState(null);     // { benefit, better, ai, merchant, amount } (benefit 이 없으면 이 카드로 계산 못 함)
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const run = useRef(0);
@@ -32,28 +34,35 @@ export default function ActualBenefitCalc({ card, cards, onClose }) {
     if (!selected) { setError('등록된 카드가 없어요.'); return; }
     if (!where) { setError('어디서 결제하는지 적어 주세요. 예: 스타벅스, 주유소'); return; }
     if (!value || value > MAX_AMOUNT) { setError('결제 금액을 1원 ~ 1,000만 원 사이로 넣어 주세요.'); return; }
-    // 업종 분류 (일정 입력과 같은 규칙). 마트·쇼핑은 입력한 이름으로 대형마트/온라인몰을 가른다
-    const categoryId = typedCategoryIds(where)[0];
-    const category = categoryId && !isCustomCategory(categoryId) ? categoryId : null;
-    const base = category ? makeSchedulePaymentScenario(category === 'shopping' ? { category, benefitName: where } : { category }) : null;
-    const scenario = base ? { ...base, id: 'actual:' + category + ':' + value, amount: value } : null;
     const ticket = ++run.current;
     setBusy(true);
     setError('');
     try {
-      let aiRows = null;
-      if (SERVER_MODE) {
-        // ① 가맹점 이름으로 (이마트는 이마트24(편의점)와 헷갈리지 않게 대형마트로 찾는다)
-        const mart = /마트/.test(where) && !/24/.test(where);
-        aiRows = await loadAiEstimates({ id: 'actual-place:' + where + ':' + value, merchant: where, namedMerchant: true,
-          categoryCode: mart ? 'MART' : undefined, amount: value });
-        // ② 업종으로
-        if (!aiRows && scenario) aiRows = await loadAiEstimates(scenario);
+      // 업종 분류 (일정 입력과 같은 규칙). 분류되지 않은 말(사용자 정의 업종)은 업종으로 치지 않는다
+      const typedId = typedCategoryIds(where)[0];
+      const typedCategory = typedId && !isCustomCategory(typedId) ? typedId : null;
+      const merchants = SERVER_MODE ? await loadAiMerchants() : [];
+      if (ticket !== run.current) return;
+      const match = matchPlace(where, merchants, typedCategory);
+      if (!match) {
+        setResult(null);
+        setError(`'${where}'이(가) 어떤 곳인지 알 수 없어요. 가맹점 이름(예: 스타벅스)이나 업종(예: 카페, 주유소)으로 적어 주세요.`);
+        return;
       }
+      // 앱 계산용 업종 거래 (데모 모드·AI 실패 때). 마트·쇼핑은 입력한 이름으로 대형마트/온라인몰을 가른다
+      const category = match.category || typedCategory;
+      const base = category ? makeSchedulePaymentScenario(category === 'shopping' ? { category, benefitName: where } : { category }) : null;
+      const scenario = base ? { ...base, id: 'actual:' + category + ':' + value, amount: value } : null;
+      // AI 계산: 가맹점으로 찾았으면 그 가맹점 번호로, 아니면 업종으로
+      const aiScenario = match.merchant
+        ? { id: 'actual-merchant:' + match.merchant.merchant_id + ':' + value, categoryCode: match.merchant.category_code,
+            merchantId: match.merchant.merchant_id, amount: value }
+        : scenario;
+      const aiRows = SERVER_MODE && aiScenario ? await loadAiEstimates(aiScenario) : null;
       if (ticket !== run.current) return;
       if (!aiRows && !scenario) {
         setResult(null);
-        setError(`'${where}'이(가) 어떤 곳인지 알 수 없어요. 가맹점 이름(예: 스타벅스)이나 업종(예: 카페, 주유소)으로 적어 주세요.`);
+        setError('지금은 계산하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
         return;
       }
       const now = new Date();
@@ -64,7 +73,7 @@ export default function ActualBenefitCalc({ card, cards, onClose }) {
       const better = rows.filter(row => row.card.id !== selected.id && Number.isFinite(row.benefit?.value)
         && (!Number.isFinite(mine?.value) || row.benefit.value > mine.value))
         .sort((x, y) => y.benefit.value - x.benefit.value)[0];
-      setResult({ benefit: mine, better, ai: useAi, merchant: where, amount: value });
+      setResult({ benefit: mine, better, ai: useAi, merchant: match.brand || where, amount: value });
     } catch {
       if (ticket === run.current) setError('계산하지 못했어요. 다시 시도해 주세요.');
     } finally {
@@ -103,7 +112,10 @@ export default function ActualBenefitCalc({ card, cards, onClose }) {
     {!!error && <Text accessibilityRole="alert" style={s.error}>{error}</Text>}
     {result && <View accessibilityLiveRegion="polite" style={s.result}>
       <Text style={s.resultHead}>{result.merchant} · {won(result.amount)} 결제</Text>
-      <Text style={[s.resultAmount, !known && s.resultUnknown]}>{known ? reward(result.benefit) + ' 혜택' : '혜택 조건 확인 필요'}</Text>
+      {/* 이 카드 값이 아예 없으면(계산 못 하는 결제) 이유 없는 '조건 확인 필요' 대신 그렇다고 알린다 (PR #11 검토) */}
+      <Text style={[s.resultAmount, !known && s.resultUnknown]}>
+        {known ? reward(result.benefit) + ' 혜택' : result.benefit ? '혜택 조건 확인 필요' : '이 결제는 ' + selected.name + '로 계산할 수 없어요'}
+      </Text>
       {!known && !!result.benefit?.reason && <Text style={s.resultNote}>{result.benefit.reason}</Text>}
       {result.better && <Text style={s.better}>
         내 카드 중 {result.better.card.name}이(가) {reward(result.better.benefit)}로 더 많이 줘요

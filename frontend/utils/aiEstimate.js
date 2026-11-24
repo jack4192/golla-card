@@ -14,6 +14,17 @@ async function walletLinks() {
   return links;
 }
 
+// AI 가맹점 목록 [{ merchant_id, name, category_code, ... }] (한 번만 읽는다). 못 읽으면 [] (다음에 다시 읽는다)
+export async function loadAiMerchants() {
+  if (!SERVER_MODE) return [];
+  try {
+    if (!merchants) merchants = await api.aiMerchants();
+    return Array.isArray(merchants) ? merchants : [];
+  } catch {
+    return [];
+  }
+}
+
 // 반환: { [지갑 카드 id]: { value, unit, name, reason, condition, source: 'ai' } } 또는 null
 export async function loadAiEstimates(scenario) {
   if (!SERVER_MODE) return null;
