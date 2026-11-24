@@ -1,16 +1,24 @@
 // '이 카드로 결제' QR 결제 바텀시트
 // 결제 화면으로 넘어가지 않고, 화면 아래에서 QR·바코드만 간결하게 보여줍니다.
-// - 열리면 60초짜리 예시 결제 코드를 발급하고, 시간이 지나면 '새 코드 받기'로 다시 발급합니다.
+// - 열리면 60초짜리 결제 코드를 발급하고, 시간이 지나면 '새 코드 받기'로 다시 발급합니다.
+//   서버 모드는 서버가 발급한 코드(2026-11-24, 결제 API)이고, 데모 모드는 기기에서 만든 예시 코드입니다.
+// - 서버 모드: 2초마다 코드 상태를 확인해 가상 POS 에서 결제되면 알아채고, '이 코드로 결제(시연)'로 앱에서 바로 결제할 수도 있습니다.
+//   일정에서 연 결제는 그 일정 업종의 가맹점에서 결제합니다. 결제가 끝나면 결과를 보여 주고 onPaid 로 홈을 새로 고칩니다.
 // - 카드 변경은 시트 안에서 바로 하고, 자세한 혜택 비교는 '혜택 자세히 보기'로 기존 결제 화면을 엽니다.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, AppState, Image, Modal, PanResponder, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Codes, makeDemoCode, protectScreen, realWalletCards } from '../screens/PaymentScreen';
+import { SERVER_MODE, api } from '../utils/api';
+import { serverCardLinks } from '../utils/serverCards';
+import { POLL_MS, codeFromServer, declineMessage, receiptFromPayment, receiptFromRecent, serverCategoryOf, shouldPoll } from '../utils/paymentCodeCore';
 
 const CODE_SECONDS = 60;
 const CLOSE_DISTANCE = 80;
 
-export default function QuickPaySheet({ visible, cards = [], cardId, context, onSelectCard, onClose, onOpenDetails }) {
+const won = value => Number(value || 0).toLocaleString('ko-KR') + '원';
+
+export default function QuickPaySheet({ visible, cards = [], cardId, context, onSelectCard, onClose, onOpenDetails, onPaid }) {
   const options = useMemo(() => realWalletCards(cards.find(card => card.id === cardId), cards), [cards, cardId]);
   const selected = options.find(card => card.id === cardId) || options[0];
   const [code, setCode] = useState(null);
@@ -18,7 +26,13 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
   const [picking, setPicking] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const [receipt, setReceipt] = useState(null);   // 결제가 끝나면 { merchantName, amount, totalDiscount, ... }
   const sequence = useRef(0);
+  const codeRef = useRef(null);       // 지금 보여 주는 코드 (닫을 때 서버 코드 취소용)
+  const finished = useRef(null);      // 결과를 보여 준 코드 번호 (상태 확인·시연 버튼이 겹쳐도 한 번만)
+  const onPaidRef = useRef(onPaid);
+  onPaidRef.current = onPaid;
   const dragY = useRef(new Animated.Value(0)).current;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -32,16 +46,52 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
     },
   })).current;
 
+  const showCode = next => {
+    codeRef.current = next;
+    setCode(next);
+  };
+
+  // 서버 코드를 보여 주다 닫거나 다시 발급하기 전에 취소한다(결제 안 된 코드만, 실패해도 60초면 만료).
+  const cancelServerCode = () => {
+    const current = codeRef.current;
+    codeRef.current = null;
+    if (SERVER_MODE && current?.server && finished.current !== current.tokenId) {
+      api.cancelPaymentToken(current.tokenId).catch(() => {});
+    }
+  };
+
+  const finish = (tokenId, result) => {
+    if (finished.current === tokenId) return;
+    finished.current = tokenId;
+    setReceipt(result);
+    setError('');
+    onPaidRef.current?.(result);
+  };
+
   const issue = async () => {
     if (!selected) return;
     const ticket = ++sequence.current;
     setCode(null);
+    codeRef.current = null;
+    setReceipt(null);
     setGenerating(true);
     setError('');
     try {
-      const value = await makeDemoCode();
-      if (ticket !== sequence.current) return;
-      setCode({ value, cardId: selected.id, expiresAt: Date.now() + CODE_SECONDS * 1000 });
+      if (SERVER_MODE) {
+        // 서버 모드: 서버가 발급한 코드. 지갑 카드 → 서버 userCardId (다시 발급하면 이전 코드는 서버가 취소한다)
+        const userCardId = serverCardLinks()[String(selected.id)];
+        if (userCardId === undefined) throw Error('서버에 등록된 카드가 아니라 결제 코드를 받을 수 없어요. 카드 탭에서 다시 불러와 주세요.');
+        const res = await api.issuePaymentToken(userCardId);
+        if (ticket !== sequence.current) {
+          api.cancelPaymentToken(res?.paymentTokenId).catch(() => {});
+          return;
+        }
+        showCode(codeFromServer(res, selected.id));
+      } else {
+        const value = await makeDemoCode();
+        if (ticket !== sequence.current) return;
+        showCode({ value, cardId: selected.id, expiresAt: Date.now() + CODE_SECONDS * 1000 });
+      }
       setNow(Date.now());
     } catch (problem) {
       if (ticket === sequence.current) setError(problem?.message || '결제 코드를 만들지 못했어요.');
@@ -54,7 +104,10 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
   useEffect(() => {
     if (!visible) {
       sequence.current += 1;
+      cancelServerCode();
       setCode(null);
+      setReceipt(null);
+      setPaying(false);
       setPicking(false);
       return undefined;
     }
@@ -62,6 +115,52 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
     issue();
     return undefined;
   }, [visible, selected?.id]);
+
+  // 화면이 사라질 때도 결제 안 된 서버 코드는 취소한다.
+  useEffect(() => () => cancelServerCode(), []);
+
+  // 서버 모드: 2초마다 코드 상태를 확인해 가상 POS(다른 기기)에서 결제되면 결과를 보여 준다.
+  useEffect(() => {
+    if (!SERVER_MODE || !visible || !shouldPoll(code, receipt)) return undefined;
+    let stopped = false;
+    const tokenId = code.tokenId;
+    const timer = setInterval(async () => {
+      if (stopped || paying || !shouldPoll(codeRef.current, null) || codeRef.current?.tokenId !== tokenId) return;
+      try {
+        const status = await api.paymentTokenStatus(tokenId);
+        if (stopped || status?.status !== 'COMPLETED' || finished.current === tokenId) return;
+        const recent = await api.paymentsRecent({ limit: 5 }).catch(() => []);
+        if (!stopped) finish(tokenId, receiptFromRecent(recent, status.paymentId));
+      } catch {
+        // 상태를 못 읽어도 코드는 그대로 보여 준다 (다음 확인 때 다시)
+      }
+    }, POLL_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [visible, code?.tokenId, receipt, paying]);
+
+  // '이 코드로 결제(시연)': 앱에서 바로 결제한다. 일정에서 연 결제는 그 일정 업종의 가맹점에서.
+  const payNow = async () => {
+    const current = codeRef.current;
+    if (!SERVER_MODE || !current?.server || paying || Date.now() >= current.expiresAt) return;
+    setPaying(true);
+    setError('');
+    try {
+      const res = await api.payWithToken(current.tokenId, { category: serverCategoryOf(context?.category) });
+      const result = receiptFromPayment(res);
+      if (!result) {
+        setError(declineMessage(res?.declineReason));
+        return;
+      }
+      finish(current.tokenId, result);
+    } catch (problem) {
+      setError(problem?.message || '결제하지 못했어요. 다시 시도해 주세요.');
+    } finally {
+      setPaying(false);
+    }
+  };
 
   // 남은 시간 표시, 앱이 백그라운드로 가면 시간만 갱신
   useEffect(() => {
@@ -90,6 +189,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
 
   const seconds = code ? Math.max(0, Math.ceil((code.expiresAt - now) / 1000)) : 0;
   const expired = !code || seconds === 0 || code.cardId !== selected?.id;
+  const paid = Boolean(receipt);
 
   return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
     <View style={s.backdrop}>
@@ -103,8 +203,8 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
         </View> : <>
           <View style={s.headRow}>
             <Text accessibilityRole="header" style={s.heading}>QR · 바코드 결제</Text>
-            <Text style={[s.timer, expired && s.timerExpired]} accessibilityLiveRegion="polite">
-              {generating ? '발급 중' : expired ? '만료됨' : `${seconds}초`}
+            <Text style={[s.timer, expired && !paid && s.timerExpired, paid && s.timerPaid]} accessibilityLiveRegion="polite">
+              {paid ? '결제 완료' : generating ? '발급 중' : expired ? '만료됨' : `${seconds}초`}
             </Text>
           </View>
 
@@ -113,17 +213,41 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
             📅 {context.title}{context.benefitName ? ' · ' + context.benefitName : ''}
           </Text>}
 
+          {paid ? <View style={s.receipt} accessibilityLiveRegion="polite">
+            <View style={s.receiptHead}>
+              <Ionicons name="checkmark-circle" size={26} color="#1E8E5A" />
+              <Text accessibilityRole="header" style={s.receiptTitle}>결제가 완료됐어요</Text>
+            </View>
+            {receipt.merchantName ? <Text style={s.receiptMain}>{receipt.merchantName} · {won(receipt.amount)}</Text>
+              : <Text style={s.receiptMain}>다른 기기(가상 POS)에서 결제됐어요</Text>}
+            <Text style={s.receiptLine}>
+              받은 혜택 {won(receipt.totalDiscount)}
+              {receipt.benefitAmount > 0 ? ' · 카드 혜택 ' + won(receipt.benefitAmount) + (receipt.benefitName ? ' (' + receipt.benefitName + ')' : '') : ''}
+              {receipt.promotionAmount > 0 ? ' · 행사 ' + won(receipt.promotionAmount) : ''}
+            </Text>
+            {!!receipt.approvalNo && <Text style={s.receiptSub}>승인번호 {receipt.approvalNo}</Text>}
+            <Text style={s.receiptSub}>가상 결제라 실제 카드 승인·출금은 없어요. 결제 내역에서 다시 볼 수 있어요.</Text>
+          </View> : <>
           <View style={s.codeBox}>
             {generating ? <ActivityIndicator color="#245DE5" style={s.loading} />
               : code ? <Codes value={code.value} inactive={expired} /> : null}
           </View>
-          <Text style={s.notice}>QR·바코드는 예시이며 실제 결제에 사용할 수 없어요.</Text>
+          <Text style={s.notice}>
+            {SERVER_MODE ? '가상 결제용 코드예요. 가상 POS 에서 읽거나 아래 버튼으로 결제해 볼 수 있어요. 실제 카드 결제는 되지 않아요.'
+              : 'QR·바코드는 예시이며 실제 결제에 사용할 수 없어요.'}
+          </Text>
+          {SERVER_MODE && <TouchableOpacity accessibilityRole="button" accessibilityLabel="이 코드로 결제, 시연"
+            disabled={generating || paying || expired || !code?.server} onPress={payNow}
+            style={[s.payButton, (generating || paying || expired || !code?.server) && s.dim]}>
+            {paying ? <ActivityIndicator color="#FFFFFF" /> : <Text style={s.payText}>이 코드로 결제 (시연)</Text>}
+          </TouchableOpacity>}
+          </>}
           {!!error && <Text style={s.error} accessibilityRole="alert">{error}</Text>}
 
           <View style={s.actions}>
-            <TouchableOpacity accessibilityRole="button" disabled={generating} onPress={issue} style={[s.secondary, generating && s.dim]}>
+            <TouchableOpacity accessibilityRole="button" disabled={generating || paying} onPress={issue} style={[s.secondary, (generating || paying) && s.dim]}>
               <Ionicons name="refresh" size={16} color="#245DE5" />
-              <Text style={s.secondaryText}>{expired ? '새 코드 받기' : '코드 다시 발급'}</Text>
+              <Text style={s.secondaryText}>{paid ? '새 결제 코드 받기' : expired ? '새 코드 받기' : '코드 다시 발급'}</Text>
             </TouchableOpacity>
             {!!onOpenDetails && <TouchableOpacity accessibilityRole="button" onPress={onOpenDetails} style={s.secondary}>
               <Ionicons name="stats-chart-outline" size={16} color="#245DE5" />
@@ -171,6 +295,15 @@ const s = StyleSheet.create({
   heading: { fontSize: 18, fontWeight: '800', color: '#14213D' },
   timer: { fontSize: 18, fontWeight: '800', color: '#245DE5' },
   timerExpired: { color: '#C53D56' },
+  timerPaid: { color: '#1E8E5A' },
+  payButton: { minHeight: 48, borderRadius: 14, backgroundColor: '#245DE5', alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  payText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  receipt: { borderRadius: 16, backgroundColor: '#F1FAF5', borderWidth: 1, borderColor: '#CDEBDB', padding: 16, gap: 6 },
+  receiptHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  receiptTitle: { fontSize: 17, fontWeight: '800', color: '#16324F' },
+  receiptMain: { fontSize: 16, fontWeight: '700', color: '#16324F' },
+  receiptLine: { fontSize: 14, lineHeight: 20, color: '#1E5E3F', fontWeight: '600' },
+  receiptSub: { fontSize: 12, lineHeight: 18, color: '#5A6E89' },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 14, backgroundColor: '#F4F7FF' },
   cardImage: { width: 56, height: 36 },
   cardInfo: { flex: 1, gap: 2 },

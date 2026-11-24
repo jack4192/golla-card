@@ -91,18 +91,34 @@ public class PosPaymentService {
 
 
     @Transactional
-    public PosPaymentResponse payFromApp(Long userId, Long paymentTokenId, Long merchantId, Integer requestedAmount) {
+    public PosPaymentResponse payFromApp(Long userId, Long paymentTokenId, Long merchantId, String category,
+                                         Integer requestedAmount) {
         PaymentCode mine = paymentCodeRepository.findMine(paymentTokenId, userId)
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.PAYMENT_TOKEN_NOT_FOUND));
-        TerminalRow terminal = (merchantId != null
-                ? posRepository.findTerminalByMerchant(merchantId)
-                : posRepository.findRandomTerminal())
-                .stream().findFirst()
-                .orElseThrow(() -> new BusinessException(PaymentErrorCode.MERCHANT_NOT_FOUND));
+        TerminalRow terminal = pickTerminal(merchantId, category);
 
         LocalDateTime now = clock.now();   // 결제 시각 (시연용 기준 시각이 있으면 그 시각)
         int amount = requestedAmount != null ? requestedAmount : amountPolicy.randomAmount(terminal.getCategory());
         return process(terminal, mine.getCodeHash(), amount, now);
+    }
+
+    /**
+     * 앱 시연 결제의 가맹점: 가맹점을 정했으면 그 가맹점, 아니면 업종(일정에서 연 결제)의 가맹점 중 무작위,
+     * 그 업종에 단말기가 없거나 업종도 없으면 아무 가맹점 (2026-11-24).
+     */
+    private TerminalRow pickTerminal(Long merchantId, String category) {
+        if (merchantId != null) {
+            return posRepository.findTerminalByMerchant(merchantId).stream().findFirst()
+                    .orElseThrow(() -> new BusinessException(PaymentErrorCode.MERCHANT_NOT_FOUND));
+        }
+        if (category != null && !category.isBlank()) {
+            var inCategory = posRepository.findRandomTerminalInCategory(category.trim());
+            if (!inCategory.isEmpty()) {
+                return inCategory.get(0);
+            }
+        }
+        return posRepository.findRandomTerminal().stream().findFirst()
+                .orElseThrow(() -> new BusinessException(PaymentErrorCode.MERCHANT_NOT_FOUND));
     }
 
     private PosPaymentResponse process(TerminalRow terminal, String codeHash, int amount, LocalDateTime now) {

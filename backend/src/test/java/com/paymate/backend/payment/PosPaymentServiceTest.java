@@ -161,6 +161,22 @@ class PosPaymentServiceTest {
     }
 
     @Test
+    @DisplayName("앱 시연 결제: 업종을 주면 그 업종 가맹점에서, 그 업종 단말기가 없으면 아무 가맹점에서 결제한다")
+    void appPayPicksTerminalByCategory() throws Exception {
+        PaymentCode code = new PaymentCode(3L, hasher.hash(CODE), LocalDateTime.now(ZoneId.of("Asia/Seoul")).minusSeconds(1));
+        when(codes.findMine(9L, 1L)).thenReturn(Optional.of(code));
+        when(codes.findByCodeHash(hasher.hash(CODE))).thenReturn(Optional.of(code));   // 만료된 코드라 거절로 끝난다
+        when(pos.findRandomTerminalInCategory("CAFE")).thenReturn(List.of(new Terminal(7L, 70L, "투썸플레이스", "CAFE")));
+        when(pos.findRandomTerminalInCategory("TAXI")).thenReturn(List.of());
+        when(pos.findRandomTerminal()).thenReturn(List.of(new Terminal(8L, 80L, "GS25", "CONVENIENCE")));
+
+        assertThat(service.payFromApp(1L, 9L, null, "CAFE", 5000).getMerchantName()).isEqualTo("투썸플레이스");
+        assertThat(service.payFromApp(1L, 9L, null, "TAXI", 5000).getMerchantName()).isEqualTo("GS25");
+        assertThat(service.payFromApp(1L, 9L, null, null, 5000).getMerchantName()).isEqualTo("GS25");
+        verify(pos, never()).findTerminalByMerchant(any());
+    }
+
+    @Test
     @DisplayName("금액을 비우면 가맹점 업종 범위 안에서 100원 단위로 정한다")
     void randomAmount() throws Exception {
         PosPaymentResponse res = service.pay(request(KEY, "bad", null));

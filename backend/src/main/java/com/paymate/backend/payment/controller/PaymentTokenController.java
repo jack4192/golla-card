@@ -63,7 +63,8 @@ public class PaymentTokenController {
             @Valid @RequestBody(required = false) AppPayRequest req
     ) {
         Long merchantId = req == null ? null : req.getMerchantId();
+        String category = req == null ? null : req.getCategory();
         Integer amount = req == null ? null : req.getAmount();
-        return ResponseEntity.ok(posPaymentService.payFromApp(authUser.getId(), paymentTokenId, merchantId, amount));
+        return ResponseEntity.ok(posPaymentService.payFromApp(authUser.getId(), paymentTokenId, merchantId, category, amount));
     }
 }
