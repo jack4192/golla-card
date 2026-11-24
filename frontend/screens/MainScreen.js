@@ -443,6 +443,8 @@ export default function MainScreen({
         Alert.alert('알림 권한 필요', '휴대폰 설정에서 SOL·Pay(또는 Expo Go) 알림을 허용한 뒤 다시 켜주세요.');
         return;
       }
+      // 서버 모드: 알림 수신 동의를 서버에 먼저 저장합니다 (users.notification_agreed, 2026-11-24). 실패하면 바꾸지 않습니다.
+      if (SERVER_MODE) await api.saveNotificationAgreement(value);
       const next = { ...(savedConsent || {}), morningNotificationAgreed: value, savedAt: new Date().toISOString() };
       await SecureStore.setItemAsync(CONSENT_KEY, JSON.stringify(next));
       setSavedConsent(next);

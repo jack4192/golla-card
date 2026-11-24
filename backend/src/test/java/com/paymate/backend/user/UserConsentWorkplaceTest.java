@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-/** 직장·필수 동의 서버 저장 (2026-11-24 사용자 결정: users.workplace_name, users.mydata_agreed 기존 칸 사용). */
+/** 직장·필수 동의·알림 수신 동의 서버 저장 (2026-11-24: users.workplace_name, users.mydata_agreed, users.notification_agreed). */
 class UserConsentWorkplaceTest {
 
     private final UserRepository users = mock(UserRepository.class);
@@ -72,10 +72,11 @@ class UserConsentWorkplaceTest {
         User user = new User("점검", LocalDate.of(1995, 5, 5), "010-1234-5678", "a@example.test", "HASH");
         when(users.findById(1006L)).thenReturn(Optional.of(user));
 
-        service.saveAgreement(1006L, true);
+        service.saveAgreement(1006L, true, null);
         assertThat(user.getMydataAgreed()).isTrue();
+        assertThat(user.getNotificationAgreed()).isNull();          // 알림 동의를 안 보내면 그대로
 
-        service.saveAgreement(1006L, false);
+        service.saveAgreement(1006L, false, null);
         assertThat(user.getMydataAgreed()).isFalse();
     }
 
@@ -83,8 +84,40 @@ class UserConsentWorkplaceTest {
     @DisplayName("없는 회원의 동의 저장은 404")
     void saveAgreementMissing() {
         when(users.findById(2000L)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.saveAgreement(2000L, true))
+        assertThatThrownBy(() -> service.saveAgreement(2000L, true, null))
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(UserErrorCode.USER_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("동의 화면의 알림 수신 동의를 함께 저장하고, 필수 동의를 철회하면 알림 동의도 false")
+    void saveAgreementWithNotification() {
+        User user = new User("점검", LocalDate.of(1995, 5, 5), "010-1234-5678", "a@example.test", "HASH");
+        when(users.findById(1006L)).thenReturn(Optional.of(user));
+
+        service.saveAgreement(1006L, true, true);
+        assertThat(user.getNotificationAgreed()).isTrue();
+
+        service.saveAgreement(1006L, true, false);
+        assertThat(user.getNotificationAgreed()).isFalse();
+
+        service.saveAgreement(1006L, true, true);
+        service.saveAgreement(1006L, false, true);                  // 철회하면 보낸 값과 상관없이 false
+        assertThat(user.getMydataAgreed()).isFalse();
+        assertThat(user.getNotificationAgreed()).isFalse();
+    }
+
+    @Test
+    @DisplayName("설정의 폰 알림 받기는 알림 수신 동의만 바꾼다")
+    void saveNotificationAgreement() {
+        User user = new User("점검", LocalDate.of(1995, 5, 5), "010-1234-5678", "a@example.test", "HASH");
+        user.agreeMydata(true);
+        when(users.findById(1006L)).thenReturn(Optional.of(user));
+
+        service.saveNotificationAgreement(1006L, true);
+        assertThat(user.getNotificationAgreed()).isTrue();
+        service.saveNotificationAgreement(1006L, false);
+        assertThat(user.getNotificationAgreed()).isFalse();
+        assertThat(user.getMydataAgreed()).isTrue();
     }
 }

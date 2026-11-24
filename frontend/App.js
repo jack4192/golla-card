@@ -552,10 +552,11 @@ export default function App() {
       morningNotificationAgreed: value.morningNotificationAgreed === true,
     };
 
-    // 서버 모드: 필수 동의를 서버에 먼저 남깁니다 (users.mydata_agreed, 2026-11-24). 실패하면 동의 화면에 머뭅니다.
+    // 서버 모드: 필수 동의와 알림 수신 동의를 서버에 먼저 남깁니다 (users.mydata_agreed·notification_agreed, 2026-11-24).
+    // 실패하면 동의 화면에 머뭅니다.
     if (SERVER_MODE) {
       try {
-        await api.saveAgreement(true);
+        await api.saveAgreement(true, nextConsent.morningNotificationAgreed);
       } catch (error) {
         throw Error('동의를 서버에 저장하지 못했어요. 다시 시도해주세요. ' + (error?.message || ''));
       }

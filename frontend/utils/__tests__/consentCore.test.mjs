@@ -18,3 +18,10 @@ test('기기에 이미 동의가 있거나, 서버 동의가 없으면(false·nu
   assert.equal(consentFromServer({ mydataAgreed: null }, null, V, NOW), null);
   assert.equal(consentFromServer(null, null, V, NOW), null);
 });
+
+test('알림 수신 동의는 서버 값(true/false)을 쓰고, 서버가 모르면(null·없음) 기기 값을 쓴다', () => {
+  assert.equal(consentFromServer({ mydataAgreed: true, notificationAgreed: true }, null, V, NOW).morningNotificationAgreed, true);
+  assert.equal(consentFromServer({ mydataAgreed: true, notificationAgreed: false }, { morningNotificationAgreed: true }, V, NOW).morningNotificationAgreed, false);
+  assert.equal(consentFromServer({ mydataAgreed: true, notificationAgreed: null }, { morningNotificationAgreed: true }, V, NOW).morningNotificationAgreed, true);
+  assert.equal(consentFromServer({ mydataAgreed: true, notificationAgreed: null }, null, V, NOW).morningNotificationAgreed, false);
+});

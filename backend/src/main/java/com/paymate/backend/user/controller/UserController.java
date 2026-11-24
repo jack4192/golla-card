@@ -3,6 +3,7 @@ package com.paymate.backend.user.controller;
 import com.paymate.backend.auth.service.AuthService;
 import com.paymate.backend.common.security.AuthUser;
 import com.paymate.backend.user.dto.AgreementRequest;
+import com.paymate.backend.user.dto.NotificationAgreementRequest;
 import com.paymate.backend.user.dto.EmailAvailabilityResponse;
 import com.paymate.backend.user.dto.PhoneAvailabilityResponse;
 import com.paymate.backend.user.dto.UserResponse;
@@ -42,7 +43,15 @@ public class UserController {
     @PutMapping("/me/agreement")
     public ResponseEntity<Void> saveAgreement(@AuthenticationPrincipal AuthUser authUser,
                                               @Valid @RequestBody AgreementRequest req) {
-        userService.saveAgreement(authUser.getId(), req.getAgreed());
+        userService.saveAgreement(authUser.getId(), req.getAgreed(), req.getNotificationAgreed());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** 알림 수신 동의(선택)만 바꾼다 (2026-11-24): users.notification_agreed. /me 의 notificationAgreed 로 다시 읽는다. */
+    @PutMapping("/me/notification-agreement")
+    public ResponseEntity<Void> saveNotificationAgreement(@AuthenticationPrincipal AuthUser authUser,
+                                                          @Valid @RequestBody NotificationAgreementRequest req) {
+        userService.saveNotificationAgreement(authUser.getId(), req.getAgreed());
         return ResponseEntity.noContent().build();
     }
 

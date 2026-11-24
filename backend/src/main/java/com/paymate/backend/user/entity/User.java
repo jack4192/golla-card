@@ -42,6 +42,9 @@ public class User {
     @Column(name = "location_agreed")
     private Boolean locationAgreed;
 
+    @Column(name = "notification_agreed")
+    private Boolean notificationAgreed;      // 알림 수신 동의(선택, 2026-11-24). null = 아직 응답 안 함
+
     @Column(name = "workplace_name", length = 100)
     private String workplaceName;
 
@@ -60,6 +63,11 @@ public class User {
     /** 필수 서비스 이용 동의 (2026-11-24 사용자 결정: 기존 mydata_agreed 칸에 저장, 철회하면 false). */
     public void agreeMydata(boolean agreed) {
         this.mydataAgreed = agreed;
+    }
+
+    /** 알림 수신 동의 (선택, 2026-11-24 사용자 결정: 서버에도 저장). */
+    public void changeNotificationAgreed(boolean agreed) {
+        this.notificationAgreed = agreed;
     }
 
     public User(String name, LocalDate birthDate, String phone, String email, String passwordHash) {

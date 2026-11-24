@@ -95,12 +95,28 @@ public class UserService {
         userRepository.save(user);
     }
 
-    /** 필수 서비스 이용 동의 저장·철회 (2026-11-24). 다른 기기에서 로그인해도 다시 묻지 않게 서버에 둔다. */
+    /**
+     * 필수 서비스 이용 동의 저장·철회 (2026-11-24). 다른 기기에서 로그인해도 다시 묻지 않게 서버에 둔다.
+     * notificationAgreed 가 있으면 알림 수신 동의도 함께 저장하고, 필수 동의를 철회하면 알림 수신 동의도 false 로 둔다.
+     */
     @Transactional
-    public void saveAgreement(Long userId, boolean agreed) {
+    public void saveAgreement(Long userId, boolean agreed, Boolean notificationAgreed) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
         user.agreeMydata(agreed);
+        if (!agreed) {
+            user.changeNotificationAgreed(false);
+        } else if (notificationAgreed != null) {
+            user.changeNotificationAgreed(notificationAgreed);
+        }
+    }
+
+    /** 알림 수신 동의만 바꾼다 (설정 > 폰 알림 받기, 2026-11-24). */
+    @Transactional
+    public void saveNotificationAgreement(Long userId, boolean agreed) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
+        user.changeNotificationAgreed(agreed);
     }
 
     @Transactional(readOnly = true)
