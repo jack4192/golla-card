@@ -378,7 +378,7 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
                 <Text style={s.directTitle}>일정 직접 입력</Text>
                 <TextInput accessibilityLabel="일정 직접 입력" style={s.input}
                   value={form.title} onChangeText={enterTitle}
-                  maxLength={ROUTINE_TITLE_LIMIT} editable={!disabled} placeholder="예: 헬스장, 영화관, 병원 예약"
+                  maxLength={ROUTINE_TITLE_LIMIT} editable={!disabled} placeholder="예: 동물 병원 예약, 주유소"
                   placeholderTextColor="#697C98" returnKeyType="done" />
               </View>
             </ScrollView>
