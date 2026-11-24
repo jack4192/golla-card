@@ -195,6 +195,9 @@ export default function SpecialScheduleModal({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [message, setMessage] = useState('');
+  // 'ok' = 추가·변경·삭제 완료(초록), 'error' = 실패(빨강)
+  const [messageTone, setMessageTone] = useState('ok');
+  const notify = text => { setMessageTone('ok'); setMessage(text); };
   const [extraOpen, setExtraOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
@@ -291,6 +294,7 @@ export default function SpecialScheduleModal({
       await action();
     } catch (problem) {
       if (mounted.current) {
+        setMessageTone('error');
         setMessage(problem.message || '처리에 실패했습니다. 다시 시도해주세요.');
       }
     } finally {
@@ -324,14 +328,14 @@ export default function SpecialScheduleModal({
     }
     resetAdd();
     scrollRef.current?.scrollTo({ y: 0, animated: true });
-    setMessage(`${dateHeading(saved.date)}에 '${eventTitle(saved)}' 일정을 추가했어요.`);
+    notify(`${dateHeading(saved.date)}에 '${eventTitle(saved)}' 일정을 추가했어요.`);
     onChanged?.();
   });
   const remove = id => run(async () => {
     await deleteEvent(id);
     if (!mounted.current) return;
     setEvents(previous => previous.filter(event => event.id !== id));
-    setMessage('일정을 삭제했어요.');
+    notify('일정을 삭제했어요.');
     onChanged?.();
   });
   const confirm = () => run(async () => {
@@ -382,7 +386,7 @@ export default function SpecialScheduleModal({
     store(saved);
     setSheet(null);
     clear();
-    setMessage(sheet.kind === 'time' ? '시간을 바꿨어요.' : '일정을 바꿨어요.');
+    notify(sheet.kind === 'time' ? '시간을 바꿨어요.' : '일정을 바꿨어요.');
     onChanged?.();
   });
 
@@ -499,7 +503,10 @@ export default function SpecialScheduleModal({
                 <Text style={s.formProblem}>시작과 종료 시간을 확인해주세요.</Text>}
             </>}
           </ScrollView>
-          {!!message && <Text accessibilityLiveRegion="polite" style={s.message}>{message}</Text>}
+          {!!message && <View accessibilityLiveRegion="polite" accessibilityRole={messageTone === 'error' ? 'alert' : undefined} style={[s.messageBox, messageTone === 'error' ? s.messageBoxError : s.messageBoxOk]}>
+            <Ionicons name={messageTone === 'error' ? 'alert-circle' : 'checkmark-circle'} size={20} color={messageTone === 'error' ? '#C53D56' : '#0E8A5A'} />
+            <Text style={[s.messageText, messageTone === 'error' ? s.messageTextError : s.messageTextOk]}>{message}</Text>
+          </View>}
           <View style={s.addActions}>
             {/* 새 일정 입력을 그만두고 닫는다 (저장된 일정을 지우는 버튼이 아니라서 '취소', 2026-11-23 PR #5 반영 때 이름 바꿈) */}
             {adding && <TouchableOpacity accessibilityRole="button" accessibilityLabel="일정 입력 취소" disabled={busy}
@@ -539,7 +546,10 @@ export default function SpecialScheduleModal({
           </ScrollView>
 
           <View style={s.footer}>
-            {!!message && <Text accessibilityLiveRegion="polite" style={s.message}>{message}</Text>}
+            {!!message && <View accessibilityLiveRegion="polite" accessibilityRole={messageTone === 'error' ? 'alert' : undefined} style={[s.messageBox, messageTone === 'error' ? s.messageBoxError : s.messageBoxOk]}>
+            <Ionicons name={messageTone === 'error' ? 'alert-circle' : 'checkmark-circle'} size={20} color={messageTone === 'error' ? '#C53D56' : '#0E8A5A'} />
+            <Text style={[s.messageText, messageTone === 'error' ? s.messageTextError : s.messageTextOk]}>{message}</Text>
+          </View>}
             <View style={s.footerRow}>
               <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={close} style={[s.returnButton, busy && s.dim]}>
                 <Text style={s.blue}>돌아가기</Text>
@@ -1062,6 +1072,12 @@ const s = StyleSheet.create({
     lineHeight: 22,
     color: "#C53D56"
   },
+  messageBox: { flexDirection: 'row', alignItems: 'center', gap: 8, width: '100%', maxWidth: 860, alignSelf: 'center', paddingHorizontal: 14, paddingVertical: 11, borderRadius: 14, borderWidth: 1 },
+  messageBoxOk: { backgroundColor: '#E6F6EE', borderColor: '#A8DFC2' },
+  messageBoxError: { backgroundColor: '#FDECEF', borderColor: '#F2B8C3' },
+  messageText: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: '700' },
+  messageTextOk: { color: '#0B6B46' },
+  messageTextError: { color: '#A2283F' },
   message: {
     fontSize: 13,
     lineHeight: 21,
