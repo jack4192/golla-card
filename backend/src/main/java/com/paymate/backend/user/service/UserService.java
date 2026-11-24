@@ -2,8 +2,6 @@ package com.paymate.backend.user.service;
 
 import com.paymate.backend.auth.dto.SignupRequest;
 import com.paymate.backend.common.exception.BusinessException;
-import com.paymate.backend.user.dto.ConsentResponse;
-import com.paymate.backend.user.dto.UpdateConsentRequest;
 import com.paymate.backend.user.dto.UserResponse;
 import com.paymate.backend.user.entity.User;
 import com.paymate.backend.user.exception.UserErrorCode;
@@ -60,34 +58,6 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
         return UserResponse.from(user);
-    }
-
-    @Transactional(readOnly = true)
-    public ConsentResponse getConsents(Long userId) {
-        return ConsentResponse.from(findUser(userId));
-    }
-
-    @Transactional
-    public ConsentResponse updateConsents(Long userId, UpdateConsentRequest req) {
-        if (req.getMydataAgreed() == null && req.getNotificationAgreed() == null) {
-            throw new BusinessException(UserErrorCode.EMPTY_CONSENT_REQUEST);
-        }
-        if (Boolean.FALSE.equals(req.getMydataAgreed())) {
-            throw new BusinessException(UserErrorCode.MYDATA_AGREEMENT_REQUIRED);
-        }
-        User user = findUser(userId);
-        if (Boolean.TRUE.equals(req.getMydataAgreed())) {
-            user.agreeMydata();
-        }
-        if (req.getNotificationAgreed() != null) {
-            user.changeNotificationAgreed(req.getNotificationAgreed());
-        }
-        return ConsentResponse.from(user);
-    }
-
-    private User findUser(Long userId) {
-        return userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
     }
 
     private String normalizePhone(String raw) {

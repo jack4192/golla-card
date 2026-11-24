@@ -39,8 +39,8 @@ public class User {
     @Column(name = "mydata_agreed")
     private Boolean mydataAgreed;
 
-    @Column(name = "notification_agreed")
-    private Boolean notificationAgreed;      // 알림 수신 동의(선택). null = 아직 응답 안 함
+    @Column(name = "location_agreed")
+    private Boolean locationAgreed;
 
     @Column(name = "workplace_name", length = 100)
     private String workplaceName;
@@ -50,14 +50,6 @@ public class User {
     private UserRole role;
 
     protected User() {
-    }
-
-    public void agreeMydata() {
-        this.mydataAgreed = true;
-    }
-
-    public void changeNotificationAgreed(boolean agreed) {
-        this.notificationAgreed = agreed;
     }
 
     public User(String name, LocalDate birthDate, String phone, String email, String passwordHash) {

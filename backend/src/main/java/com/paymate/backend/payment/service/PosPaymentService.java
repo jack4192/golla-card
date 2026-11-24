@@ -4,6 +4,7 @@ import com.paymate.backend.card.entity.Card;
 import com.paymate.backend.card.entity.UserCard;
 import com.paymate.backend.card.repository.CardRepository;
 import com.paymate.backend.card.repository.UserCardRepository;
+import com.paymate.backend.common.DemoClock;
 import com.paymate.backend.common.exception.BusinessException;
 import com.paymate.backend.payment.benefit.AmountPolicy;
 import com.paymate.backend.payment.benefit.BenefitCalculator;
@@ -14,7 +15,7 @@ import com.paymate.backend.payment.entity.Payment;
 import com.paymate.backend.payment.entity.PaymentCode;
 import com.paymate.backend.payment.exception.PaymentErrorCode;
 import com.paymate.backend.payment.repository.PaymentCodeRepository;
-import com.paymate.backend.payment.repository.PaymentRepository;
+import com.paymate.backend.payment.repository.PaymentWriteRepository;
 import com.paymate.backend.payment.repository.PosRepository;
 import com.paymate.backend.payment.repository.TerminalRow;
 import com.paymate.backend.payment.util.HashUtil;
@@ -24,13 +25,21 @@ import java.time.OffsetDateTime;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 가상 POS 결제: 결제 코드를 확인하고, 금액을 정하고, 혜택을 계산해서 결제를 저장합니다. */
+/**
+ * 가상 POS 결제: 결제 코드를 확인하고, 금액을 정하고, 혜택을 계산해서 결제를 저장합니다.
+ *
+ * <p>시각은 두 가지를 씁니다 (2026-11-24).
+ * <ul>
+ *   <li>결제 시각·혜택 계산: 서버의 '지금'({@link DemoClock}, 시연용 AI_FIXED_AT 이 있으면 그 시각).
+ *       결제 내역·AI 와 같은 날을 봐야 방금 한 결제가 내역에 보이고 실적도 같은 달로 쌓인다.</li>
+ *   <li>결제 코드 만료(60초): 실제 시각. 코드를 발급할 때도 실제 시각으로 만료를 정한다.</li>
+ * </ul>
+ */
 @Service
-@RequiredArgsConstructor
 public class PosPaymentService {
 
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
@@ -38,13 +47,29 @@ public class PosPaymentService {
 
     private final PosRepository posRepository;
     private final PaymentCodeRepository paymentCodeRepository;
-    private final PaymentRepository paymentRepository;
+    private final PaymentWriteRepository paymentRepository;
     private final UserCardRepository userCardRepository;
     private final CardRepository cardRepository;
     private final BenefitCalculator benefitCalculator;
     private final AmountPolicy amountPolicy;
     private final PaymentCodeHasher hasher;
+    private final DemoClock clock;
 
+    public PosPaymentService(PosRepository posRepository, PaymentCodeRepository paymentCodeRepository,
+                             PaymentWriteRepository paymentRepository, UserCardRepository userCardRepository,
+                             CardRepository cardRepository, BenefitCalculator benefitCalculator,
+                             AmountPolicy amountPolicy, PaymentCodeHasher hasher,
+                             @Value("${ai.fixed-at:}") String fixedAt) {
+        this.posRepository = posRepository;
+        this.paymentCodeRepository = paymentCodeRepository;
+        this.paymentRepository = paymentRepository;
+        this.userCardRepository = userCardRepository;
+        this.cardRepository = cardRepository;
+        this.benefitCalculator = benefitCalculator;
+        this.amountPolicy = amountPolicy;
+        this.hasher = hasher;
+        this.clock = DemoClock.of(fixedAt);
+    }
 
     @Transactional
     public PosPaymentResponse pay(PosPaymentRequest req) {
@@ -52,7 +77,7 @@ public class PosPaymentService {
                 .stream().findFirst()
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.INVALID_TERMINAL));
 
-        LocalDateTime now = LocalDateTime.now(SEOUL);
+        LocalDateTime now = clock.now();   // 결제 시각 (시연용 기준 시각이 있으면 그 시각)
         int amount = req.getAmount() != null ? req.getAmount() : amountPolicy.randomAmount(terminal.getCategory());
 
         String code = normalizeCode(req.getCode());
@@ -75,7 +100,7 @@ public class PosPaymentService {
                 .stream().findFirst()
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.MERCHANT_NOT_FOUND));
 
-        LocalDateTime now = LocalDateTime.now(SEOUL);
+        LocalDateTime now = clock.now();   // 결제 시각 (시연용 기준 시각이 있으면 그 시각)
         int amount = requestedAmount != null ? requestedAmount : amountPolicy.randomAmount(terminal.getCategory());
         return process(terminal, mine.getCodeHash(), amount, now);
     }
@@ -91,7 +116,7 @@ public class PosPaymentService {
         if (PaymentCode.VOID.equals(paymentCode.getStatus())) {
             return decline(terminal, codeHash, amount, now, "VOIDED");
         }
-        if (!paymentCode.getExpiresAt().isAfter(now)) {
+        if (!paymentCode.getExpiresAt().isAfter(LocalDateTime.now(SEOUL))) {   // 만료는 발급 때처럼 실제 시각으로
             return decline(terminal, codeHash, amount, now, "EXPIRED");
         }
         return approve(terminal, paymentCode, codeHash, amount, now);
