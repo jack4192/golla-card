@@ -3,12 +3,15 @@
 실제 구조에서 Spring 이 맡을 역할을 한다: 일회용 토큰 발급, 가상 POS 승인, 거래 저장.
 카드 순서와 안내 문구, 하루 일정, 신규 카드 추천은 AI 추천 엔진(solpay-ai)에 HTTP 로 묻는다.
 위치(GPS)는 받지도 보내지도 않는다 (2026-11-14 멘토링 반영).
-실제 결제망·카드사와 연결되지 않으며, 이 서버가 발급한 토큰만 이 서버의 가상 POS 에서 승인된다.
+실제 결제망·카드사와 연결되지 않는다. 단말기 키가 설정된 가맹점은 로컬 SOLPay_FIXED 결제 서버를 사용한다.
 """
 import hashlib
 import hmac
+import json
+import logging
 import os
 import secrets
+import sqlite3
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -32,6 +35,9 @@ PAYMENT_ID_BASE = 900_000_000   # AI 엔진에 보내는 시연 결제 번호 (�
 _SECRET = os.environ.get("SOLPAY_SECRET", "").encode() or secrets.token_bytes(32)
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+FIXED_POS_URL = "http://127.0.0.1:8080/api/v1/pos/payments"
+FIXED_TERMINAL_KEYS: dict[str, str] = json.loads(os.environ.get("SOLPAY_FIXED_TERMINAL_KEYS", "{}"))
+logger = logging.getLogger(__name__)
 
 _merchants: dict[int, dict] = {}            # AI 엔진의 가맹점 목록 (처음 성공했을 때 한 번 받는다)
 _cards: dict[int, list[dict]] = {}          # 사용자별 마지막 카드 현황. AI 가 꺼져도 기본 순서를 보여 주려고 둔다
@@ -95,12 +101,10 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/", include_in_schema=False)
 def index():
-    return RedirectResponse("/pay")
+    return RedirectResponse("/pos")
 
 
-@app.get("/pay", include_in_schema=False)
-def pay_page():
-    return FileResponse(STATIC_DIR / "pay.html")
+# 결제 데모 화면(/pay)은 뺐다 (2026-11-24, 가상 POS 만 쓴다)
 
 
 @app.get("/pos", include_in_schema=False)
@@ -114,10 +118,13 @@ def pos_page():
 def options():
     by_zone: dict[str, list[dict]] = {}
     for m in sorted(merchants().values(), key=lambda m: (demo.CATEGORY_ORDER.get(m["category_code"], 99), m["name"])):
+        if FIXED_TERMINAL_KEYS and str(m["merchant_id"]) not in FIXED_TERMINAL_KEYS:
+            continue
         by_zone.setdefault(m["zone"], []).append(
             {"merchant_id": m["merchant_id"], "name": m["name"], "category_code": m["category_code"],
              "category_name": m["category_name"], "typical_amount": demo.TYPICAL_AMOUNT.get(m["category_code"], 10000)})
-    return {"users": [{**u, "zones": [{"code": z, "name": demo.ZONES[z], "role": r} for z, r in u["zones"]]}
+    return {"uses_fixed_pos": bool(FIXED_TERMINAL_KEYS),
+            "users": [{**u, "zones": [{"code": z, "name": demo.ZONES[z], "role": r} for z, r in u["zones"]]}
                       for u in demo.USERS],
             "times": demo.TIMES, "zones": demo.ZONES, "merchants": by_zone,
             "schedule_categories": [{"code": c, "name": n, "typical_amount": demo.TYPICAL_AMOUNT.get(c, 10000)}
@@ -484,6 +491,59 @@ class ApproveRequest(BaseModel):
     amount: int = Field(..., ge=1, le=10_000_000)
 
 
+FIXED_DECLINE_REASONS = {
+    "INVALID_FORMAT": "코드 형식이 올바르지 않습니다.",
+    "NOT_ISSUED": "발급되지 않은 코드입니다.",
+    "ALREADY_USED": "이미 사용된 코드입니다.",
+    "VOIDED": "새 코드가 발급되었거나 결제 창이 닫혀 무효가 된 코드입니다.",
+    "EXPIRED": "유효시간이 지난 코드입니다.",
+}
+
+
+def approve_fixed(req: ApproveRequest, merchant: dict, demo_at: str) -> dict:
+    key = FIXED_TERMINAL_KEYS.get(str(req.merchant_id))
+    if key is None:
+        raise HTTPException(422, "SOLPay 결제에 연결된 가맹점을 선택해 주세요.")
+    if req.amount < 100:
+        raise HTTPException(422, "결제 금액은 100원 이상이어야 합니다.")
+    try:
+        with httpx.Client(timeout=5.0, trust_env=False) as client:
+            response = client.post(FIXED_POS_URL, json={
+                "terminalKey": key, "code": req.token, "amount": req.amount,
+            })
+    except httpx.ConnectError:
+        raise HTTPException(503, "SOLPay 결제 서버에 연결할 수 없습니다.") from None
+    except httpx.RequestError:
+        raise HTTPException(502, "결제 응답을 확인하지 못했습니다. 앱 결제 내역을 먼저 확인해 주세요.") from None
+    if response.status_code == 403:
+        raise HTTPException(502, "이 가맹점의 POS 단말기 등록을 확인해 주세요.")
+    if not response.is_success:
+        raise HTTPException(502, "결제 응답을 확인하지 못했습니다. 앱 결제 내역을 먼저 확인해 주세요.")
+    try:
+        payment = response.json()
+        approved = payment["approved"]
+    except (ValueError, TypeError, KeyError):
+        raise HTTPException(502, "결제 응답을 확인하지 못했습니다. 앱 결제 내역을 먼저 확인해 주세요.") from None
+
+    result = "APPROVED" if approved else "DECLINED"
+    reason = None if approved else FIXED_DECLINE_REASONS.get(payment.get("declineReason"), "결제가 거절됐습니다.")
+    benefit = payment.get("totalDiscount") if approved else None
+    approval_no = payment.get("approvalNo")
+    amount = payment.get("amount", req.amount)
+    try:
+        with db.connect() as con:
+            con.execute("""INSERT INTO transactions
+                           (created_at, demo_at, result, reason, approval_no, merchant_id, merchant, category, amount, benefit)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (_now(), payment.get("paidAt") or demo_at, result, reason, approval_no, req.merchant_id,
+                         merchant["name"], merchant["category_name"], amount, benefit))
+    except sqlite3.Error:
+        # 승인 결과는 SOLPay가 확정한다. 화면용 기록에 실패해도 승인 요청을 다시 보내지 않는다.
+        logger.warning("SOLPay 결제 결과를 POS 내역에 저장하지 못했습니다.")
+    return {"result": result, "reason": reason, "approval_no": approval_no,
+            "merchant": merchant["name"], "amount": amount, "benefit": benefit, "uses_fixed_pos": True}
+
+
 @app.post("/api/pos/approve")
 def approve(req: ApproveRequest):
     now = _now()
@@ -492,6 +552,8 @@ def approve(req: ApproveRequest):
     if merchant is None:
         raise HTTPException(422, "가맹점 목록에 없는 가맹점입니다. AI 서버가 켜져 있는지 확인하세요.")
     demo_at = state()["demo_at"]
+    if FIXED_TERMINAL_KEYS:
+        return approve_fixed(req, merchant, demo_at)
 
     with db.connect() as con:
         def record(result, reason=None, row=None, approval_no=None):
