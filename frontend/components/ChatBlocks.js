@@ -20,9 +20,42 @@ function Block({ view, onPay, payLabel }) {
     </Pressable>;
   }
   return <View style={s.card}>
-    <Text style={s.title}>{view.title}</Text>
+    <View style={s.head}>
+      <Text style={[s.title, s.headTitle]}>{view.title}</Text>
+      {!!view.total && <Text style={s.total}>{view.total}</Text>}
+    </View>
     {!!view.sub && <Text style={s.caption}>{view.sub}</Text>}
-    {view.kind === 'status' ? view.rows.map(row => <StatusRow key={row.name} row={row} />)
+    {!!view.previous && <Text style={s.caption}>{view.previous}</Text>}
+    {view.kind === 'spending' ? view.rows.map(row => <BarRow key={row.name} name={`${row.name} · ${row.count}건`} amount={row.amount} ratio={row.ratio} />)
+      : view.kind === 'review' ? view.rows.map((row, i) => <View key={row.label + i} style={s.status}>
+          <View style={s.statusHead}>
+            <Text style={s.name}>{row.label}</Text>
+            <Text style={s.value}>{row.amount}</Text>
+          </View>
+          <Text style={s.caption}>낸 카드 {row.used}</Text>
+          <Text style={[s.caption, s.best]}>{row.best}</Text>
+        </View>)
+      : view.kind === 'benefitSummary' ? <>
+          {view.rows.map(row => <View key={row.name} style={s.row}>
+            <View style={s.rowMain}><Text style={s.name}>{row.name}</Text></View>
+            <Text style={s.value}>{row.amount}</Text>
+          </View>)}
+          {view.months.map(m => <BarRow key={m.label} name={m.label} amount={m.amount} ratio={m.ratio} />)}
+          {view.lines.map(line => <Text key={line} style={s.caption}>{line}</Text>)}
+        </>
+      : view.kind === 'dayPlan' ? <>
+          {view.rows.map(row => <View key={row.time} style={s.row}>
+            <Ionicons name="time-outline" size={15} color="#536581" />
+            <View style={s.rowMain}><Text style={s.name}>{row.time}</Text></View>
+            <Text style={s.value}>{row.card}</Text>
+          </View>)}
+          {view.schedules.map(sch => <Text key={sch.time + sch.label} style={s.caption}>일정 {sch.time} · {sch.label}</Text>)}
+        </>
+      : view.kind === 'rules' ? view.rows.map(row => <View key={row.summary} style={s.status}>
+          <Text style={s.name}>{row.summary}</Text>
+          {!!row.sub && <Text style={s.caption}>{row.sub}</Text>}
+        </View>)
+      : view.kind === 'status' ? view.rows.map(row => <StatusRow key={row.name} row={row} />)
       : view.kind === 'benefits' ? view.rows.map(row => <View key={row.name} style={s.row}>
           <View style={s.rowMain}>
             <Text style={s.name}>{row.name}</Text>
@@ -54,6 +87,16 @@ function Block({ view, onPay, payLabel }) {
   </View>;
 }
 
+function BarRow({ name, amount, ratio }) {
+  return <View style={s.status}>
+    <View style={s.statusHead}>
+      <Text style={s.name}>{name}</Text>
+      <Text style={s.value}>{amount}</Text>
+    </View>
+    <View style={s.track}><View style={[s.fill, { width: `${Math.round(ratio * 100)}%` }]} /></View>
+  </View>;
+}
+
 function StatusRow({ row }) {
   return <View style={s.status}>
     <View style={s.statusHead}>
@@ -71,6 +114,10 @@ const s = StyleSheet.create({
   wrap: { gap: 8, marginTop: 4 },
   card: { backgroundColor: '#FFF', borderRadius: 12, borderWidth: 1, borderColor: '#DCE6F5', padding: 10, gap: 6 },
   title: { fontSize: 12, fontWeight: '800', color: '#3A4E6E' },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headTitle: { flex: 1, minWidth: 0 },
+  total: { fontSize: 15, fontWeight: '800', color: '#142D4E' },
+  best: { color: '#0B7A43' },
   caption: { fontSize: 11, lineHeight: 16, color: '#61728C' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 5, paddingHorizontal: 4, borderRadius: 8 },
   rowHighlight: { backgroundColor: '#EEF4FF' },
