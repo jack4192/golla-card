@@ -106,7 +106,13 @@ export const api = {
   },
   me: () => request('/api/users/me', { auth: true }),
   // 필수 서비스 이용 동의 저장·철회 (users.mydata_agreed, 2026-11-24). /me 의 mydataAgreed 로 다시 읽는다
-  saveAgreement: agreed => request('/api/users/me/agreement', { method: 'PUT', auth: true, body: { agreed: Boolean(agreed) } }),
+  // 필수 동의 저장·철회. 동의 화면에서 고른 알림 수신 동의도 함께 보낸다(true/false 일 때만, 2026-11-24).
+  saveAgreement: (agreed, notificationAgreed) => request('/api/users/me/agreement', {
+    method: 'PUT', auth: true,
+    body: { agreed: Boolean(agreed), ...(typeof notificationAgreed === 'boolean' ? { notificationAgreed } : {}) },
+  }),
+  // 설정 > 폰 알림 받기: 알림 수신 동의만 바꾼다 (users.notification_agreed, 2026-11-24).
+  saveNotificationAgreement: agreed => request('/api/users/me/notification-agreement', { method: 'PUT', auth: true, body: { agreed: Boolean(agreed) } }),
   // 회원 탈퇴 (2026-11-24): 비밀번호를 다시 확인하고 서버에서 계정과 연결된 기록을 모두 지운다. 성공하면 기기 토큰도 지운다
   async withdraw(password) {
     await request('/api/users/me/withdrawal', { method: 'POST', auth: true, body: { password } });
