@@ -232,10 +232,8 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, on
             {generating ? <ActivityIndicator color="#245DE5" style={s.loading} />
               : code ? <Codes value={code.value} inactive={expired} /> : null}
           </View>
-          <Text style={s.notice}>
-            {SERVER_MODE ? '가상 결제용 코드예요. 가상 POS 에서 읽거나 아래 버튼으로 결제해 볼 수 있어요. 실제 카드 결제는 되지 않아요.'
-              : 'QR·바코드는 예시이며 실제 결제에 사용할 수 없어요.'}
-          </Text>
+          {/* 서버 모드의 '가상 결제용 코드예요…' 안내는 뺀다 (2026-11-24 사용자 요청). 서버 없는 예시 모드만 안내 */}
+          {!SERVER_MODE && <Text style={s.notice}>QR·바코드는 예시이며 실제 결제에 사용할 수 없어요.</Text>}
           {SERVER_MODE && <TouchableOpacity accessibilityRole="button" accessibilityLabel="이 코드로 결제, 시연"
             disabled={generating || paying || expired || !code?.server} onPress={payNow}
             style={[s.payButton, (generating || paying || expired || !code?.server) && s.dim]}>
