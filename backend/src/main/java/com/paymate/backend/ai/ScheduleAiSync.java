@@ -5,6 +5,7 @@ import com.paymate.backend.schedule.event.ScheduleChangedEvent;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -80,7 +81,12 @@ public class ScheduleAiSync {
                 continue;                      // 지난 날의 일정은 AI 엔진이 받지 않는다
             }
             try {
-                ai.putSchedule(event.userId(), day, itemsFor(event.userId(), day));
+                Collected expected = collect(event.userId(), day);
+                // 직접 입력 분류가 늦거나 실패하면(LLM 분류는 5초쯤 걸려 제한 3초를 넘기기도 한다) 그 일정은 AI 에 있던 값을 둔다.
+                // 빼고 넘기면 AI 가 그날 일정을 통째로 바꾸므로 원래 있던 일정까지 지워진다 (2026-11-24 수정사항 '일정 반영').
+                List<Map<String, Object>> items = expected.complete() ? expected.items
+                        : withKnownItems(expected, JSON.readTree(ai.schedule(event.userId(), day)).path("items"));
+                ai.putSchedule(event.userId(), day, items);
             } catch (RuntimeException e) {
                 log.warn("일정을 AI 엔진에 넘기지 못했습니다: user={} day={} ({})", event.userId(), day, e.getMessage());
             }
@@ -93,28 +99,51 @@ public class ScheduleAiSync {
     }
 
     /**
-     * AI 엔진의 그날 일정이 서버 일정과 다르면 다시 넘긴다 (맞춤 추천을 부르기 전에, 2026-11-23).
+     * AI 엔진의 그날 일정이 서버 일정과 다르면 다시 넘긴다 (맞춤 추천·홈 하루 배치를 부르기 전에, 2026-11-23·24).
      *
-     * <p>일정은 저장할 때만 넘기므로, AI 가 꺼져 있었거나 서버를 다시 켜는 중에 저장했거나 직접 입력을 넘기지 않던 옛 백엔드로
-     * 저장한 일정은 AI 에 없다. 그러면 AI 는 '오늘 일정 없음'으로 보고 평소 소비로 추천한다.
+     * <p>일정은 저장할 때만 넘기므로, AI 가 꺼져 있었거나 서버를 다시 켜는 중에 저장했거나 직접 입력 분류가 늦었던 일정은
+     * AI 에 없다. 그러면 AI 는 '오늘 일정 없음'으로 보고 평소 소비로 추천한다.
      * 같으면 아무것도 하지 않는다 (다시 넘기면 AI 가 그날 추천을 버리고 새로 계산하므로). 실패해도 경고만 남긴다.
+     * 직접 입력을 이번에도 분류하지 못하면('업종 없음'과 구분할 수 없으니) 그 일정은 AI 에 있던 값을 둔다.
      */
     public void ensureSynced(Long userId, LocalDate day) {
         try {
             // AI 의 일정을 먼저 읽는다: AI 가 꺼져 있으면 분류·중앙값 계산을 하지 않고 바로 넘어간다
             JsonNode current = JSON.readTree(ai.schedule(userId, day)).path("items");
             Collected expected = collect(userId, day);
-            if (!expected.complete) {
-                // 직접 입력을 이번에 분류하지 못했다(실패·시간 초과). '업종 없음'과 구분할 수 없으니 AI 의 일정을 그대로 둔다
-                log.info("직접 입력 일정을 분류하지 못해 AI 일정을 바꾸지 않습니다: user={} day={}", userId, day);
-                return;
-            }
-            if (!sameItems(expected.items, current)) {
-                ai.putSchedule(userId, day, expected.items);
+            List<Map<String, Object>> items = expected.complete() ? expected.items : withKnownItems(expected, current);
+            if (!sameItems(items, current)) {
+                ai.putSchedule(userId, day, items);
             }
         } catch (RuntimeException e) {
-            log.warn("맞춤 추천 전에 일정을 맞추지 못했습니다: user={} day={} ({})", userId, day, e.getMessage());
+            log.warn("AI 일정을 서버 일정과 맞추지 못했습니다: user={} day={} ({})", userId, day, e.getMessage());
         }
+    }
+
+    /** 분류한 항목 + 분류하지 못한 일정(같은 시작·끝)의 AI 쪽 값. 시작 시각 순, 하루 10개까지. */
+    private static List<Map<String, Object>> withKnownItems(Collected expected, JsonNode current) {
+        List<Map<String, Object>> items = new ArrayList<>(expected.items);
+        if (current.isArray()) {
+            for (JsonNode c : current) {
+                String start = c.path("start").asString();
+                String end = c.path("end").asString();
+                if (expected.pending.stream().noneMatch(p -> p[0].equals(start) && p[1].equals(end))) {
+                    continue;
+                }
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("start", start);
+                item.put("end", end);
+                item.put("category", c.path("category").asString());
+                item.put("amount", c.path("amount").asInt());
+                JsonNode brand = c.path("brand");
+                if (!brand.isMissingNode() && !brand.isNull()) {
+                    item.put("brand", brand.asString());
+                }
+                items.add(item);
+            }
+        }
+        items.sort(Comparator.comparing(item -> String.valueOf(item.get("start"))));
+        return items.size() > MAX_ITEMS ? new ArrayList<>(items.subList(0, MAX_ITEMS)) : items;
     }
 
     /** (시작, 끝, 업종, 금액, 브랜드) 목록이 순서까지 같은지. 브랜드가 없으면 서버는 칸이 없고 AI 는 null 로 준다. */
@@ -143,10 +172,15 @@ public class ScheduleAiSync {
         return collect(userId, day).items;
     }
 
-    /** 넘길 항목과, 직접 입력을 모두 분류했는지(실패·시간 초과가 없었는지). */
+    /** 넘길 항목과, 직접 입력을 모두 분류했는지(실패·시간 초과가 없었는지). pending: 분류하지 못한 일정의 (시작, 끝). */
     private static final class Collected {
         final List<Map<String, Object>> items = new ArrayList<>();
-        boolean complete = true;
+        final List<String[]> pending = new ArrayList<>();
+        int failures;
+
+        boolean complete() {
+            return failures == 0;
+        }
     }
 
     private Collected collect(Long userId, LocalDate day) {
@@ -167,7 +201,11 @@ public class ScheduleAiSync {
             if (end.compareTo(s.getStartTime()) <= 0) {
                 continue;
             }
+            int failuresBefore = out.failures;
             Place found = typedDirect ? classifyTitle(s, guesses, deadline, out) : placeOf(s, guesses, deadline, out);
+            if (out.failures > failuresBefore) {
+                out.pending.add(new String[] {s.getStartTime(), end});
+            }
             if (found == null) {
                 continue;
             }
@@ -185,7 +223,7 @@ public class ScheduleAiSync {
     }
 
     /** 일정의 업종. 직접 입력은 이름을 분류해서 정하고, 정하지 못하면 null (넘기지 않음).
-     *  분류에 실패했거나 시간을 다 써서 정하지 못했으면 out.complete 를 false 로 둔다. */
+     *  분류에 실패했거나 시간을 다 써서 정하지 못했으면 out.failures 를 늘린다 (pending 에 남는다). */
     private Place placeOf(Schedule s, Map<String, Optional<Place>> guesses, long deadline, Collected out) {
         if (!DIRECT_INPUT.equals(s.getCategory())) {
             return UNKNOWN_CATEGORIES.contains(s.getCategory()) ? null : new Place(s.getCategory(), null);
@@ -201,7 +239,7 @@ public class ScheduleAiSync {
         return Arrays.stream(s.getTypes().split(",")).map(String::strip).anyMatch(TYPED_DIRECT_INPUT::equalsIgnoreCase);
     }
 
-    /** 일정 이름을 분류해 업종을 정한다. 정하지 못하면 null, 실패·시간 초과면 out.complete 를 false 로 둔다. */
+    /** 일정 이름을 분류해 업종을 정한다. 정하지 못하면 null, 실패·시간 초과면 out.failures 를 늘린다 (pending 에 남는다). */
     private Place classifyTitle(Schedule s, Map<String, Optional<Place>> guesses, long deadline, Collected out) {
         String title = s.getTitle() == null ? "" : s.getTitle().strip();
         if (title.isEmpty() || title.length() > TITLE_LIMIT) {
@@ -210,18 +248,18 @@ public class ScheduleAiSync {
         if (guesses.containsKey(title)) {
             Optional<Place> known = guesses.get(title);
             if (known == null) {
-                out.complete = false;           // 같은 이름을 이번에 이미 분류하지 못했다
+                out.failures++;           // 같은 이름을 이번에 이미 분류하지 못했다
             }
             return known == null ? null : known.orElse(null);
         }
         if (nanoClock.getAsLong() - deadline >= 0) {
-            out.complete = false;
+            out.failures++;
             return null;                       // 분류에 쓸 시간을 다 썼다. 다음에 일정을 저장할 때 다시 묻는다
         }
         Optional<Place> guess = classify(title);
         guesses.put(title, guess);             // 실패(null)도 기억해 같은 이름을 다시 묻지 않는다
         if (guess == null) {
-            out.complete = false;
+            out.failures++;
             return null;
         }
         return guess.orElse(null);

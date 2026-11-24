@@ -96,9 +96,13 @@ public class AiController {
         return json(scheduleSync.sync(authUser.getId(), day));
     }
 
-    /** 홈 시간 표시줄의 하루 배치: 오늘의 시각 구간마다 AI 1순위 카드 (추천 기록 없음). 날짜는 서버가 정한다. */
+    /**
+     * 홈 시간 표시줄의 하루 배치: 오늘의 시각 구간마다 AI 1순위 카드 (추천 기록 없음). 날짜는 서버가 정한다.
+     * 부르기 전에 AI 의 오늘 일정을 서버 일정과 맞춘다 (저장 때 분류가 늦어 못 넘긴 일정도 표시줄에 보이게, 2026-11-24).
+     */
     @GetMapping("/day-placement")
     public ResponseEntity<String> dayPlacement(@AuthenticationPrincipal AuthUser authUser) {
+        scheduleSync.ensureSynced(authUser.getId(), ai.today());
         return json(ai.dayPlacement(authUser.getId()));
     }
 
