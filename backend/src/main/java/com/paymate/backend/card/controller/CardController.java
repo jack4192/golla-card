@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -60,6 +61,16 @@ public class CardController {
             @PathVariable("userCardId") Long userCardId
     ) {
         userCardService.setRepresentative(authUser.getId(), userCardId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** 내 카드에서 빼기 (2026-11-24). 그 카드의 결제 기록도 함께 지워진다. 남의 카드면 404. */
+    @DeleteMapping("/{userCardId}")
+    public ResponseEntity<Void> remove(
+            @AuthenticationPrincipal AuthUser authUser,
+            @PathVariable("userCardId") Long userCardId
+    ) {
+        userCardService.remove(authUser.getId(), userCardId);
         return ResponseEntity.noContent().build();
     }
 

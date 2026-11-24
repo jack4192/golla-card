@@ -15,7 +15,7 @@ import { Alert } from './utils/demoAlert';
 import * as DemoStore from './utils/demoStore';
 import { createRandomHex, hashPassword } from './utils/demoCrypto';
 import { SERVER_MODE, api, clearToken, readToken } from './utils/api';
-import { registerServerCard, resetServerCards } from './utils/serverCards';
+import { addServerCardByCode, registerServerCard, removeServerCard, resetServerCards } from './utils/serverCards';
 import { applySignupJob, rememberSignupJob } from './utils/signupJob';
 import { cancelPhoneNotifications, requestPhonePermission } from './utils/notifications';
 import {
@@ -359,18 +359,37 @@ export default function App() {
     }
   };
 
-  const handleRegisterCard = code => runAction(async () => {
+  // 카드 탭 상세의 '내 카드로 추가' (2026-11-24). serverCode: 서버 상품 번호(서버 목록에서 열었을 때)
+  const handleRegisterCard = (code, serverCode) => runAction(async () => {
     requireAuthentication();
-    if (!canRegisterWalletCard(code)) throw Error('등록할 수 없는 카드 상품입니다.');
     if (SERVER_MODE) {
       // 서버에 먼저 등록하고, 서버 목록을 다시 읽어 지갑을 맞춥니다.
-      await registerServerCard(code);
+      if (serverCode) await addServerCardByCode(serverCode);
+      else {
+        if (!canRegisterWalletCard(code)) throw Error('등록할 수 없는 카드 상품입니다.');
+        await registerServerCard(code);
+      }
+      await reloadWallet();
+      return;
+    }
+    if (!canRegisterWalletCard(code)) throw Error('등록할 수 없는 카드 상품입니다.');
+    const preferences = await readPreferences();
+    if (preferences.owned.includes(code)) return;
+    const next = await savePreferences({ ...preferences, owned: [...preferences.owned, code] });
+    await handlePreferencesSaved(next);
+  });
+
+  // 카드 탭 상세의 '내 카드에서 빼기' (2026-11-24). card: 지갑 카드 (id, catalogCode)
+  const handleRemoveCard = card => runAction(async () => {
+    requireAuthentication();
+    if (!card?.id) throw Error('뺄 카드를 찾지 못했습니다.');
+    if (SERVER_MODE) {
+      await removeServerCard(card.id);
       await reloadWallet();
       return;
     }
     const preferences = await readPreferences();
-    if (preferences.owned.includes(code)) return;
-    const next = await savePreferences({ ...preferences, owned: [...preferences.owned, code] });
+    const next = await savePreferences({ ...preferences, owned: preferences.owned.filter(code => code !== card.catalogCode) });
     await handlePreferencesSaved(next);
   });
 
@@ -380,7 +399,7 @@ export default function App() {
     const snapshot = await readWallet();
 
     if (!snapshot.preferences.owned.includes(code)) {
-      throw Error('내 지갑에 있는 카드만 결제에 쓸 수 있어요. 이 카드는 \'카드 신청\'으로 먼저 신청해주세요.');
+      throw Error('내 지갑에 있는 카드만 결제에 쓸 수 있어요. 카드 탭에서 \'내 카드로 추가\'를 먼저 눌러주세요.');
     }
 
     const id = walletIdForCode(code);
@@ -758,6 +777,17 @@ export default function App() {
     setPreviewWallet({ cards, id: walletIdForCode(code) });
   };
 
+  const previewRemove = card => {
+    if (!card?.id) return;
+    if (Platform.OS === 'web') {
+      const codes = readPreviewCardCodes().filter(code => code !== card.catalogCode);
+      window.localStorage.setItem(PREVIEW_CARDS_STORAGE_KEY, JSON.stringify(codes));
+      setPreviewCardCodes(codes);
+    }
+    const cards = previewCards.filter(item => item.id !== card.id);
+    setPreviewWallet({ cards, id: validWalletId(cards, previewCardId === card.id ? null : previewCardId) });
+  };
+
   const previewUseCard = async code => {
     const id = walletIdForCode(code);
     const cards = previewCards.some(card => card.id === id) ? previewCards : (await readWallet()).cards;
@@ -851,6 +881,7 @@ export default function App() {
                 activeCardId={previewCardId}
                 onSelectCard={previewSelect}
                 onRegisterCard={previewRegister}
+                onRemoveCard={previewRemove}
                 onLogout={() => previewGo('Login')}
                 onEditRoutine={(date, entryId) => {
                   setScheduleEditor({ date, entryId });
@@ -949,6 +980,7 @@ export default function App() {
               activeCardId={activeCardId}
               onSelectCard={handleSelectCard}
               onRegisterCard={handleRegisterCard}
+              onRemoveCard={handleRemoveCard}
               onLogout={handleLogout}
               allowAutomaticAds={allowAutomaticAds}
               scheduleDisabled={Boolean(previewScreen) || privacyOpen}

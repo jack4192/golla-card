@@ -95,6 +95,32 @@ export async function registerServerCard(appCode) {
 }
 
 /**
+ * 카드 탭 상세의 '내 카드로 추가' (2026-11-24): 서버 상품 번호(cards.card_id)로 바로 등록합니다.
+ * 이름 짝짓기(registerServerCard)를 거치지 않아 앱 22장과 40장 코드가 달라도 됩니다. 이미 있으면 그대로 둡니다.
+ */
+export async function addServerCardByCode(serverCode) {
+  if (!serverCode) throw new ApiError('서버에서 이 카드 상품을 찾지 못했어요. 잠시 후 다시 시도해주세요.', 404, 'CARD_NOT_FOUND');
+  try {
+    await api.registerCard(String(serverCode));
+  } catch (error) {
+    if (error?.status !== 409) throw error;
+  }
+}
+
+/** '내 카드에서 빼기' (2026-11-24): 지갑 카드 id → 서버 userCardId 로 지웁니다. 이미 없으면(404) 그대로 둡니다. */
+export async function removeServerCard(walletId) {
+  const userCardId = userCardIdByWalletId.get(String(walletId));
+  if (userCardId === undefined) {
+    throw new ApiError('내 카드 목록에서 이 카드를 찾지 못했어요. 화면을 새로고침한 뒤 다시 시도해주세요.', 404, 'USER_CARD_NOT_FOUND');
+  }
+  try {
+    await api.deleteCard(userCardId);
+  } catch (error) {
+    if (error?.status !== 404) throw error;
+  }
+}
+
+/**
  * 결제 카드 순서를 서버에 저장합니다.
  * 서버는 내 카드 전체를 빠짐없이 받아야 해서, 앱에 안 보이는 카드는 원래 순서대로 뒤에 붙입니다.
  */

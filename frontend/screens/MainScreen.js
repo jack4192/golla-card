@@ -28,6 +28,7 @@ import { applyUrl } from '../utils/autoPlacementCore';
 import { SERVER_MODE, api } from '../utils/api';
 import { suggestionsFor, toChatHistory } from '../utils/homeChat';
 import { useCardCatalog } from '../utils/serverCatalog';
+import { catalogActionState, removeConfirmText, walletCardForCatalog } from '../utils/catalogCardCore';
 const NAV = [{
   id: 'home',
   label: '홈',
@@ -251,6 +252,7 @@ export default function MainScreen({
   walletCards = [],
   activeCardId,
   onRegisterCard,
+  onRemoveCard,
   initialTab = 'home',
   onSelectCard = () => {}
 }) {
@@ -269,9 +271,50 @@ export default function MainScreen({
     return new Set(catalogCards.filter(card => codes.has(card.code)).map(card => card.code));
   }, [walletCards, catalogCards]);
   const [selectedCatalog, setSelectedCatalog] = useState(null);
-  // 카드 상품 상세: 내 지갑에 있는 카드인지, 미보유면 카드사 신청 페이지 주소 (없으면 '카드 신청'을 숨긴다)
-  const catalogOwned = Boolean(selectedCatalog) && walletCards.some(card => card.catalogCode === selectedCatalog.code);
+  // 카드 상품 상세: 내 지갑에 있는 카드인지(앱 22장·40장 코드를 이어서 비교), 미보유면 카드사 신청 페이지 주소
+  const catalogWalletCard = selectedCatalog
+    ? walletCardForCatalog(walletCards, selectedCatalog.code, card => findCatalog40Product(card)?.code || card.catalogCode)
+    : null;
+  const catalogOwned = Boolean(catalogWalletCard);
   const catalogApply = selectedCatalog && !catalogOwned ? applyUrl(selectedCatalog) : null;
+  // '내 카드로 추가'·'내 카드에서 빼기' (2026-11-24 사용자 결정)
+  const catalogActions = catalogActionState({ owned: catalogOwned, canAdd: typeof onRegisterCard === 'function',
+    canRemove: typeof onRemoveCard === 'function', applyUrl: catalogApply });
+  const [catalogBusy, setCatalogBusy] = useState(false);
+  const [catalogNotice, setCatalogNotice] = useState('');
+  const [catalogConfirmRemove, setCatalogConfirmRemove] = useState(false);
+  const openCatalog = item => {
+    setCatalogNotice('');
+    setCatalogConfirmRemove(false);
+    setSelectedCatalog(item);
+  };
+  const addCatalogCard = async () => {
+    if (catalogBusy || !selectedCatalog) return;
+    setCatalogBusy(true);
+    setCatalogNotice('');
+    try {
+      await onRegisterCard(selectedCatalog.code, selectedCatalog.serverCode);
+      setCatalogNotice('내 카드에 추가했어요. 홈 지갑에서 바로 쓸 수 있어요.');
+    } catch (error) {
+      setCatalogNotice(error?.message || '카드를 추가하지 못했어요. 다시 시도해주세요.');
+    } finally {
+      setCatalogBusy(false);
+    }
+  };
+  const removeCatalogCard = async () => {
+    if (catalogBusy || !catalogWalletCard) return;
+    setCatalogBusy(true);
+    setCatalogNotice('');
+    try {
+      await onRemoveCard(catalogWalletCard);
+      setCatalogConfirmRemove(false);
+      setCatalogNotice('내 카드에서 뺐어요.');
+    } catch (error) {
+      setCatalogNotice(error?.message || '카드를 빼지 못했어요. 다시 시도해주세요.');
+    } finally {
+      setCatalogBusy(false);
+    }
+  };
   const currentCard = getActiveWalletCard(walletCards, activeCardId);
   const homeWalletCards = useMemo(() => realWalletCards(null, walletCards), [walletCards]);
   const [filter, setFilter] = useState('전체');
@@ -686,7 +729,7 @@ export default function MainScreen({
         highlight={findCatalog40Product(currentCard)?.benefits[0]?.name || WALLET_CARD_BENEFITS[currentCard?.id]?.highlights[0]?.value}
         status={currentCard?.status} onDetails={() => {
           const product = findCatalog40Product(currentCard);
-          if (product) setSelectedCatalog(product);
+          if (product) openCatalog(product);
           else if (WALLET_CARD_BENEFITS[currentCard?.id]) setWalletBenefitDetailsOpen(true);
         }} />
 
@@ -700,7 +743,7 @@ export default function MainScreen({
         전체 카드 상품
       </Text>
       <Text style={styles.catalogIssuer}>
-        내 카드가 아닌 상품도 함께 보여요. 눌러서 혜택을 보고 카드를 신청할 수 있어요.
+        내 카드가 아닌 상품도 함께 보여요. 눌러서 혜택을 보고 내 카드로 추가하거나 카드를 신청할 수 있어요.
       </Text>
 
       <View style={styles.catalogFilterRow} accessibilityRole="tablist">
@@ -743,7 +786,7 @@ export default function MainScreen({
       renderItem={({ item }) => {
         const owned = ownedCatalogCodes.has(item.code);
         return <TouchableOpacity accessibilityRole="button" accessibilityLabel={item.name + (owned ? ' 내 카드' : ' 미보유 상품') + ' 상세'}
-          onPress={() => setSelectedCatalog(item)} style={[styles.catalogRow, owned && styles.catalogRowOwned]}>
+          onPress={() => openCatalog(item)} style={[styles.catalogRow, owned && styles.catalogRowOwned]}>
         {!!item.image && <Image source={item.image} resizeMode="contain" fadeDuration={0}
           style={styles.catalogThumb} accessibilityLabel={item.name + ' 상품 이미지'} />}
         <View style={styles.catalogRowText}>
@@ -1115,7 +1158,7 @@ export default function MainScreen({
                     {selectedCatalog.description}
                   </Text>
                   {!!selectedCatalog.image && <Image source={selectedCatalog.image} resizeMode="contain" style={styles.catalogPlate} accessibilityLabel={selectedCatalog.name + ' 상품 이미지'}/>}
-                  {/* '보유 카드로 등록'은 없앴다 (2026-11-24 수정사항). 미보유 카드는 아래 '카드 신청'으로 카드사 신청 페이지를 연다 */}
+                  {/* 미보유 카드는 아래 '내 카드로 추가'(서버 등록)와 '카드 신청'(카드사 페이지), 보유 카드는 '내 카드에서 빼기' (2026-11-24) */}
                   {catalogOwned && <Text style={styles.catalogIssuer}>지갑에 등록된 카드</Text>}
                   {selectedCatalog.registryCardId != null && <Text style={styles.catalogFee}>
                     국내 연회비 {money(selectedCatalog.annualFeeDomestic)} · 해외 연회비 {money(selectedCatalog.annualFeeOverseas)}
@@ -1194,30 +1237,43 @@ export default function MainScreen({
                 </>}
             </ScrollView>
 
-            {catalogApply ? <View style={styles.catalogActions}>
-                <TouchableOpacity accessibilityRole="button" onPress={() => setSelectedCatalog(null)} style={[styles.catalogAction, styles.catalogClose]}>
-                  <Text style={styles.catalogCloseText}>닫기</Text>
-                </TouchableOpacity>
-                <TouchableOpacity accessibilityRole="link" accessibilityLabel={selectedCatalog.name + ' 카드 신청'}
-                  onPress={() => Linking.openURL(catalogApply).catch(() => Alert.alert('카드 신청', '브라우저에서 카드사 신청 페이지를 열어주세요.'))}
-                  style={[styles.catalogAction, styles.catalogApply]}>
-                  <Text style={styles.catalogApplyText}>카드 신청</Text>
-                </TouchableOpacity>
-              </View>
-              : <TouchableOpacity onPress={() => setSelectedCatalog(null)} style={{
-            backgroundColor: "#245DE5",
-            padding: 14,
-            alignItems: 'center',
-            margin: 15,
-            borderRadius: 12
-          }}>
-              <Text style={{
-              color: "#FFFFFF",
-              fontWeight: '800'
-            }}>
-                닫기
-              </Text>
-            </TouchableOpacity>}
+            <View style={styles.catalogFooter}>
+              {!!catalogNotice && <Text style={styles.catalogNotice} accessibilityLiveRegion="polite">{catalogNotice}</Text>}
+              {catalogConfirmRemove ? <View style={styles.catalogConfirm} accessibilityViewIsModal>
+                  <Text style={styles.catalogConfirmText}>{removeConfirmText(selectedCatalog?.name || '이 카드')}</Text>
+                  <View style={styles.catalogActionsRow}>
+                    <TouchableOpacity accessibilityRole="button" disabled={catalogBusy} onPress={() => setCatalogConfirmRemove(false)}
+                      style={[styles.catalogAction, styles.catalogClose]}>
+                      <Text style={styles.catalogCloseText}>취소</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={(selectedCatalog?.name || '') + ' 내 카드에서 빼기 확인'}
+                      disabled={catalogBusy} onPress={removeCatalogCard} style={[styles.catalogAction, styles.catalogRemoveConfirm]}>
+                      {catalogBusy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.catalogApplyText}>빼기</Text>}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                : <>
+                  {catalogActions.add && <TouchableOpacity accessibilityRole="button" accessibilityLabel={(selectedCatalog?.name || '') + ' 내 카드로 추가'}
+                    disabled={catalogBusy} onPress={addCatalogCard} style={[styles.catalogAction, styles.catalogAdd]}>
+                    {catalogBusy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.catalogApplyText}>내 카드로 추가</Text>}
+                  </TouchableOpacity>}
+                  <View style={styles.catalogActionsRow}>
+                    {catalogActions.remove && <TouchableOpacity accessibilityRole="button" accessibilityLabel={(selectedCatalog?.name || '') + ' 내 카드에서 빼기'}
+                      disabled={catalogBusy} onPress={() => { setCatalogNotice(''); setCatalogConfirmRemove(true); }}
+                      style={[styles.catalogAction, styles.catalogRemove]}>
+                      <Text style={styles.catalogRemoveText}>내 카드에서 빼기</Text>
+                    </TouchableOpacity>}
+                    <TouchableOpacity accessibilityRole="button" onPress={() => setSelectedCatalog(null)} style={[styles.catalogAction, styles.catalogClose]}>
+                      <Text style={styles.catalogCloseText}>닫기</Text>
+                    </TouchableOpacity>
+                    {catalogActions.apply && <TouchableOpacity accessibilityRole="link" accessibilityLabel={(selectedCatalog?.name || '') + ' 카드 신청'}
+                      onPress={() => Linking.openURL(catalogApply).catch(() => Alert.alert('카드 신청', '브라우저에서 카드사 신청 페이지를 열어주세요.'))}
+                      style={[styles.catalogAction, styles.catalogApplyOutline]}>
+                      <Text style={styles.catalogApplyOutlineText}>카드 신청 ↗</Text>
+                    </TouchableOpacity>}
+                  </View>
+                </>}
+            </View>
           </View>
         </View>
       </Modal>
@@ -1707,6 +1763,18 @@ const styles = StyleSheet.create({
     padding: 25
   },
   catalogActions: { flexDirection: 'row', gap: 8, margin: 15 },
+  // 상품 상세 아래쪽 (2026-11-24): 안내 문구, '내 카드로 추가'(파랑), 빼기·닫기·카드 신청(테두리), 빼기 확인
+  catalogFooter: { gap: 8, margin: 15 },
+  catalogActionsRow: { flexDirection: 'row', gap: 8 },
+  catalogAdd: { backgroundColor: '#245DE5' },
+  catalogApplyOutline: { flex: 1, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#245DE5' },
+  catalogApplyOutlineText: { color: '#245DE5', fontWeight: '800' },
+  catalogRemove: { flex: 1, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F2B8B5' },
+  catalogRemoveText: { color: '#C62828', fontWeight: '800' },
+  catalogRemoveConfirm: { flex: 1, backgroundColor: '#D93025' },
+  catalogConfirm: { gap: 10, padding: 12, borderRadius: 12, backgroundColor: '#FFF4F3' },
+  catalogConfirmText: { color: '#5B2A27', fontSize: 13, lineHeight: 19 },
+  catalogNotice: { color: '#245DE5', fontSize: 13, lineHeight: 18, textAlign: 'center' },
   catalogAction: { minHeight: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   catalogClose: { flex: 1, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#BFD3FA' },
   catalogApply: { flex: 2, backgroundColor: '#245DE5' },

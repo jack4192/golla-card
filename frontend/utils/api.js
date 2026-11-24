@@ -108,6 +108,8 @@ export const api = {
   registerCard: cardCode => request('/api/cards/register', { method: 'POST', auth: true, body: { cardCode: String(cardCode) } }),
   // 결제 카드 순서: 내 카드 전체 userCardId를 빠짐없이 순서대로
   reorderCards: userCardIds => request('/api/cards/order', { method: 'PUT', auth: true, body: { userCardIds } }),
+  // 내 카드에서 빼기 (2026-11-24). 그 카드의 결제 기록도 서버에서 함께 지워진다
+  deleteCard: userCardId => request('/api/cards/' + encodeURIComponent(userCardId), { method: 'DELETE', auth: true }),
   cardBenefits: userCardId => request('/api/cards/' + encodeURIComponent(userCardId) + '/benefits', { auth: true }),
   // 카드 상품 검색: [{ cardCode, name, issuer, type, annualFee, tags, imageUrl, annualFeeOverseas, description }]
   cardProducts: (keyword = '') =>
