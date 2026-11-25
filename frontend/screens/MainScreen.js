@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { DEV_MENU_ENABLED } from '../utils/devMenu';
 import ScreenSafeArea from '../components/ScreenSafeArea';
 import YearEndReport from '../components/YearEndReport';
+import DragScrollView from '../components/DragScrollView';
 import PaymentCardOrder from '../components/PaymentCardOrder';
 import AutoPlacementSwitch from '../components/AutoPlacementSwitch';
 import { useAutoPlacement } from '../utils/autoPlacement';
@@ -1118,7 +1119,8 @@ export default function MainScreen({
                 </View>)}
             </ScrollView>
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickArea} contentContainerStyle={{
+            {/* 빠른 질문 줄: 웹에서도 마우스로 잡고 끌어 옆으로 넘긴다 (2026-11-25) */}
+            <DragScrollView showsHorizontalScrollIndicator={false} style={styles.quickArea} contentContainerStyle={{
             paddingHorizontal: 14
           }}>
               {chatQuick.map(item => <TouchableOpacity key={item} disabled={chatBusy} style={[styles.quickButton, chatBusy && { opacity: 0.5 }]} onPress={() => askBot(item)}>
@@ -1126,7 +1128,7 @@ export default function MainScreen({
                     {item}
                   </Text>
                 </TouchableOpacity>)}
-            </ScrollView>
+            </DragScrollView>
 
             <View style={styles.chatInputRow}>
               <TextInput style={styles.chatInput} value={chatInput} onChangeText={setChatInput} placeholder="질문을 입력하세요" returnKeyType="send" onSubmitEditing={() => askBot()} />
