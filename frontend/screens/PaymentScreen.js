@@ -229,7 +229,9 @@ function BenefitLine({ name, value, details = [] }) {
 // QR 결제 바텀시트(components/QuickPaySheet.js)에서도 같은 QR·바코드를 씁니다.
 export function Codes({
   value,
-  inactive
+  inactive,
+  dragProps = null,   // 결제창: QR·바코드 그림을 잡고 끌어 닫기 (번호 글자는 빼고)
+  dragStyle = null
 }) {
   const drawing = useMemo(() => {
     if (!/^\d{18}$/.test(value || '')) return null;
@@ -266,15 +268,18 @@ export function Codes({
   }, [value]);
   if (!drawing) return null;
   return <View accessibilityLabel={inactive ? '만료된 결제 예시 코드' : '결제 예시 QR 및 바코드'} style={[s.codes, inactive && s.dim]}>
-      <Svg width={184} height={184} viewBox={'0 0 ' + drawing.size + ' ' + drawing.size}>
-        <Rect width="100%" height="100%" fill="white" />
-        <Path d={drawing.path} fill="#101820" />
-      </Svg>
+      {/* QR·바코드 그림: 결제창에서 끌어 닫는 자리(dragProps). 아래 번호 글자는 복사할 수 있게 밖에 둔다 (PR #16 보완) */}
+      <View {...dragProps} style={[s.codeDrawings, dragStyle]}>
+        <Svg width={184} height={184} viewBox={'0 0 ' + drawing.size + ' ' + drawing.size}>
+          <Rect width="100%" height="100%" fill="white" />
+          <Path d={drawing.path} fill="#101820" />
+        </Svg>
 
-      <Svg width="100%" height={64} viewBox={'0 0 ' + drawing.width + ' 64'} preserveAspectRatio="none">
-        <Rect width="100%" height="100%" fill="white" />
-        <Path d={drawing.bars} fill="#101820" />
-      </Svg>
+        <Svg width="100%" height={64} viewBox={'0 0 ' + drawing.width + ' 64'} preserveAspectRatio="none">
+          <Rect width="100%" height="100%" fill="white" />
+          <Path d={drawing.bars} fill="#101820" />
+        </Svg>
+      </View>
 
       <Text selectable style={s.codeNumber}>
         {value.replace(/(.{6})/g, '$1 ').trim()}
@@ -283,7 +288,10 @@ export function Codes({
 }
 let screenProtectionId = 0;
 
+// 휴대폰 결제창의 화면 캡처 차단 + 밝기 올리기. 차단을 켜지 못하면 오류를 던진다(결제창이 경고를 띄움).
+// 웹은 운영체제 캡처를 막을 수 없어 아무것도 하지 않는다 (결제창은 웹을 따로 다룬다, PR #16 보완)
 export async function protectScreen() {
+  if (Platform.OS === 'web') return () => {};
   const Capture = require('expo-screen-capture');
   const key = 'payment-' + ++screenProtectionId;
   try {
@@ -943,6 +951,7 @@ const s = StyleSheet.create({
     fontSize: 13,
     lineHeight: 22
   },
+  codeDrawings: { alignSelf: 'stretch', alignItems: 'center', gap: 15 },
   codes: {
     backgroundColor: "#FFFFFF",
     alignItems: 'center',

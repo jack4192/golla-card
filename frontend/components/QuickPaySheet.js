@@ -14,14 +14,11 @@ import { cardReason } from '../utils/cardReasonCore';
 import { SERVER_MODE, api } from '../utils/api';
 import { serverCardLinks } from '../utils/serverCards';
 import { POLL_MS, codeFromServer, receiptFromRecent, shouldPoll } from '../utils/paymentCodeCore';
+import { CAPTURE_WARNING, captureView, dragStep, shouldCloseSheet } from '../utils/paySheetCore';
 
 const CODE_SECONDS = 60;
-const CLOSE_DISTANCE = 80;
 const IS_WEB = Platform.OS === 'web';
-
-function isDownwardDrag(x, y) {
-  return y > 6 && y > Math.abs(x);
-}
+const CAPTURE_TIMEOUT_MS = 4000;   // 캡처 보호 설정이 이보다 늦으면 경고와 함께 창을 띄운다
 
 const won = value => Number(value || 0).toLocaleString('ko-KR') + '원';
 
@@ -72,7 +69,9 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   const [picking, setPicking] = useState(false);
   const [sheetDragging, setSheetDragging] = useState(false);
   const [captureProtection, setCaptureProtection] = useState(IS_WEB ? 'ready' : 'pending');
-  const canShowCode = captureProtection === 'ready';
+  // 캡처 보호를 켜지 못해도 결제가 막히지 않게 경고와 함께 코드는 보여 준다 (PR #16 보완, utils/paySheetCore.captureView)
+  const capture = captureView(captureProtection);
+  const canShowCode = capture.codes;
   const [receipt, setReceipt] = useState(null);   // 결제가 끝나면 { merchantName, amount, totalDiscount, ... }
   const sequence = useRef(0);
   const codeRef = useRef(null);       // 지금 보여 주는 코드 (닫을 때 서버 코드 취소용)
@@ -83,29 +82,45 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const pointerDrag = useRef(null);
+  const nativeDrag = useRef(false);   // 폰: 이번 몸짓에서 아래로 끌기가 시작됐는지
   const dismissing = useRef(false);
 
   const springBack = () => Animated.spring(dragY, { toValue: 0, useNativeDriver: false }).start();
   const releaseDrag = (distance, velocity) => {
-    if (distance >= CLOSE_DISTANCE || (distance >= 24 && velocity > 1)) {
+    if (shouldCloseSheet(distance, velocity)) {
       dismissing.current = true;
       Animated.timing(dragY, { toValue: 700, duration: 180, useNativeDriver: false }).start(({ finished: completed }) => {
         if (completed) onCloseRef.current?.();
+        else {   // 닫히다 끊기면 반쯤 내려간 채 멈추지 않게 되돌린다
+          dismissing.current = false;
+          springBack();
+        }
       });
     } else springBack();
   };
   const pan = useRef(PanResponder.create({
     // 코드 영역에서 시작한 터치는 시트가 먼저 받아 화면 스크롤과 경합하지 않게 한다.
     onStartShouldSetPanResponder: (_, gesture) => !dismissing.current && gesture.numberActiveTouches <= 1,
-    onPanResponderGrant: () => setSheetDragging(true),
+    onPanResponderGrant: () => {
+      nativeDrag.current = false;
+      setSheetDragging(true);
+    },
     onPanResponderTerminationRequest: () => false,
-    onPanResponderMove: (_, gesture) => dragY.setValue(isDownwardDrag(gesture.dx, gesture.dy) ? gesture.dy : 0),
+    // 아래로 끌기가 시작되면 옆으로 틀어도 시트가 제자리로 튀지 않게 따라간다 (웹과 같게)
+    onPanResponderMove: (_, gesture) => {
+      const step = dragStep(nativeDrag.current, gesture.dx, gesture.dy);
+      nativeDrag.current = step.dragging;
+      dragY.setValue(step.offset);
+    },
     onPanResponderRelease: (_, gesture) => {
       setSheetDragging(false);
-      if (isDownwardDrag(gesture.dx, gesture.dy)) releaseDrag(gesture.dy, gesture.vy);
+      const dragging = dragStep(nativeDrag.current, gesture.dx, gesture.dy).dragging;
+      nativeDrag.current = false;
+      if (dragging) releaseDrag(Math.max(0, gesture.dy), gesture.vy);
       else springBack();
     },
     onPanResponderTerminate: () => {
+      nativeDrag.current = false;
       setSheetDragging(false);
       springBack();
     },
@@ -115,7 +130,8 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
     pointerDrag.current = null;
     springBack();
   };
-  // 카드 목록과 아래 버튼은 기존 제스처를 사용하고, 손잡이와 코드 위에서만 끌어 닫는다.
+  // 카드 목록과 아래 버튼은 기존 제스처를 사용하고, 손잡이와 QR·바코드 그림 위에서만 끌어 닫는다.
+  // 그림 아래 18자리 번호 글자는 끌기에서 빼서 복사할 수 있게 둔다 (PR #16 보완: 웹에서 /pos 에 붙여 넣기)
   const dragHandlers = IS_WEB ? {
     onPointerDown: event => {
       if (!event.isPrimary || event.button !== 0 || dismissing.current) return;
@@ -126,17 +142,17 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
     onPointerMove: event => {
       const drag = pointerDrag.current;
       if (drag?.id !== event.pointerId) return;
-      const dy = event.clientY - drag.y;
-      drag.dragging ||= isDownwardDrag(event.clientX - drag.x, dy);
-      if (drag.dragging) dragY.setValue(Math.max(0, dy));
+      const step = dragStep(drag.dragging, event.clientX - drag.x, event.clientY - drag.y);
+      drag.dragging = step.dragging;
+      if (step.dragging) dragY.setValue(step.offset);
     },
     onPointerUp: event => {
       const drag = pointerDrag.current;
       if (drag?.id !== event.pointerId) return;
       pointerDrag.current = null;
       const dy = event.clientY - drag.y;
-      if (drag.dragging || isDownwardDrag(event.clientX - drag.x, dy)) {
-        releaseDrag(dy, dy / Math.max(1, event.timeStamp - drag.start));
+      if (dragStep(drag.dragging, event.clientX - drag.x, dy).dragging) {
+        releaseDrag(Math.max(0, dy), dy / Math.max(1, event.timeStamp - drag.start));
       }
     },
     onLostPointerCapture: cancelPointerDrag,
@@ -263,16 +279,25 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
       return undefined;
     }
     let stopped = false;
+    let late = false;
     let cleanup;
+    // 설정이 늦어지면(기기 문제) 창이 아예 안 뜨지 않게, 경고와 함께 띄운다. 늦게 끝나도 닫을 때 정리한다
+    const timer = setTimeout(() => {
+      late = true;
+      if (!stopped) setCaptureProtection('unavailable');
+    }, CAPTURE_TIMEOUT_MS);
     protectScreen().then(callback => {
+      clearTimeout(timer);
       if (stopped) return callback();
       cleanup = callback;
-      setCaptureProtection('ready');
+      if (!late) setCaptureProtection('ready');
     }).catch(() => {
+      clearTimeout(timer);
       if (!stopped) setCaptureProtection('unavailable');
     });
     return () => {
       stopped = true;
+      clearTimeout(timer);
       if (cleanup) cleanup();
     };
   }, [visible]);
@@ -281,7 +306,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   const expired = !code || seconds === 0 || code.cardId !== selected?.id;
   const paid = Boolean(receipt);
 
-  return <Modal visible={visible && captureProtection !== 'pending'} transparent animationType="slide" onRequestClose={onClose}>
+  return <Modal visible={visible && capture.open} transparent animationType="slide" onRequestClose={onClose}>
     <View style={s.backdrop}>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="결제 닫기" activeOpacity={1} style={s.backdropTouch} onPress={onClose} />
       <Animated.View style={[s.sheet, { transform: [{ translateY: dragY }] }]} accessibilityViewIsModal>
@@ -296,7 +321,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
           <View style={s.headRow}>
             <Text accessibilityRole="header" style={s.heading}>QR · 바코드 결제</Text>
             <Text style={[s.timer, expired && !paid && s.timerExpired, paid && s.timerPaid]} accessibilityLiveRegion="polite">
-              {!canShowCode ? '표시 불가' : paid ? '결제 완료' : generating ? '발급 중' : expired ? '만료됨' : `${seconds}초`}
+              {paid ? '결제 완료' : generating ? '발급 중' : expired ? '만료됨' : `${seconds}초`}
             </Text>
           </View>
 
@@ -320,10 +345,10 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
             {!!receipt.approvalNo && <Text style={s.receiptSub}>승인번호 {receipt.approvalNo}</Text>}
             <Text style={s.receiptSub}>가상 결제라 실제 카드 승인·출금은 없어요. 결제 내역에서 다시 볼 수 있어요.</Text>
           </View> : <>
-          <View {...dragHandlers} style={[s.codeBox, IS_WEB && s.webDragArea]}>
-            {!canShowCode ? <Text style={s.error} accessibilityRole="alert">화면 캡처 보호를 켜지 못해 결제 코드를 표시할 수 없어요. 결제창을 닫고 다시 열어 주세요.</Text>
-              : generating ? <ActivityIndicator color="#245DE5" style={s.loading} />
-              : visible && code ? <Codes value={code.value} inactive={expired} /> : null}
+          {capture.warning && <Text style={s.captureWarning} accessibilityRole="alert">{CAPTURE_WARNING}</Text>}
+          <View style={s.codeBox}>
+            {generating ? <ActivityIndicator color="#245DE5" style={s.loading} />
+              : visible && code ? <Codes value={code.value} inactive={expired} dragProps={dragHandlers} dragStyle={IS_WEB ? s.webDragArea : null} /> : null}
           </View>
           {/* 서버 모드의 '가상 결제용 코드예요…' 안내는 뺀다 (2026-11-24 팀 피드백). 서버 없는 예시 모드만 안내 */}
           {!SERVER_MODE && <Text style={s.notice}>QR·바코드는 예시이며 실제 결제에 사용할 수 없어요.</Text>}
@@ -331,7 +356,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
           {!!error && <Text style={s.error} accessibilityRole="alert">{error}</Text>}
 
           <View style={s.actions}>
-            <TouchableOpacity accessibilityRole="button" disabled={generating || !canShowCode} onPress={issue} style={[s.secondary, (generating || !canShowCode) && s.dim]}>
+            <TouchableOpacity accessibilityRole="button" disabled={generating} onPress={issue} style={[s.secondary, generating && s.dim]}>
               <Ionicons name="refresh" size={16} color="#245DE5" />
               <Text style={s.secondaryText}>{paid ? '새 결제 코드 받기' : expired ? '새 코드 받기' : '코드 다시 발급'}</Text>
             </TouchableOpacity>
@@ -417,6 +442,7 @@ const s = StyleSheet.create({
   loading: { marginVertical: 40 },
   notice: { fontSize: 12, color: '#687B97', textAlign: 'center' },
   error: { fontSize: 13, color: '#C53D56', textAlign: 'center' },
+  captureWarning: { fontSize: 13, lineHeight: 19, fontWeight: '700', color: '#9A5B00', textAlign: 'center', backgroundColor: '#FFF6E5', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10 },
   actions: { flexDirection: 'row', gap: 8 },
   secondary: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: '#D6E2FA' },
   secondaryText: { color: '#245DE5', fontSize: 14, fontWeight: '700' },
