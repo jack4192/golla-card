@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import FlowHeading from '../components/FlowHeading';
 import ScheduleTimeWheel from '../components/ScheduleTimeWheel';
@@ -48,21 +48,19 @@ const toTime = minutes => {
   const value = Math.max(0, Math.min(DAY_END, minutes));
   return String(Math.floor(value / 60)).padStart(2, '0') + ':' + String(value % 60).padStart(2, '0');
 };
-const hourRowHeight = 54;
 const minimumBlockHeight = 44;
 const eventIconStackMinHeight = 80;
 
-function timeOffset(time) {
-  const [hour, minute] = time.split(':').map(Number);
-  return (hour + minute / 60) * hourRowHeight;
+function timeOffset(time, hourRowHeight) {
+  return (toMinutes(time) / 60) * hourRowHeight;
 }
 
-function arrangeEvents(events) {
+function arrangeEvents(events, hourRowHeight) {
   const groups = [];
   let group = null;
   for (const event of [...events].sort((a, b) => a.start.localeCompare(b.start))) {
-    const start = timeOffset(event.start);
-    const end = timeOffset(event.end < event.start ? '24:00' : event.end);
+    const start = timeOffset(event.start, hourRowHeight);
+    const end = timeOffset(event.end < event.start ? '24:00' : event.end, hourRowHeight);
     const height = Math.max(minimumBlockHeight, end - start - 2);
     if (!group || start >= group.end) {
       group = { end: 0, laneEnds: [], blocks: [] };
@@ -89,6 +87,10 @@ function Action({ label, onPress, disabled, primary, destructive, accessibilityL
 }
 
 export default function DetailedRoutineScreen({ date, entryId, onBack, onContinue }) {
+  const { width } = useWindowDimensions();
+  const compactLayout = width < 600;
+  const hourRowHeight = compactLayout ? 46 : 54;
+  const hourMidpoint = hourRowHeight / 2;
   const [scheduleDate] = useState(() => date || dateKey());
   const [events, setEvents] = useState([]);
   const [form, setForm] = useState(empty);
@@ -238,10 +240,10 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
           {savedRange ? `✓ ${eventTitle(savedRange)} ${eventTimeCaption(savedRange)} 일정을 추가했어요` : '시간을 누르면 바로 일정을 넣을 수 있어요'}
         </Text>
       </View>
-      <ScrollView ref={scroll} style={s.scroll} contentContainerStyle={s.body}
+      <ScrollView ref={scroll} style={s.scroll} contentContainerStyle={[s.body, compactLayout && s.compactBody]}
         stickyHeaderIndices={[1]} keyboardShouldPersistTaps="handled">
-        <View style={s.scheduleHeader}>
-          <FlowHeading brand icon="time-outline">일정 관리</FlowHeading>
+        <View style={[s.scheduleHeader, compactLayout && s.compactScheduleHeader]}>
+          <FlowHeading brand compact={compactLayout} icon="time-outline">일정 관리</FlowHeading>
           <Text style={s.date}>{scheduleDate}</Text>
           {loading && <ActivityIndicator color="#1854D8" />}
           {loadFailed && <Action onPress={() => setRetry(value => value + 1)} label="다시 불러오기" />}
@@ -258,17 +260,21 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
           </View>
         </View>
         <View style={s.timeline} onLayout={event => { timelineTop.current = event.nativeEvent.layout.y; }}>
-          {highlightedIntervals.map(([from, to]) => <View key={from} pointerEvents="none"
-            style={[s.rangeBand, { top: timeOffset(from) + hourRowHeight / 2, height: timeOffset(to) - timeOffset(from) }]} />)}
-          <View style={s.railLine} />
+          {highlightedIntervals.map(([from, to]) => {
+            const start = timeOffset(from, hourRowHeight);
+            return <View key={from} pointerEvents="none" style={[s.rangeBand, {
+              top: start + hourMidpoint, height: timeOffset(to, hourRowHeight) - start,
+            }]} />;
+          })}
+          <View style={[s.railLine, { top: hourMidpoint, height: 24 * hourRowHeight }]} />
           {hours.map((time, hour) => {
             const selected = false;
             const inRange = rangeComplete && time >= range.start && time < range.end;
             const invalidEnd = false;
             const unavailable = disabled || time === '24:00';
             return (
-              <View key={time} style={s.hourRow}>
-                {hour % 3 === 0 && <View pointerEvents="none" style={s.hourLine} />}
+              <View key={time} style={[s.hourRow, { height: hourRowHeight }]}>
+                {hour % 3 === 0 && <View pointerEvents="none" style={[s.hourLine, { top: hourMidpoint }]} />}
                 <TouchableOpacity accessibilityRole="button" accessibilityLabel={hour + '시에 일정 추가'}
                   aria-pressed={selected}
                   accessibilityState={{ selected, disabled: unavailable }} disabled={unavailable}
@@ -279,8 +285,8 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
               </View>
             );
           })}
-          <View pointerEvents="box-none" style={s.eventTrack}>
-            {arrangeEvents(events).map(({ event, start: offset, height, lane, lanes }) => {
+          <View pointerEvents="box-none" style={[s.eventTrack, { top: hourMidpoint }]}>
+            {arrangeEvents(events, hourRowHeight).map(({ event, start: offset, height, lane, lanes }) => {
               const title = eventTitle(event);
               const time = eventTimeCaption(event);
               const { icon, background, border, accent } = eventAppearance(event.category, title);
@@ -413,8 +419,10 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F1F5FF' },
   scroll: { flex: 1 },
   body: { width: '100%', maxWidth: 720, alignSelf: 'center', gap: 16, paddingHorizontal: 16, paddingVertical: 23 },
+  compactBody: { gap: 12, paddingTop: 5 },
   scheduleHeader: { gap: 16 },
-  addBar: { backgroundColor: '#F1F5FF', gap: 16, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: '#DEE7F5' },
+  compactScheduleHeader: { gap: 8 },
+  addBar: { backgroundColor: '#F1F5FF', paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: '#DEE7F5' },
   steps: { width: '100%', maxWidth: 720, alignSelf: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
   stepRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   step: { flexGrow: 1, color: '#536A88', backgroundColor: '#E8EEF9', borderRadius: 14, paddingVertical: 7, paddingHorizontal: 6, fontSize: 11, fontWeight: '700', textAlign: 'center' },
@@ -445,19 +453,19 @@ const s = StyleSheet.create({
   confirmCancel: { backgroundColor: '#EAF1FF' },
   confirmDanger: { backgroundColor: '#D6455D' },
   date: { color: '#385988', fontSize: 13, fontWeight: '700', textAlign: 'center' },
-  timelineHeading: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  timelineHeading: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 14 },
   railHeading: { width: 76 },
   timeline: { position: 'relative', marginTop: -10, paddingBottom: 24 },
   rangeBand: { position: 'absolute', left: 0, right: 0, borderRadius: 14, backgroundColor: '#E5EFFF' },
-  railLine: { position: 'absolute', left: 9, top: hourRowHeight / 2, width: 2, height: 24 * hourRowHeight, backgroundColor: '#BDD1FA' },
+  railLine: { position: 'absolute', left: 9, width: 2, backgroundColor: '#BDD1FA' },
   section: { color: '#1854D8', fontSize: 17, fontWeight: '800', textAlign: 'center' },
-  hourRow: { position: 'relative', height: hourRowHeight, justifyContent: 'center' },
-  hourLine: { position: 'absolute', left: 86, right: 0, top: hourRowHeight / 2, height: 1, backgroundColor: '#DEE7F5' },
+  hourRow: { position: 'relative', justifyContent: 'center' },
+  hourLine: { position: 'absolute', left: 86, right: 0, height: 1, backgroundColor: '#DEE7F5' },
   hour: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingLeft: 12, width: 76, minHeight: 44, borderRadius: 22, borderWidth: 1, borderColor: 'transparent' },
   dot: { position: 'absolute', left: 5, width: 8, height: 8, borderRadius: 4, backgroundColor: '#91B2F4' },
   dotSelected: { backgroundColor: '#FFFFFF' },
   hourText: { color: '#18365F', fontSize: 13, fontWeight: '700' },
-  eventTrack: { position: 'absolute', left: 86, right: 0, top: hourRowHeight / 2, bottom: 0 },
+  eventTrack: { position: 'absolute', left: 86, right: 0, bottom: 0 },
   eventSlot: { position: 'absolute', paddingHorizontal: 2 },
   eventBlock: { flex: 1, borderRadius: 12, borderWidth: 1, borderLeftWidth: 3, justifyContent: 'center', alignItems: 'center', paddingLeft: 4, paddingRight: 6, overflow: 'hidden' },
   eventIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFFB3', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },

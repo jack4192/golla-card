@@ -96,14 +96,15 @@ export default function ActualBenefitCalc({ card, cards, onClose }) {
     <Text style={s.label}>어디서 결제하나요?</Text>
     <TextInput accessibilityLabel="결제할 곳" value={place} maxLength={30} returnKeyType="next"
       onChangeText={text => { setPlace(text); setResult(null); setError(''); }}
-      placeholder="예: 스타벅스, 이마트, 주유소" placeholderTextColor="#8A97AA" style={[s.input, s.placeInput]} />
+      placeholder="예: 스타벅스, 이마트, 주유소" placeholderTextColor="#8A97AA" style={[s.box, s.input]} />
 
     <Text style={s.label}>얼마를 결제하나요?</Text>
-    <View style={s.amountRow}>
+    {/* 두 칸을 같은 모양·가운데 정렬로 맞춘다 (2026-11-25). '원'은 금액 칸 안 오른쪽에 */}
+    <View style={[s.box, s.amountBox]}>
       <TextInput accessibilityLabel="결제 금액" value={comma(amount)} keyboardType="number-pad" inputMode="numeric"
         onChangeText={text => { setAmount(digits(text)); setResult(null); setError(''); }}
-        onSubmitEditing={calculate} returnKeyType="done" placeholder="예: 15,000" placeholderTextColor="#8A97AA" style={s.input} />
-      <Text style={s.won}>원</Text>
+        onSubmitEditing={calculate} returnKeyType="done" placeholder="예: 15,000" placeholderTextColor="#8A97AA" style={[s.input, s.amountInput]} />
+      <Text pointerEvents="none" style={s.won}>원</Text>
     </View>
 
     <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={calculate} style={[s.calcButton, busy && s.dim]}>
@@ -131,14 +132,12 @@ const s = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 16, fontWeight: '800', color: '#13254A' },
   caption: { fontSize: 12, color: '#5A6E89', marginTop: -4 },
-  label: { marginTop: 4, fontSize: 13, fontWeight: '800', color: '#29456B' },
-  amountRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  input: {
-    flex: 1, minHeight: 48, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1, borderColor: '#D9E5F7',
-    backgroundColor: '#F8FAFF', color: '#13254A', fontSize: 18, fontWeight: '800', textAlign: 'right',
-  },
-  placeInput: { flex: 0, alignSelf: 'stretch', textAlign: 'left', fontSize: 16, fontWeight: '700' },
-  won: { fontSize: 16, fontWeight: '800', color: '#29456B' },
+  label: { marginTop: 6, fontSize: 13, fontWeight: '800', color: '#29456B', textAlign: 'center' },
+  box: { alignSelf: 'stretch', height: 52, borderRadius: 12, borderWidth: 1, borderColor: '#D9E5F7', backgroundColor: '#F8FAFF' },
+  input: { paddingHorizontal: 48, color: '#13254A', fontSize: 18, fontWeight: '800', textAlign: 'center' },
+  amountBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  amountInput: { flex: 1, alignSelf: 'stretch', borderWidth: 0, backgroundColor: 'transparent' },
+  won: { position: 'absolute', right: 18, fontSize: 16, fontWeight: '800', color: '#29456B' },
   calcButton: { marginTop: 4, minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#104FE7' },
   calcText: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
   dim: { opacity: 0.5 },
