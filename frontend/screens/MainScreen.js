@@ -911,7 +911,7 @@ export default function MainScreen({
                 </>
               : webPushState === 'install'
                 ? <SettingsItem icon="notifications-outline" title="폰 알림 받기" subtitle="홈 화면에 추가한 Pay·Mate 앱에서 켤 수 있어요" />
-                : <SettingsItem icon="notifications-outline" title="알림 수신 동의" value={savedConsent ? savedConsent.morningNotificationAgreed ? '동의함' : '동의 안 함' : '기록 없음'} subtitle="웹에서는 폰 알림이 오지 않아요. 아이폰·안드로이드 앱에서 받을 수 있어요." />}
+                : <SettingsItem icon="notifications-outline" title="알림 수신 동의" value={savedConsent ? savedConsent.morningNotificationAgreed ? '동의함' : '동의 안 함' : '기록 없음'} subtitle="이 브라우저에서는 폰 알림을 받을 수 없어요. 아이폰·안드로이드 앱에서 받을 수 있어요." />}
         </SettingsGroup>
 
         <SettingsGroup title="앱 정보">
