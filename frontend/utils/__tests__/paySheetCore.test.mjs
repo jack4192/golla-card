@@ -1,7 +1,7 @@
 // 실행: node --test utils/__tests__/paySheetCore.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CAPTURE_WARNING, captureView, dragStep, isDownwardDrag, shouldCloseSheet } from '../paySheetCore.js';
+import { CAPTURE_WARNING, EXPIRED_NOTICE, captureView, dragStep, isDownwardDrag, nextTickMs, shouldCloseSheet, webCodeMask } from '../paySheetCore.js';
 
 test('아래로 끌기: 6px 넘게, 옆보다 아래로 더 움직여야 한다', () => {
   assert.equal(isDownwardDrag(0, 6), false);
@@ -31,4 +31,21 @@ test('캡처 보호 상태: 설정 중이면 창을 띄우지 않고, 실패해�
   assert.deepEqual(captureView('ready'), { open: true, codes: true, warning: false });
   assert.deepEqual(captureView('unavailable'), { open: true, codes: true, warning: true });
   assert.match(CAPTURE_WARNING, /캡처 보호를 켜지 못했어요/);
+});
+
+test('웹 코드 가림 이유: 닫는 중 > 탭 숨김 > 만료 순, 셋 다 아니면 가리지 않는다', () => {
+  assert.equal(webCodeMask({ closing: false, pageActive: true, expired: false }), null);
+  assert.equal(webCodeMask({ closing: true, pageActive: false, expired: true }), 'closing');
+  assert.equal(webCodeMask({ closing: false, pageActive: false, expired: true }), 'hidden');
+  assert.equal(webCodeMask({ closing: false, pageActive: true, expired: true }), 'expired');
+  assert.match(EXPIRED_NOTICE, /만료/);
+});
+
+test('남은 시간 다음 갱신: 다음 초 경계까지, 딱 맞으면 1초 뒤, 끝났으면 멈춤(null)', () => {
+  assert.equal(nextTickMs(59_400), 400);
+  assert.equal(nextTickMs(59_000), 1000);
+  assert.equal(nextTickMs(3), 3);
+  assert.equal(nextTickMs(0), null);
+  assert.equal(nextTickMs(-20), null);
+  assert.equal(nextTickMs(NaN), null);
 });

@@ -14,7 +14,7 @@ import { cardReason } from '../utils/cardReasonCore';
 import { SERVER_MODE, api } from '../utils/api';
 import { serverCardLinks } from '../utils/serverCards';
 import { POLL_MS, codeFromServer, receiptFromRecent, shouldPoll } from '../utils/paymentCodeCore';
-import { CAPTURE_WARNING, captureView, dragStep, shouldCloseSheet } from '../utils/paySheetCore';
+import { CAPTURE_WARNING, EXPIRED_NOTICE, captureView, dragStep, nextTickMs, shouldCloseSheet, webCodeMask } from '../utils/paySheetCore';
 
 const CODE_SECONDS = 60;
 const IS_WEB = Platform.OS === 'web';
@@ -88,6 +88,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   const nativeDrag = useRef(false);   // 폰: 이번 몸짓에서 아래로 끌기가 시작됐는지
   const dismissing = useRef(false);
   const sheetHeight = useRef(700);
+  const openingPending = useRef(false);   // 웹: 시트가 그려지면(onLayout) 아래에서 올린다
 
   const beginClose = () => {
     if (dismissing.current) return false;
@@ -101,6 +102,11 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   };
 
   const springBack = () => Animated.spring(dragY, { toValue: 0, useNativeDriver: false }).start();
+  const startOpening = () => {
+    if (!openingPending.current) return;
+    openingPending.current = false;
+    Animated.timing(dragY, { toValue: 0, duration: 200, useNativeDriver: false }).start();
+  };
   const releaseDrag = (distance, velocity) => {
     if (!shouldCloseSheet(distance, velocity)) {
       springBack();
@@ -187,9 +193,19 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   useEffect(() => {
     pointerDrag.current = null;
     dismissing.current = false;
-    dragY.setValue(0);
     setClosing(false);
     setSheetDragging(false);
+    // 웹은 Modal 애니메이션을 끄고(닫기가 겹치지 않게) 시트만 아래에서 올린다 (PR #17 보완: 열 때 갑자기 나타나지 않게).
+    // 시트가 화면에 붙기 전에 움직이면 보이지 않으므로 onLayout 에서 시작하고, 혹시 onLayout 이 없으면 0.3초 뒤 그냥 올린다
+    if (!(IS_WEB && visible)) {
+      openingPending.current = false;
+      dragY.setValue(0);
+      return undefined;
+    }
+    openingPending.current = true;
+    dragY.setValue(sheetHeight.current);
+    const fallback = setTimeout(() => startOpening(), 300);
+    return () => clearTimeout(fallback);
   }, [visible, dragY]);
 
   const showCode = next => {
@@ -298,10 +314,11 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
       clearTimeout(timer);
       const current = Date.now();
       setNow(current);
-      const remaining = code?.expiresAt - current;
-      if (remaining > 0) timer = setTimeout(updateClock, remaining % 1000 || 1000);
+      const wait = nextTickMs(code?.expiresAt - current);   // 다음 초 경계에 맞춰 (utils/paySheetCore)
+      if (wait != null) timer = setTimeout(updateClock, wait);
     };
     const syncAppState = state => {
+      // 탭·웹앱이 숨겨지면 가린다. 브라우저가 숨김을 알려 준 뒤라 아이폰 앱 전환 미리보기·개발자 도구까지는 막지 못한다
       if (IS_WEB) setPageActive(state !== 'background');
       updateClock();
     };
@@ -347,14 +364,20 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   const seconds = code ? Math.max(0, Math.ceil((code.expiresAt - now) / 1000)) : 0;
   const expired = !code || seconds === 0 || code.cardId !== selected?.id;
   const paid = Boolean(receipt);
-  const maskWebCode = IS_WEB && (closing || !pageActive || expired);
+  const webMask = IS_WEB ? webCodeMask({ closing, pageActive, expired }) : null;   // 가릴 이유 (null 이면 보임)
 
   return <Modal visible={visible && capture.open} transparent animationType={IS_WEB ? 'none' : 'slide'} onRequestClose={closeSheet}>
     <View style={s.backdrop}>
       {IS_WEB && <style>{`@media print { #${WEB_CODE_ID} { visibility: hidden !important; } }`}</style>}
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="결제 닫기" activeOpacity={1} style={s.backdropTouch} onPress={closeSheet} />
       <Animated.View style={[s.sheet, { transform: [{ translateY: dragY }] }]} accessibilityViewIsModal
-        onLayout={event => { sheetHeight.current = event.nativeEvent.layout.height; }}>
+        onLayout={event => {
+          sheetHeight.current = event.nativeEvent.layout.height;
+          if (openingPending.current) {
+            dragY.setValue(sheetHeight.current);
+            startOpening();
+          }
+        }}>
         <View {...dragHandlers} style={[s.handleArea, IS_WEB && s.webDragArea]} accessibilityLabel="아래로 끌어 닫기"><View style={s.handle} /></View>
 
         {/* 작은 폰(375×667)에서 창이 화면보다 길어 '닫기'·선정 이유가 밖으로 잘렸다 → 창 안을 스크롤 (2026-11-25 점검) */}
@@ -393,9 +416,13 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
           {capture.warning && <Text style={s.captureWarning} accessibilityRole="alert">{CAPTURE_WARNING}</Text>}
           <View style={s.codeBox}>
             {generating ? <ActivityIndicator color="#245DE5" style={s.loading} />
-              : visible && code ? <View nativeID={IS_WEB ? WEB_CODE_ID : undefined} style={maskWebCode && s.hiddenWebCode}>
+              : visible && code ? <View nativeID={IS_WEB ? WEB_CODE_ID : undefined} style={webMask && s.hiddenWebCode}>
                 <Codes value={code.value} inactive={!IS_WEB && expired} dragProps={dragHandlers} dragStyle={IS_WEB ? s.webDragArea : null} />
               </View> : null}
+            {/* 만료로 가렸으면 빈 칸 대신 무엇을 하면 되는지 (PR #17 보완) */}
+            {!generating && webMask === 'expired' && <View pointerEvents="none" style={s.maskOverlay}>
+              <Text style={s.maskNotice} accessibilityRole="alert">{EXPIRED_NOTICE}</Text>
+            </View>}
           </View>
           {/* 서버 모드의 '가상 결제용 코드예요…' 안내는 뺀다 (2026-11-24 팀 피드백). 서버 없는 예시 모드만 안내 */}
           {!SERVER_MODE && <Text style={s.notice}>QR·바코드는 예시이며 실제 결제에 사용할 수 없어요.</Text>}
@@ -487,6 +514,8 @@ const s = StyleSheet.create({
   context: { fontSize: 13, lineHeight: 19, color: '#3D5170' },
   codeBox: { minHeight: 290, justifyContent: 'center' },
   hiddenWebCode: { visibility: 'hidden' },
+  maskOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
+  maskNotice: { fontSize: 14, lineHeight: 21, fontWeight: '700', color: '#4A5A75', textAlign: 'center' },
   loading: { marginVertical: 40 },
   notice: { fontSize: 12, color: '#687B97', textAlign: 'center' },
   error: { fontSize: 13, color: '#C53D56', textAlign: 'center' },
