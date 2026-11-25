@@ -49,6 +49,7 @@ export function toPromotionOffer(page, baseUrl = '') {
   const copy = offer.copy || {};
   const random = offer.related === false;
   const until = random && monthDay(offer.until) ? monthDay(offer.until) + '까지' : '';
+  const reason = random ? page.merchant.copy?.summary || '오늘 진행 중인 행사예요.' : copy.reasons?.[0] || '오늘 일정에 맞는 행사예요.';
   return {
     offer: {
       id: 'ai:' + offer.promotion_id,
@@ -56,12 +57,14 @@ export function toPromotionOffer(page, baseUrl = '') {
       benefit: copy.amount_label || (offer.total ? offer.total.toLocaleString('ko-KR') + '원 혜택' : offer.title),
       method: offer.kind === 'myshop' ? '마이샵 (앱에서 그 가맹점을 켜야 받아요)' : 'SOL페이 결제',
       minimum: random && offer.min_amount > 0 ? offer.min_amount : null,   // 무작위 행사의 최소 결제 금액 (최종 검토)
-      note: [offer.title, offer.card_name ? offer.card_name + '로 결제' : '', until].filter(Boolean).join(' · '),
+      // 행사 제목이 추천 이유와 같으면 유의사항에서 뺀다 (같은 홍보 문구가 두 번 보였다, 2026-11-25 점검)
+      note: [offer.title, offer.card_name ? offer.card_name + '로 결제' : '', until]
+        .filter(part => part && part !== reason).join(' · '),
       start: random ? null : hhmm(offer.window_from) || hhmm(offer.start),
       end: random ? null : hhmm(offer.window_to) || hhmm(offer.end),
       logo: typeof offer.logo_url === 'string' && offer.logo_url.startsWith('/') ? { uri: baseUrl + offer.logo_url } : null,
     },
-    reason: random ? page.merchant.copy?.summary || '오늘 진행 중인 행사예요.' : copy.reasons?.[0] || '오늘 일정에 맞는 행사예요.',
+    reason,
     // 혜택 금액 아래 한 줄 설명 (가맹점 탭 요약, 없으면 첫 이유)
     description: page?.merchant?.copy?.summary || copy.reasons?.[0] || '',
   };

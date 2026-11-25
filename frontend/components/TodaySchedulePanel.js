@@ -276,6 +276,7 @@ const aiMemory = { byCategory: {}, preview: { key: '', result: null, estimates: 
 export default function TodaySchedulePanel({
   scrollToWindowY,
   onViewBenefits,
+  onOpenManager,   // 일정 관리 화면 열기 (시간표로 보며 추가·수정)
   onPay,
   onOpenCards,
   cardList = null,
@@ -735,7 +736,14 @@ export default function TodaySchedulePanel({
           <Text style={styles.blue}>{dateCaption}</Text>
         </View>
       </View>
-      <View style={styles.heroIcon}><Ionicons name="calendar-outline" size={35} color="#1854D8"/></View>
+      {/* 큰 달력 아이콘: 일정 관리 화면(하루 시간표)을 연다. 전에는 버튼처럼 보이는데 반응이 없었다 (2026-11-25 점검) */}
+      {onOpenManager
+        ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="일정 관리 화면 열기" disabled={disabled}
+            onPress={onOpenManager} style={styles.heroAction}>
+            <View style={styles.heroIcon}><Ionicons name="calendar-outline" size={30} color="#1854D8"/></View>
+            <Text style={styles.heroActionText}>일정 관리</Text>
+          </TouchableOpacity>
+        : <View style={styles.heroIcon}><Ionicons name="calendar-outline" size={35} color="#1854D8"/></View>}
     </View>
     {disabled ? <Text style={styles.hint}>개발자 미리보기</Text>
       : loading ? <Text style={styles.hint}>일정을 불러오는 중이에요.</Text>
@@ -842,7 +850,8 @@ export default function TodaySchedulePanel({
         setConfirmDelete(null);
         setDeleteError('');
       }}>
-        <Text numberOfLines={1} style={styles.blue}>{managing ? '수정 끝내기' : '일정 관리'}</Text>
+        {/* 이 자리에서 수정·삭제 버튼을 켠다 (일정 관리 '화면'은 위 달력 아이콘, 2026-11-25 점검: 이름이 같아 헷갈림) */}
+        <Text numberOfLines={1} style={styles.blue}>{managing ? '수정 끝내기' : '수정·삭제'}</Text>
       </TouchableOpacity>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="일정 추가" disabled={disabled}
         style={[styles.primary, styles.equalAction]} onPress={() => setOpen('add')}>
@@ -948,6 +957,8 @@ const styles = StyleSheet.create({
   homeHeadRow:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},
   dateChip:{alignSelf:'flex-start',flexDirection:'row',alignItems:'center',gap:7,backgroundColor:'#EDF4FF',borderRadius:13,paddingVertical:8,paddingHorizontal:10,marginTop:10},
   heroIcon:{width:66,height:66,borderRadius:23,alignItems:'center',justifyContent:'center',backgroundColor:'#E5F5FA'},
+  heroAction:{alignItems:'center',gap:4},
+  heroActionText:{fontSize:12,fontWeight:'800',color:'#1854D8'},
   empty:{padding:18,borderRadius:18,backgroundColor:'#F1F6FE',gap:5},
   timeline:{marginLeft:7,borderLeftWidth:2,borderLeftColor:'#D6E3F7',gap:10},
   timelineRow:{position:'relative',paddingLeft:16,gap:9},

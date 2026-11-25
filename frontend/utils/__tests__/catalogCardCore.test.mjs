@@ -33,5 +33,6 @@ test('상세 창 버튼: 미보유면 추가(+신청 주소 있으면 신청), �
 
 test('빼기 확인 문구에 카드 이름과 결제 기록 삭제를 알린다', () => {
   assert.equal(removeConfirmText('신한카드 Discount Plan'),
-    '신한카드 Discount Plan을(를) 내 카드에서 뺄까요? 이 카드로 한 결제 기록도 함께 지워지고 되돌릴 수 없어요.');
+    '신한카드 Discount Plan을 내 카드에서 뺄까요? 이 카드로 한 결제 기록도 함께 지워지고 되돌릴 수 없어요.');
+  assert.match(removeConfirmText('신한카드 Discount Plan+'), /^신한카드 Discount Plan\+를 /);
 });
