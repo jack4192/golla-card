@@ -162,8 +162,8 @@ export function syncPhoneNotifications({ agreed }) {
     await Notifications.scheduleNotificationAsync({
       content: {
         // 바탕화면 웹앱 웹 푸시와 같은 문구 (2026-11-25 팀 결정: 짧은 질문형)
-        title: '오늘 어디 가세요?',
-        body: '일정을 알려 주면 카드를 골라 드려요',
+        title: '오늘 일정 있으세요?',
+        body: '알려 주시면 맞는 카드를 골라 드려요',
         data: { kind: 'morning' },
       },
       trigger: {

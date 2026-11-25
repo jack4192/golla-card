@@ -72,8 +72,8 @@ class PushServiceTest {
         assertThat(sender.sent).extracting(PushSubscription::userId).containsExactly(1L);
         assertThat(sender.payloads).containsExactly(PushService.MORNING_PAYLOAD);
         assertThat(PushService.MORNING_PAYLOAD)
-                .contains("\"title\":\"오늘 어디 가세요?\"")
-                .contains("\"body\":\"일정을 알려 주면 카드를 골라 드려요\"")
+                .contains("\"title\":\"오늘 일정 있으세요?\"")
+                .contains("\"body\":\"알려 주시면 맞는 카드를 골라 드려요\"")
                 .contains("\"url\":\"/?open=schedule\"")
                 .contains("\"tag\":\"morning-schedule\"");
         assertThat(store.sent).hasSize(1);

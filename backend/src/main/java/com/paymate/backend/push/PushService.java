@@ -22,8 +22,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class PushService {
 
-    static final String MORNING_TITLE = "오늘 어디 가세요?";
-    static final String MORNING_BODY = "일정을 알려 주면 카드를 골라 드려요";
+    static final String MORNING_TITLE = "오늘 일정 있으세요?";
+    static final String MORNING_BODY = "알려 주시면 맞는 카드를 골라 드려요";
     public static final String MORNING_PAYLOAD = "{\"title\":\"" + MORNING_TITLE + "\",\"body\":\"" + MORNING_BODY
             + "\",\"url\":\"/?open=schedule\",\"tag\":\"morning-schedule\"}";
     static final Duration TEST_DELAY = Duration.ofSeconds(5);   // 누르고 홈 화면으로 나갈 시간
