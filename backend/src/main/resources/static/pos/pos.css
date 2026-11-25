@@ -1,0 +1,62 @@
+/* 백엔드 가상 POS 화면 (2026-11-25). demo/static/style.css 의 가상 POS 부분만 옮겨 왔다. */
+:root {
+  --blue: #2f5bea;
+  --ink: #16191f;
+  --sub: #6b7280;
+  --line: #e5e7eb;
+  --bg: #f3f5f9;
+  --ok: #0f9d74;
+  --bad: #d63b3b;
+  --radius: 18px;
+  font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  color: var(--ink);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); }
+button { font: inherit; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+.muted { color: var(--sub); }
+.small { font-size: 12px; }
+.strong { font-weight: 700; }
+
+.btn { border: 0; border-radius: 12px; padding: 12px 16px; font-weight: 600; background: #eef2ff; color: var(--blue); }
+.btn.small { padding: 7px 12px; font-size: 13px; border-radius: 10px; }
+.btn.primary { background: var(--blue); color: #fff; }
+.btn.block { width: 100%; margin-top: 12px; }
+
+.pos { max-width: 1100px; margin: 0 auto; padding: 24px 16px 40px; }
+.pos header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 18px; }
+.pos h1 { margin: 0; font-size: 24px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+.box { background: #fff; border-radius: var(--radius); padding: 18px; border: 1px solid var(--line); }
+.box h2 { font-size: 16px; margin: 0 0 14px; }
+label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; }
+input, select { width: 100%; font: inherit; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px; background: #fff; }
+input[readonly] { background: var(--bg); }
+input:focus, select:focus { outline: none; border-color: var(--blue); }
+input.code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 18px; letter-spacing: 1px; }
+.result { min-height: 230px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.result .big { font-size: 34px; font-weight: 800; letter-spacing: 1px; }
+.result.ok .big { color: var(--ok); }
+.result.bad .big { color: var(--bad); }
+.result p { margin: 6px 0; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--sub); font-weight: 500; }
+th.num, td.num { text-align: right; }
+.tag { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
+.tag.ok { background: #e3f6ef; color: var(--ok); }
+.tag.bad { background: #fde8e8; color: var(--bad); }
+.table-wrap { overflow-x: auto; margin-top: 16px; }
+.notice { margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; background: #fde8e8; color: var(--bad); font-size: 14px; }
+.notice[hidden] { display: none; }
+
+/* 카메라로 찍기 */
+.btn.scan { background: #fff; color: var(--blue); box-shadow: inset 0 0 0 1.5px var(--blue); }
+.scanner { position: relative; margin-top: 12px; border-radius: 14px; overflow: hidden; background: #000; }
+.scanner[hidden] { display: none; }
+.scanner video { width: 100%; max-height: 320px; display: block; object-fit: cover; }
+.scan-frame { position: absolute; inset: 16% 10% 26%; border: 3px solid rgba(255, 255, 255, .92); border-radius: 12px; pointer-events: none; box-shadow: 0 0 0 999px rgba(0, 0, 0, .25); }
+.scan-close { position: absolute; top: 10px; right: 10px; background: rgba(255, 255, 255, .92); color: var(--ink); }
+.scan-msg { margin: 0; padding: 10px 12px; font-size: 13px; color: #fff; background: rgba(0, 0, 0, .7); text-align: center; }

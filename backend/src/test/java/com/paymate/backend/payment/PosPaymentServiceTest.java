@@ -250,4 +250,79 @@ class PosPaymentServiceTest {
         }
         verify(pos, never()).findTerminalByMerchant(any());
     }
+
+    // ---------- 백엔드 가상 POS 화면의 시연 결제 (2026-11-25: 키는 서버 안에만, 화면은 가맹점·금액·코드만 보낸다) ----------
+
+    @Test
+    @DisplayName("시연 결제는 고른 가맹점의 단말기로 승인한다")
+    void payDemoApprovesAtChosenMerchant() throws Exception {
+        issued(LocalDateTime.now(ZoneId.of("Asia/Seoul")).plusSeconds(30));
+        when(pos.findTerminalByMerchant(77L)).thenReturn(List.of(new Terminal(5L, 77L, "스타벅스 강남점", "CAFE")));
+        UserCard userCard = mock(UserCard.class);
+        when(userCard.getId()).thenReturn(3L);
+        when(userCard.getCardId()).thenReturn(10L);
+        when(userCards.findById(3L)).thenReturn(Optional.of(userCard));
+        Card card = mock(Card.class);
+        when(card.getIssuer()).thenReturn("신한");
+        when(cards.findById(10L)).thenReturn(Optional.of(card));
+        when(calculator.calculate(3L, 10L, 77L, "CAFE", "스타벅스 강남점", 5000, DEMO_NOW))
+                .thenReturn(new BenefitResult(1L, "카페 10%", 500, null, null, 0, 350_000, 102L));
+        when(pos.nextApprovalNo()).thenReturn("A0534769");
+        when(payments.save(any(Payment.class))).thenAnswer(call -> {
+            Payment p = call.getArgument(0);
+            set(p, "id", 1_129_902L);
+            return p;
+        });
+
+        PosPaymentResponse res = service.payDemo(" PAYMATE:" + CODE + " ", 5000, 77L);
+
+        assertThat(res.isApproved()).isTrue();
+        assertThat(res.getApprovalNo()).isEqualTo("A0534769");
+        assertThat(res.getMerchantName()).isEqualTo("스타벅스 강남점");
+        verify(pos).insertApproved(eq(5L), eq(hasher.hash(CODE)), eq(5000), eq(DEMO_NOW), eq(1_129_902L));
+        verify(pos, never()).findTerminal(any());
+    }
+
+    @Test
+    @DisplayName("시연 결제에서 같은 코드를 다시 찍으면 ALREADY_USED 로 거절한다")
+    void payDemoDeclinesReusedCode() throws Exception {
+        PaymentCode used = issued(LocalDateTime.now(ZoneId.of("Asia/Seoul")).plusSeconds(30));
+        used.markUsed(1L);
+        when(pos.findTerminalByMerchant(77L)).thenReturn(List.of(new Terminal(5L, 77L, "스타벅스 강남점", "CAFE")));
+
+        PosPaymentResponse res = service.payDemo(CODE, 5000, 77L);
+
+        assertThat(res.isApproved()).isFalse();
+        assertThat(res.getDeclineReason()).isEqualTo("ALREADY_USED");
+        verify(payments, never()).save(any());
+        verify(pos).insertDeclined(eq(5L), anyString(), eq(5000), eq(DEMO_NOW), eq("ALREADY_USED"));
+    }
+
+    @Test
+    @DisplayName("시연 결제: 형식이 틀리면 INVALID_FORMAT, 단말기 없는 가맹점이면 404 MERCHANT_NOT_FOUND")
+    void payDemoUnknownMerchant() throws Exception {
+        when(pos.findTerminalByMerchant(77L)).thenReturn(List.of(new Terminal(5L, 77L, "스타벅스 강남점", "CAFE")));
+        when(pos.findTerminalByMerchant(999L)).thenReturn(List.of());
+
+        assertThat(service.payDemo("12-34", 5000, 77L).getDeclineReason()).isEqualTo("INVALID_FORMAT");
+        assertThatThrownBy(() -> service.payDemo(CODE, 5000, 999L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode().getCode())
+                .isEqualTo("MERCHANT_NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("만능 키가 없거나 짧으면 시연 결제도 꺼져 있다 (404 POS_DEMO_DISABLED, 단말기를 찾지 않음)")
+    void demoDisabledEverywhere() throws Exception {
+        assertThat(service.isDemoEnabled()).isTrue();
+        for (String configured : new String[]{null, "", "short-key"}) {
+            PosPaymentService off = service(configured);
+            assertThat(off.isDemoEnabled()).isFalse();
+            assertThatThrownBy(() -> off.payDemo(CODE, 5000, 77L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode().getCode())
+                    .isEqualTo("POS_DEMO_DISABLED");
+        }
+        verify(pos, never()).findTerminalByMerchant(any());
+    }
 }

@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>가상 POS (시연)</title>
+<link rel="stylesheet" href="/pos/pos.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<!-- 백엔드 가상 POS (2026-11-25): demo/static/pos.html 을 옮겨 와 백엔드 시연 API(/api/v1/pos/demo/...)를 부른다.
+     단말기 키는 서버에만 있고, 이 화면은 가맹점·금액·결제 코드만 보낸다. 실제 결제망과 연결되지 않는다. -->
+<main class="pos">
+  <header>
+    <h1>가상 POS</h1>
+    <span class="muted small">시연용 · 실제 결제되지 않아요</span>
+  </header>
+
+  <p class="notice" id="offNotice" hidden></p>
+
+  <div class="grid">
+    <form class="box" id="form" autocomplete="off">
+      <h2>결제 요청</h2>
+      <label for="search">가맹점 찾기</label>
+      <input id="search" placeholder="예: 스타벅스, CU, 강남">
+      <label for="merchant">가맹점</label>
+      <select id="merchant" required></select>
+      <label for="category">업종</label>
+      <input id="category" readonly>
+      <label for="amount">금액(원)</label>
+      <input id="amount" type="number" value="13000" min="100" max="10000000" step="1" required>
+      <label for="token">결제 코드 (QR을 찍거나 18자리 숫자를 넣고 Enter)</label>
+      <input id="token" class="code" inputmode="numeric" placeholder="18자리 숫자" required autofocus>
+      <button class="btn primary block" type="submit" id="approveBtn">승인 요청</button>
+      <button class="btn block scan" type="button" id="scanBtn">📷 카메라로 QR·바코드 찍기</button>
+      <div class="scanner" id="scanner" hidden>
+        <video id="scanVideo" playsinline muted></video>
+        <div class="scan-frame"></div>
+        <button class="btn small scan-close" type="button" id="scanClose">닫기</button>
+        <p class="scan-msg" id="scanMsg">QR이나 바코드를 네모 안에 비춰 주세요.</p>
+      </div>
+      <p class="muted small" id="paymentHint">승인된 결제는 손님 앱의 결제 내역에 바로 저장돼요.</p>
+    </form>
+
+    <section class="box result" id="result">
+      <p class="muted">결제 코드를 넣으면 여기에 승인 결과가 나와요.</p>
+    </section>
+  </div>
+
+  <section class="box" style="margin-top:16px">
+    <h2>최근 거래 <span class="muted" style="font-weight:400">(최근 20건, 3초마다 갱신)</span></h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>시각</th><th>결과</th><th>가맹점</th><th>업종</th><th class="num">금액</th><th>카드</th><th class="num">혜택</th><th>승인번호 / 거절 사유</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+const API = "/api/v1/pos/demo";
+const $ = (id) => document.getElementById(id);
+const won = (n) => (n == null ? "—" : Number(n).toLocaleString("ko-KR") + "원");
+const DAYS = "일월화수목금토";
+const when = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso), p = (n) => String(n).padStart(2, "0");
+  return `${d.getMonth() + 1}/${d.getDate()}(${DAYS[d.getDay()]}) ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+const DECLINE = {
+  INVALID_FORMAT: "코드 형식이 올바르지 않아요.",
+  NOT_ISSUED: "발급되지 않은 코드예요.",
+  ALREADY_USED: "이미 사용된 코드예요.",
+  VOIDED: "새 코드가 발급됐거나 결제 창이 닫혀 무효가 된 코드예요.",
+  EXPIRED: "유효시간이 지난 코드예요.",
+};
+const declineText = (code) => DECLINE[code] || "결제가 거절됐어요.";
+const placeName = (m) => (m.branchName ? `${m.merchantName} ${m.branchName}` : m.merchantName);
+
+let merchants = [];   // [{ merchantId, merchantName, branchName, category, categoryName }]
+let byId = {};
+let enabled = false;
+
+function el(tag, text, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined && text !== null) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+
+function setEnabled(on) {
+  enabled = on;
+  for (const id of ["approveBtn", "scanBtn", "search", "merchant", "amount", "token"]) $(id).disabled = !on;
+}
+
+function turnedOff(message) {
+  setEnabled(false);
+  $("offNotice").textContent = message;
+  $("offNotice").hidden = false;
+}
+
+async function loadMerchants() {
+  try {
+    const res = await fetch(API + "/merchants");
+    if (res.status === 404) {
+      turnedOff("시연용 POS 가 꺼져 있어요. 서버의 POS_DEMO_TERMINAL_KEY 를 확인해 주세요.");
+      return;
+    }
+    if (!res.ok) throw new Error();
+    merchants = await res.json();
+  } catch {
+    turnedOff("가맹점 목록을 불러오지 못했어요. 서버가 켜져 있는지 확인하고 새로고침해 주세요.");
+    return;
+  }
+  byId = Object.fromEntries(merchants.map((m) => [String(m.merchantId), m]));
+  setEnabled(merchants.length > 0);
+  if (!merchants.length) turnedOff("결제할 수 있는 가맹점이 없어요 (단말기가 등록된 가맹점이 없음).");
+  const starbucks = merchants.find((m) => m.merchantName.includes("스타벅스"));
+  renderMerchants(starbucks ? String(starbucks.merchantId) : null);
+}
+
+// 찾기 칸에 맞는 가맹점만 업종별로 묶어 보여 준다. 고른 가맹점이 목록에 남아 있으면 그대로 둔다.
+function renderMerchants(keep) {
+  const q = $("search").value.trim().toLowerCase().replace(/\s+/g, "");
+  const match = (m) => !q || (placeName(m) + m.categoryName).toLowerCase().replace(/\s+/g, "").includes(q);
+  const groups = new Map();
+  for (const m of merchants.filter(match)) {
+    if (!groups.has(m.categoryName)) groups.set(m.categoryName, []);
+    groups.get(m.categoryName).push(m);
+  }
+  const ko = (a, b) => a.localeCompare(b, "ko");   // 업종·가맹점을 가나다순으로
+  const nodes = [...groups].sort(([a], [b]) => ko(a, b)).map(([name, list]) => {
+    list.sort((a, b) => ko(placeName(a), placeName(b)));
+    const g = document.createElement("optgroup");
+    g.label = name;
+    for (const m of list) {
+      const o = el("option", placeName(m));
+      o.value = m.merchantId;
+      g.append(o);
+    }
+    return g;
+  });
+  $("merchant").replaceChildren(...nodes);
+  if (keep && [...$("merchant").options].some((o) => o.value === keep)) $("merchant").value = keep;
+  $("approveBtn").disabled = !enabled || $("merchant").options.length === 0;
+  onMerchant();
+}
+
+function onMerchant() {
+  const m = byId[$("merchant").value];
+  $("category").value = m ? m.categoryName : "";
+}
+$("merchant").onchange = onMerchant;
+$("search").oninput = () => renderMerchants($("merchant").value);
+
+$("form").onsubmit = async (ev) => {
+  ev.preventDefault();
+  if ($("approveBtn").disabled) return;
+  $("approveBtn").disabled = true;
+  $("scanBtn").disabled = true;
+  const body = { code: $("token").value, merchantId: Number($("merchant").value), amount: Number($("amount").value) };
+  const chosen = byId[$("merchant").value];   // 결과에 지점 이름까지 보여 주려고 보낼 때의 가맹점을 기억한다
+  const box = $("result");
+  try {
+    const res = await fetch(API + "/payments", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || "결제 응답을 확인하지 못했어요. 손님 앱 결제 내역을 먼저 확인해 주세요.");
+    const ok = data.approved === true;
+    box.className = "box result " + (ok ? "ok" : "bad");
+    const lines = [el("p", `${chosen ? placeName(chosen) : data.merchantName} · ${won(data.amount)}`)];
+    if (ok) {
+      lines.push(el("p", data.totalDiscount > 0 ? `혜택 ${won(data.totalDiscount)}` : "이번 결제에 받은 혜택은 없어요", "strong"));
+      if (data.benefitName && data.benefitAmount > 0) lines.push(el("p", `${data.benefitName} ${won(data.benefitAmount)}`, "muted"));
+      if (data.promotionName && data.promotionAmount > 0) lines.push(el("p", `${data.promotionName} ${won(data.promotionAmount)}`, "muted"));
+      lines.push(el("p", `승인번호 ${data.approvalNo}`, "muted"));
+    } else {
+      lines.unshift(el("p", declineText(data.declineReason)));
+    }
+    box.replaceChildren(el("div", ok ? "승인" : "거절", "big"), ...lines);
+  } catch (e) {
+    box.className = "box result bad";
+    box.replaceChildren(el("div", "오류", "big"), el("p", e.message || "결제하지 못했어요."));
+  } finally {
+    $("approveBtn").disabled = !enabled;
+    $("scanBtn").disabled = !enabled;
+  }
+  $("token").value = "";
+  $("token").focus();
+  loadRows();
+};
+
+async function loadRows() {
+  if (!enabled) return;
+  try {
+    const res = await fetch(API + "/transactions?limit=20");
+    if (!res.ok) return;
+    const rows = await res.json();
+    $("rows").replaceChildren(...rows.map((r) => {
+      const tr = document.createElement("tr");
+      const tagCell = el("td");
+      tagCell.append(el("span", r.approved ? "승인" : "거절", "tag " + (r.approved ? "ok" : "bad")));
+      tr.append(el("td", when(r.requestedAt)), tagCell, el("td", placeName(r)), el("td", r.categoryName),
+                el("td", won(r.amount), "num"), el("td", r.cardName || "—"),
+                el("td", r.approved ? won(r.totalDiscount) : "", "num"),
+                el("td", r.approved ? r.approvalNo || "—" : declineText(r.declineReason)));
+      return tr;
+    }));
+  } catch { /* 다음 주기에 다시 시도 */ }
+}
+
+// ---------- 카메라 스캔 ----------
+// 브라우저에 BarcodeDetector 가 있으면 그것을, 없으면(아이폰 사파리·윈도우 크롬 등) ZXing 라이브러리를 불러와 쓴다.
+const ZXING_URL = "https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js";
+let scan = null;   // { stream, timer, controls }
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const s = document.createElement("script");
+    s.src = src; s.onload = resolve; s.onerror = () => reject(new Error("인식 라이브러리를 불러오지 못했어요 (인터넷 연결 확인)."));
+    document.head.append(s);
+  });
+}
+
+function stopScan() {
+  if (scan) {
+    clearInterval(scan.timer);
+    scan.controls?.stop();
+    scan.stream?.getTracks().forEach((t) => t.stop());
+  }
+  scan = null;
+  $("scanVideo").srcObject = null;
+  $("scanner").hidden = true;
+  $("scanBtn").hidden = false;
+}
+
+function onScanned(text) {
+  const code = String(text || "").trim();
+  if (!code || !scan) return;
+  stopScan();
+  $("token").value = code;
+  $("form").requestSubmit();   // 찍히면 바로 승인 요청
+}
+
+async function startScan() {
+  const msg = $("scanMsg");
+  if (!navigator.mediaDevices?.getUserMedia) {
+    alert("이 주소에서는 카메라를 쓸 수 없어요. localhost 또는 https 주소로 열어 주세요.");
+    return;
+  }
+  $("scanner").hidden = false;
+  $("scanBtn").hidden = true;
+  msg.textContent = "카메라를 켜는 중이에요…";
+  scan = {};
+  const video = $("scanVideo");
+  try {
+    if ("BarcodeDetector" in window) {
+      const detector = new BarcodeDetector({ formats: ["qr_code", "code_128"] });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      if (!scan) {   // 권한 창이 떠 있는 사이에 닫았으면 카메라를 바로 끈다
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      scan.stream = stream;
+      video.srcObject = stream;
+      await video.play();
+      msg.textContent = "QR이나 바코드를 네모 안에 비춰 주세요.";
+      scan.timer = setInterval(async () => {
+        try {
+          const found = await detector.detect(video);
+          if (found.length) onScanned(found[0].rawValue);
+        } catch { /* 다음 프레임에 다시 */ }
+      }, 250);
+    } else {
+      await loadScript(ZXING_URL);
+      if (!scan) return;   // 불러오는 사이에 닫음
+      const reader = new ZXingBrowser.BrowserMultiFormatReader();
+      msg.textContent = "QR이나 바코드를 네모 안에 비춰 주세요.";
+      scan.controls = await reader.decodeFromVideoDevice(undefined, video, (result) => {
+        if (result) onScanned(result.getText());
+      });
+    }
+  } catch (e) {
+    stopScan();
+    const denied = e && (e.name === "NotAllowedError" || e.name === "SecurityError");
+    alert(denied ? "카메라 사용을 허용해 주세요 (주소창 왼쪽 자물쇠 → 카메라 허용)." : (e.message || "카메라를 켜지 못했어요."));
+  }
+}
+
+$("scanBtn").onclick = startScan;
+$("scanClose").onclick = () => { stopScan(); $("token").focus(); };
+
+loadMerchants().then(loadRows);
+setInterval(loadRows, 3000);
+</script>
+</body>
+</html>
