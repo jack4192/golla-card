@@ -72,14 +72,17 @@ public class WebPushSender implements PushSender {
                     .header("Authorization", authorization(subscription.endpoint(), Instant.now()))
                     .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                     .build();
-            int status = http.send(request, HttpResponse.BodyHandlers.discarding()).statusCode();
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            int status = response.statusCode();
             if (status == 404 || status == 410) {
                 return PushResult.GONE;
             }
             if (status >= 200 && status < 300) {
                 return PushResult.SENT;
             }
-            log.warn("웹 푸시 응답 {} (구독 {})", status, subscription.id());
+            // 푸시 서비스가 알려 주는 이유(예: 애플 {"reason":"BadJwtToken"})를 같이 남긴다
+            String reason = response.body() == null ? "" : response.body().substring(0, Math.min(200, response.body().length()));
+            log.warn("웹 푸시 응답 {} (구독 {}) {}", status, subscription.id(), reason);
             return PushResult.FAILED;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -96,7 +99,8 @@ public class WebPushSender implements PushSender {
         String audience = uri.getScheme() + "://" + uri.getHost() + (uri.getPort() == -1 ? "" : ":" + uri.getPort());
         String jwt = Jwts.builder()
                 .header().add("typ", "JWT").and()
-                .audience().add(audience).and()
+                // 글자 하나로 (목록 ["..."] 이면 애플이 403 BadJwtToken, 2026-11-25 실기기에서 확인)
+                .audience().single(audience)
                 .subject(subject)
                 .expiration(Date.from(now.plus(Duration.ofHours(12))))
                 .signWith(privateKey, Jwts.SIG.ES256)

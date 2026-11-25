@@ -106,6 +106,17 @@ class WebPushSenderTest {
     }
 
     @Test
+    void audienceIsPlainStringForApple() {
+        // 애플(web.push.apple.com)은 aud 가 목록(["..."])이면 403 BadJwtToken 으로 거절한다 (2026-11-25 실기기에서 확인)
+        String authorization = sender().authorization(endpoint(), Instant.now());
+        String jwt = authorization.substring("vapid t=".length(), authorization.indexOf(','));
+        String payload = new String(java.util.Base64.getUrlDecoder().decode(jwt.split("\\.")[1]), StandardCharsets.UTF_8);
+
+        assertThat(payload).contains("\"aud\":\"http://127.0.0.1:" + server.getAddress().getPort() + "\"");
+        assertThat(payload).doesNotContain("\"aud\":[");
+    }
+
+    @Test
     void goneOn410And404() {
         for (int code : List.of(410, 404)) {
             status.set(code);
