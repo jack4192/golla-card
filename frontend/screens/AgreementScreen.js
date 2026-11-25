@@ -9,7 +9,7 @@ const agreements = {
     sections: [
       ['서비스 제공 목적', '로그인과 계정 관리, 일정 관리, 입력한 일정과 카드 정보를 바탕으로 한 카드 혜택 추천에 이용해요.'],
       ['서비스에서 이용하는 정보', '가입 과정에서 입력하는 계정 정보, 등록한 카드 정보와 일과·일정, 약관 동의 여부를 서비스에서 이용해요.'],
-      ['기록 확인 및 관리', '일정 관리에서 등록한 일정을 확인하거나 수정·삭제할 수 있어요. 설정의 데이터 관리에서 이 기기의 기록을 지우거나 동의를 철회할 수 있고, 계정은 회원 탈퇴로 지울 수 있어요.'],
+      ['기록 확인 및 관리', '일정 관리에서 등록한 일정을 확인하거나 수정·삭제할 수 있어요.'],
       ['서비스 이용 범위', '카드 혜택 안내와 가상 결제를 제공해요. 계좌 연결, 실제 카드 결제와 카드 발급은 제공하지 않아요.'],
       ['동의를 거부할 수 있어요', '서비스 이용 동의는 필수예요. 동의하지 않으면 홈, 일정 관리와 카드 추천으로 진행할 수 없어요.'],
     ],
@@ -30,6 +30,7 @@ function CheckRow({
   title,
   checked,
   disabled,
+  waiting = false,
   onToggle,
   onOpen
 }) {
@@ -41,7 +42,9 @@ function CheckRow({
           <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={title}
             accessibilityHint={checked ? '누르면 동의를 해제해요' : '누르면 동의해요'} accessibilityState={{ checked, disabled }} aria-checked={checked}
             disabled={disabled} onPress={onToggle} hitSlop={10}>
-            <Text style={[styles.square, checked && styles.squareChecked]}>{checked ? '✓' : ''}</Text>
+            {/* 폰 알림 허용 창을 기다리는 동안은 체크칸 자리에 기다림 표시 (PR #15 검토: 상세 창의 표시가 없어져서) */}
+            {waiting ? <View style={[styles.square, styles.squareWaiting]}><ActivityIndicator size="small" color="#1D55D9" /></View>
+              : <Text style={[styles.square, checked && styles.squareChecked]}>{checked ? '✓' : ''}</Text>}
           </TouchableOpacity>
           <Text style={styles.checkTitle}>{title}</Text>
         </View>
@@ -172,6 +175,7 @@ export default function AgreementScreen({
             title={agreements.morningNotificationAgreed.title}
             checked={morningNotificationAgreed}
             disabled={busy}
+            waiting={pending === 'permission'}
             onToggle={() => saveChoice('morningNotificationAgreed', !morningNotificationAgreed)}
             onOpen={() => openDetail('morningNotificationAgreed')}
           />
@@ -277,12 +281,12 @@ const styles = StyleSheet.create({
   detailSectionTitle: { color: '#142D4E', fontSize: 15, lineHeight: 22, fontWeight: '700' },
   detailBody: { color: '#3B4F6A', fontSize: 14, lineHeight: 23 },
   detailFooter: { borderTopWidth: 1, borderTopColor: '#E4EAF3', paddingTop: 10 },
-  detailUndo: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   detailPrimary: { marginTop: 6, marginBottom: 12 },
   selected: {
     borderColor: "#104FE7",
     backgroundColor: "#EDF3FF"
   },
+  squareWaiting: { alignItems: 'center', justifyContent: 'center' },
   square: {
     width: 24,
     height: 24,

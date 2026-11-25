@@ -77,6 +77,16 @@ export function cardChangeDots(boundaries, cardIdAt) {
     .map(minute => ({ key: 'change-' + minute, ratio: minuteToRatio(minute), minute }));
 }
 
+// 빈 시간(일정 없는 시각) 미리보기 안내 (PR #15, 2026-11-25): 그 카드를 '언제까지' 쓰는지.
+//   하루 배치 구간이 바뀌어 카드가 다음 일정 전에 바뀔 수 있으니, 다음에 카드가 바뀌는 시각(changeMinutes)과
+//   다음 일정 시작 중 이른 쪽까지라고 말한다. next: { label, startMinute } | null
+export function gapCardText({ cardName, viewMinute, changeMinutes, next }) {
+  const change = (changeMinutes || []).filter(minute => minute > viewMinute).sort((a, b) => a - b)[0];
+  if (change != null && (!next || change < next.startMinute)) return `${cardName} · ${timeLabel(change)}까지 쓰기 좋은 카드예요`;
+  if (next) return `${cardName} · 다음 일정 '${next.label}'(${timeLabel(next.startMinute)}) 전까지 쓰기 좋은 카드예요`;
+  return `${cardName} · 오늘 남은 시간에 쓰기 좋은 카드예요`;
+}
+
 // 오늘 결제 점: 기준 시각(nowMinute) 뒤 결제는 뺀다
 export function paymentDots(payments, nowMinute) {
   return (payments || []).map(payment => ({ payment, minute: paidMinute(payment) }))

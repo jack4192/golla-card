@@ -256,7 +256,6 @@ const SettingsToggle = ({
 export default function MainScreen({
   onLogout,
   onConsentChange,
-  onOpenPrivacy,
   onOpenChat,
   onViewBenefits,
   onOpenScheduleManager,   // 오늘의 일정 탭 달력 아이콘 → 일정 관리 화면 (2026-11-25)
@@ -532,16 +531,6 @@ export default function MainScreen({
     } finally {
       setSettingsBusy(false);
     }
-  };
-  const resetViewSettings = () => {
-    // 진동 설정은 화면에서 뺐으므로 안내도 '혜택 알림'만 (2026-11-25 점검). 저장 값의 vibrationOn 은 기본값으로 함께 되돌린다
-    Alert.alert('화면 설정 초기화', '앱 내 혜택 알림 설정을 기본값으로 바꿀까요? 동의 기록은 유지돼요.', [{
-      text: '취소',
-      style: 'cancel'
-    }, {
-      text: '초기화',
-      onPress: () => persistUISettings(true, true)
-    }]);
   };
   const goFromSettings = nextTab => {
     setSettingsOpen(false);

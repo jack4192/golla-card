@@ -14,7 +14,7 @@ import { bestCardOf, exampleScenario } from '../utils/aiEstimateCore';
 import { loadPlacementPreview } from '../utils/aiPlacement';
 import { loadDayPlacement } from '../utils/dayTimeline';
 import { loadTodayPayments } from '../utils/payments';
-import { MAX_MINUTE, STEP_MINUTES, cardChangeDots, minuteOfDay, minuteToRatio, paymentAt, paymentDots, paymentLine, ratioToMinute, scrubbedCard, timeLabel } from '../utils/dayTimelineCore';
+import { MAX_MINUTE, STEP_MINUTES, cardChangeDots, gapCardText, minuteOfDay, minuteToRatio, paymentAt, paymentDots, paymentLine, ratioToMinute, scrubbedCard, timeLabel } from '../utils/dayTimelineCore';
 import { aiWindowKey, inAiWindow, scheduleAiExample, scheduleAiMatch } from '../utils/scheduleAiCore';
 import { resolveWalletProduct } from './WalletProductCard';
 import SpecialScheduleModal from './SpecialScheduleModal';
@@ -73,6 +73,7 @@ function scheduleLanes(rows) {
 
 // 미리보기 중 '현재시간' 버튼(수정사항2 글자): 결제가 막혀 있으니 '여기를 누르면 돌아가요' 하고 깜빡인다 (2026-11-24)
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+const AnimatedIcon = Animated.createAnimatedComponent(Ionicons);   // 깜빡일 때 아이콘도 글자색을 따라간다
 const PULSE_NOW_BUTTON = false;
 function PulsingNowButton({ onPress, buttonRef }) {
   const pulse = useRef(new Animated.Value(0)).current;
@@ -88,14 +89,15 @@ function PulsingNowButton({ onPress, buttonRef }) {
   }, [pulse]);
   const animated = {
     transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }) }],
-    backgroundColor: pulse.interpolate({ inputRange: [0, 1], outputRange: ['#FFFFFF', '#1D55D9'] }),
-    borderColor: pulse.interpolate({ inputRange: [0, 1], outputRange: ['#BFD3FA', '#1D55D9'] }),
+    // 0 쪽 값은 homeNowButton 의 바탕·테두리와 같게 (깜빡임을 꺼도 animated 가 덮으므로, PR #15 검토)
+    backgroundColor: pulse.interpolate({ inputRange: [0, 1], outputRange: ['#EEF4FF', '#1D55D9'] }),
+    borderColor: pulse.interpolate({ inputRange: [0, 1], outputRange: ['#DCE6FA', '#1D55D9'] }),
   };
   const textColor = pulse.interpolate({ inputRange: [0, 1], outputRange: ['#1D55D9', '#FFFFFF'] });
   return <AnimatedTouchable ref={buttonRef} accessibilityRole="button" accessibilityLabel="현재 시각으로 돌아가기"
     accessibilityHint="미리보기를 끝내고 지금 시각 카드로 돌아가요. 그래야 결제할 수 있어요"
     style={[styles.homeNowButton, animated]} onPress={onPress} hitSlop={8}>
-    <Ionicons name="time-outline" size={14} color="#1D55D9" />
+    <AnimatedIcon name="time-outline" size={14} color={textColor} />
     <Animated.Text style={[styles.homeNowButtonText, { color: textColor }]}>지금 시각으로</Animated.Text>
   </AnimatedTouchable>;
 }
@@ -649,9 +651,11 @@ export default function TodaySchedulePanel({
       const gapText = () => {
         if (!scrubbed.card) return reasonText(null);
         if (scrubbed.note && !categoryNote) return reasonText(scrubbed.card, scrubbed.note);
-        return nextRow
-          ? `${scrubbed.card.name} · 다음 일정 '${scheduleLabel(nextRow.label)}'(${timeLabel(minuteOf(nextRow.startDate))}) 전까지 쓰기 좋은 카드예요`
-          : `${scrubbed.card.name} · 오늘 남은 시간에 쓰기 좋은 카드예요`;
+        // 다음 일정 전에 하루 배치 구간이 바뀌면 그 시각까지라고 말한다 (흰 점과 맞춤, PR #15 검토)
+        return gapCardText({
+          cardName: scrubbed.card.name, viewMinute, changeMinutes: changeDots.map(dot => dot.minute),
+          next: nextRow ? { label: scheduleLabel(nextRow.label), startMinute: minuteOf(nextRow.startDate) } : null,
+        });
       };
       reasonLine = {
         icon: first ? first.icon : ended.length ? 'flag-outline' : 'time-outline',
@@ -893,9 +897,6 @@ const styles = StyleSheet.create({
   homeCardScheduled:{padding:12,gap:10,borderRadius:28,borderWidth:1,borderColor:'#DDE9FF',backgroundColor:'#F5F8FF'},
   homeRibbonHead:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8,paddingHorizontal:16,marginBottom:6,minHeight:24},
   homeRibbonTitle:{fontSize:15,fontWeight:'800',color:'#13254A'},
-  homeLegend:{flexDirection:'row',alignItems:'center',gap:6},
-  homeLegendDot:{width:12,height:12,borderRadius:6,borderWidth:3,borderColor:'#5A93F2',backgroundColor:'#FFFFFF'},
-  homeLegendText:{fontSize:12,fontWeight:'700',color:'#4A5A75'},
   homeRibbon:{
     width:'100%',paddingTop:10,paddingBottom:8,borderRadius:19,borderWidth:1,
     borderColor:'#E8EFFF',backgroundColor:'#FFFFFF'
@@ -937,7 +938,6 @@ const styles = StyleSheet.create({
     flexDirection:'row',alignItems:'center',gap:4,height:28,
     paddingHorizontal:12,borderRadius:14,borderWidth:1,borderColor:'#DCE6FA',backgroundColor:'#EEF4FF'
   },
-  homeNowButtonIcon:{fontSize:14,fontWeight:'900'},
   homePayHintStrong:{fontWeight:'900',color:'#1D55D9'},
   homeNowButtonText:{fontSize:12,fontWeight:'800',color:'#1D55D9'},
   homeAxisTouch:{position:'absolute',left:-12,right:-12,top:0,bottom:-6,zIndex:3,cursor:'pointer'},

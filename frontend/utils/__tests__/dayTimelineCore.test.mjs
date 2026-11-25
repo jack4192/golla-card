@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MAX_MINUTE, cardChangeDots, minuteOfDay, minuteToRatio, paymentAt, paymentDots, paymentLine, paymentRowText,
-  ratioToMinute, scrubbedCard, segmentAt, timeLabel, toDaySegments,
+  ratioToMinute, scrubbedCard, segmentAt, timeLabel, toDaySegments, gapCardText,
 } from '../dayTimelineCore.js';
 
 const wallet = [
@@ -125,4 +125,23 @@ test('결제 한 줄: 가상 데이터의 \'동네 \' 가맹점 이름은 떼고
   assert.equal(displayMerchant('동네 대중교통'), '대중교통');
   assert.equal(displayMerchant('스타벅스 강남역점'), '스타벅스 강남역점');
   assert.equal(paymentRowText({ merchantName: '동네 카페', paidAt: '2026-11-25T09:00:00', amount: 5000, cardName: '신한카드 SOL트래블 체크' }).merchant, '카페');
+});
+
+// 빈 시간(일정 없는 시각) 미리보기 안내: 다음 일정 전에 카드가 바뀌면 그 시각까지라고 말한다 (PR #15 검토, 2026-11-25)
+test('빈 시간 안내: 카드가 바뀌는 시각이 다음 일정보다 먼저면 그 시각까지', () => {
+  const next = { label: '저녁 약속', startMinute: 18 * 60 };
+  assert.equal(gapCardText({ cardName: 'Discount Plan', viewMinute: 13 * 60, changeMinutes: [9 * 60, 15 * 60, 18 * 60], next }),
+    'Discount Plan · 15:00까지 쓰기 좋은 카드예요');
+});
+
+test('빈 시간 안내: 다음 일정까지 카드가 그대로면 다음 일정 전까지', () => {
+  const next = { label: '저녁 약속', startMinute: 18 * 60 };
+  assert.equal(gapCardText({ cardName: 'Discount Plan', viewMinute: 13 * 60, changeMinutes: [9 * 60, 18 * 60], next }),
+    "Discount Plan · 다음 일정 '저녁 약속'(18:00) 전까지 쓰기 좋은 카드예요");
+});
+
+test('빈 시간 안내: 다음 일정이 없으면 다음 바뀌는 시각, 그것도 없으면 오늘 남은 시간', () => {
+  assert.equal(gapCardText({ cardName: 'A', viewMinute: 20 * 60, changeMinutes: [21 * 60], next: null }), 'A · 21:00까지 쓰기 좋은 카드예요');
+  assert.equal(gapCardText({ cardName: 'A', viewMinute: 22 * 60, changeMinutes: [21 * 60], next: null }), 'A · 오늘 남은 시간에 쓰기 좋은 카드예요');
+  assert.equal(gapCardText({ cardName: 'A', viewMinute: 22 * 60, changeMinutes: undefined, next: null }), 'A · 오늘 남은 시간에 쓰기 좋은 카드예요');
 });
