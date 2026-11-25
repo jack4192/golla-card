@@ -25,21 +25,26 @@ const agreements = {
   },
 };
 
+// 체크칸을 누르면 바로 동의·해제, '상세보기'를 눌러야만 약관이 열린다 (2026-11-25 팀 피드백: 상세는 읽지 않아도 됨)
 function CheckRow({
   title,
   checked,
   disabled,
+  onToggle,
   onOpen
 }) {
   return (
     <View style={[styles.checkCard, checked && styles.selected, disabled && styles.disabled]}>
       <View style={styles.checkRow}>
-        <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={title}
-          accessibilityHint="상세 내용을 열어요" accessibilityState={{ checked, disabled }} aria-checked={checked}
-          disabled={disabled} onPress={onOpen} style={styles.checkControl}>
-          <Text style={[styles.square, checked && styles.squareChecked]}>{checked ? '✓' : ''}</Text>
+        {/* 네모 칸을 눌러야만 체크된다 (2026-11-25 팀 피드백). 제목 글자는 눌러도 아무 일 없음 */}
+        <View style={styles.checkControl}>
+          <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={title}
+            accessibilityHint={checked ? '누르면 동의를 해제해요' : '누르면 동의해요'} accessibilityState={{ checked, disabled }} aria-checked={checked}
+            disabled={disabled} onPress={onToggle} hitSlop={10}>
+            <Text style={[styles.square, checked && styles.squareChecked]}>{checked ? '✓' : ''}</Text>
+          </TouchableOpacity>
           <Text style={styles.checkTitle}>{title}</Text>
-        </TouchableOpacity>
+        </View>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel={title + ' 상세보기'}
           disabled={disabled} onPress={onOpen} style={styles.detailsButton}>
           <Text style={styles.link}>상세보기</Text>
@@ -155,6 +160,7 @@ export default function AgreementScreen({
             title={agreements.termsAgreed.title}
             checked={termsAgreed}
             disabled={busy}
+            onToggle={() => saveChoice('termsAgreed', !termsAgreed)}
             onOpen={() => openDetail('termsAgreed')}
           />
         </View>
@@ -166,6 +172,7 @@ export default function AgreementScreen({
             title={agreements.morningNotificationAgreed.title}
             checked={morningNotificationAgreed}
             disabled={busy}
+            onToggle={() => saveChoice('morningNotificationAgreed', !morningNotificationAgreed)}
             onOpen={() => openDetail('morningNotificationAgreed')}
           />
         </View>
@@ -200,13 +207,10 @@ export default function AgreementScreen({
             {!!message && <Text style={styles.message} accessibilityRole="alert">{message}</Text>}
           </ScrollView>
           <View style={styles.detailFooter}>
-            {choices[detailKey] && <TouchableOpacity accessibilityRole="button" disabled={busy}
-              onPress={() => saveChoice(detailKey, false)} style={styles.detailUndo}>
-              <Text style={styles.link}>동의 해제</Text>
-            </TouchableOpacity>}
-            <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => saveChoice(detailKey, true)}
+            {/* 상세는 읽기만 하는 창: 동의·해제는 목록의 체크칸에서만, 여기엔 '닫기' 하나 (2026-11-25 팀 피드백) */}
+            <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={closeDetail}
               style={[styles.primary, styles.detailPrimary, busy && styles.disabled]}>
-              {pending === 'permission' ? <ActivityIndicator color="#FFF" /> : <Text style={styles.white}>동의하기</Text>}
+              <Text style={styles.white}>닫기</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>

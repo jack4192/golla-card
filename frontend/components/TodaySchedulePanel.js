@@ -73,9 +73,12 @@ function scheduleLanes(rows) {
 
 // 미리보기 중 '현재시간' 버튼(수정사항2 글자): 결제가 막혀 있으니 '여기를 누르면 돌아가요' 하고 깜빡인다 (2026-11-24)
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+const PULSE_NOW_BUTTON = false;
 function PulsingNowButton({ onPress, buttonRef }) {
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
+    // 깜빡임은 일단 끈다 (2026-11-25 팀 피드백). 다시 켜려면 PULSE_NOW_BUTTON 을 true 로
+    if (!PULSE_NOW_BUTTON) { pulse.setValue(0); return undefined; }
     const loop = Animated.loop(Animated.sequence([
       Animated.timing(pulse, { toValue: 1, duration: 550, easing: Easing.inOut(Easing.quad), useNativeDriver: false }),
       Animated.timing(pulse, { toValue: 0, duration: 550, easing: Easing.inOut(Easing.quad), useNativeDriver: false }),
@@ -92,8 +95,8 @@ function PulsingNowButton({ onPress, buttonRef }) {
   return <AnimatedTouchable ref={buttonRef} accessibilityRole="button" accessibilityLabel="현재 시각으로 돌아가기"
     accessibilityHint="미리보기를 끝내고 지금 시각 카드로 돌아가요. 그래야 결제할 수 있어요"
     style={[styles.homeNowButton, animated]} onPress={onPress} hitSlop={8}>
-    <Animated.Text style={[styles.homeNowButtonIcon, { color: textColor }]}>↻</Animated.Text>
-    <Animated.Text style={[styles.homeNowButtonText, { color: textColor }]}>현재시간</Animated.Text>
+    <Ionicons name="time-outline" size={14} color="#1D55D9" />
+    <Animated.Text style={[styles.homeNowButtonText, { color: textColor }]}>지금 시각으로</Animated.Text>
   </AnimatedTouchable>;
 }
 
@@ -109,7 +112,7 @@ function HomeScheduleRibbon({ nowButtonRef, start, clockTime, nowMinute, viewMin
   const bubbleText = scrubbing ? `${timeLabel(viewMinute)} 미리보기` : `지금 ${clockTime}`;
   // 말풍선이 표시줄 밖으로 나가지 않게 (옮겼을 때는 오른쪽 위 '현재시간' 버튼 자리도 비운다)
   const bubbleLeft = axisWidth > 0
-    ? Math.min(Math.max(cursor * axisWidth - bubbleWidth / 2, -22), axisWidth - bubbleWidth + (scrubbing ? -78 : 22))
+    ? Math.min(Math.max(cursor * axisWidth - bubbleWidth / 2, -22), axisWidth - bubbleWidth + 22)
     : null;
 
   // 일정 블록 자리: 가로는 시각, 세로는 겹침 줄
@@ -172,12 +175,10 @@ function HomeScheduleRibbon({ nowButtonRef, start, clockTime, nowMinute, viewMin
     {/* 제목과 흰 점 설명: 처음 보는 사람도 무엇인지 알게 (2026-11-24) */}
     <View style={styles.homeRibbonHead}>
       <Text accessibilityRole="header" style={styles.homeRibbonTitle}>오늘의 카드 시간표</Text>
-      {changeDots.length > 0 && <View style={styles.homeLegend} accessible accessibilityLabel="흰 점은 카드가 바뀌는 시각">
-        <View style={styles.homeLegendDot} />
-        <Text style={styles.homeLegendText}>카드가 바뀌는 시각</Text>
-      </View>}
+      {/* '카드가 바뀌는 시각' 범례는 뺐다 (2026-11-25 팀 피드백). 흰 점 뜻은 스크린 리더 설명에 남아 있음 */}
+      {/* 미리보기 중에만 제목 오른쪽에 '지금 시각으로' (2026-11-25: 막대 위에 떠 있던 버튼을 제목 줄로) */}
+      {scrubbing && <PulsingNowButton onPress={onNow} buttonRef={nowButtonRef} />}
     </View>
-    {scrubbing && <PulsingNowButton onPress={onNow} buttonRef={nowButtonRef} />}
     <View ref={axisRef} style={[styles.homeAxis, { height: BAR_TOP + barH + 12 }]} onLayout={event => {
       setAxisWidth(event.nativeEvent.layout.width);
       measureAxis();
@@ -641,12 +642,23 @@ export default function TodaySchedulePanel({
       const covering = dayRows.filter(row => minuteOf(row.startDate) <= viewMinute && viewMinute < minuteOf(row.endDate));
       const ended = covering.length ? [] : dayRows.filter(row => minuteOf(row.endDate) === viewMinute);
       const first = covering[0];
+      // 일정이 없는 시각(일정이 막 끝났거나 빈 시간): 다른 업종 얘기('주유에서 결제하면…')는 그 시각과 맞지 않으니 빼고,
+      // 다음 일정까지 쓰는 카드라고 알린다 (2026-11-25 팀 피드백 '스타벅스 끝 13:00 · 주유에서…'는 관련 없어 보임)
+      const nextRow = first ? null : dayRows.find(row => minuteOf(row.startDate) > viewMinute);
+      const categoryNote = /에서 결제하면|에서 \d/.test(scrubbed.note || '');
+      const gapText = () => {
+        if (!scrubbed.card) return reasonText(null);
+        if (scrubbed.note && !categoryNote) return reasonText(scrubbed.card, scrubbed.note);
+        return nextRow
+          ? `${scrubbed.card.name} · 다음 일정 '${scheduleLabel(nextRow.label)}'(${timeLabel(minuteOf(nextRow.startDate))}) 전까지 쓰기 좋은 카드예요`
+          : `${scrubbed.card.name} · 오늘 남은 시간에 쓰기 좋은 카드예요`;
+      };
       reasonLine = {
         icon: first ? first.icon : ended.length ? 'flag-outline' : 'time-outline',
         head: first ? `${scheduleLabel(first.label)} ${first.timeCaption}${covering.length > 1 ? ` 외 ${covering.length - 1}개` : ''}`
-          : ended.length ? `${ended.map(row => scheduleLabel(row.label)).join(', ')} 끝 ${timeLabel(viewMinute)}`
-            : `${timeLabel(viewMinute)} 일정 없음`,
-        text: reasonText(scrubbed.card, scrubbed.note),
+          : ended.length ? `${timeLabel(viewMinute)} ${ended.map(row => scheduleLabel(row.label)).join(', ')} 일정이 끝났어요`
+            : `${timeLabel(viewMinute)} 일정 없는 시간`,
+        text: first ? reasonText(scrubbed.card, scrubbed.note) : gapText(),
       };
     } else if (selectedSchedule) {
       reasonLine = {
@@ -680,11 +692,12 @@ export default function TodaySchedulePanel({
           emptyMessage={error || (loading && !disabled ? '일정을 불러오는 중이에요' : '오늘 등록된 일정이 없어요')} />
         {/* 일정 한 줄: 일정 이름·시간 · 카드와 그 카드를 쓰는 까닭 (지금·미리보기 모두 같은 모양) */}
         {reasonLine && <View accessibilityLiveRegion="polite" style={[styles.homeReason, scrubbing && styles.homeReasonPreview]}>
-          <Ionicons name={reasonLine.icon} size={16} color={scrubbing ? '#5B3FC4' : '#1D55D9'} />
-          <Text numberOfLines={2} style={styles.homeReasonText}>
-            {!!reasonLine.head && <><Text style={styles.homeReasonSchedule}>{reasonLine.head}</Text>{' · '}</>}
-            {reasonLine.text}
-          </Text>
+          {/* 두 줄: 첫 줄(아이콘 + 일정·시각)은 가운데, 둘째 줄은 카드와 이유 (2026-11-25) */}
+          <View style={styles.homeReasonHead}>
+            <Ionicons name={reasonLine.icon} size={16} color={scrubbing ? '#5B3FC4' : '#1D55D9'} />
+            {!!reasonLine.head && <Text numberOfLines={1} style={styles.homeReasonSchedule}>{reasonLine.head}</Text>}
+          </View>
+          <Text numberOfLines={2} style={styles.homeReasonText}>{reasonLine.text}</Text>
         </View>}
         {/* 큰 카드: 누르면 뒤집혀 '이 거래의 예상 혜택' (결제 화면과 같은 계산, 2026-11-24). 카드 그림만 뒤집힌다 */}
         {artwork && <View style={styles.homeCardStage}>
@@ -698,13 +711,13 @@ export default function TodaySchedulePanel({
         {scrubPayment && <Text style={styles.homeScrubPayment} numberOfLines={1}>{paymentLine(scrubPayment)}</Text>}
       </View>
       {card && <TouchableOpacity accessibilityRole="button" accessibilityLabel="이 카드로 결제"
-        accessibilityState={{ disabled: !canPay }} accessibilityHint={scrubbing ? "누르면 위의 '현재시간' 버튼으로 이동해요" : undefined}
+        accessibilityState={{ disabled: !canPay }} accessibilityHint={scrubbing ? "누르면 위의 '지금 시각으로' 버튼으로 이동해요" : undefined}
         disabled={!canPay && !scrubbing} style={[styles.primary, !canPay && styles.homePayDisabled]}
         onPress={() => scrubbing ? revealNowButton() : recommended?.inProgress ? payFor(recommended) : onPay?.({ cardId: card.id })}>
         <Ionicons name="qr-code-outline" size={19} color="#FFFFFF" />
         <Text style={styles.white}>이 카드로 결제</Text>
       </TouchableOpacity>}
-      {card && scrubbing && <Text style={styles.homePayHint}>미리보기 중에는 결제할 수 없어요 · 위의 <Text style={styles.homePayHintStrong}>'현재시간'</Text>을 누르면 결제할 수 있어요</Text>}
+      {card && scrubbing && <Text style={styles.homePayHint}>미리보기 중에는 결제할 수 없어요 · 위의 <Text style={styles.homePayHintStrong}>'지금 시각으로'</Text>를 누르면 결제할 수 있어요</Text>}
       {/* 카드가 있으면 '다른 카드로 변경' 대신 내 카드 목록(누르면 결제 카드 변경, ☰로 순서 변경) */}
       {/* 상세 예상 혜택 상자는 홈에서 뺐다 (2026-11-24, 결제 화면에만) */}
       {card && cardList ? cardList : <TouchableOpacity accessibilityRole="button" accessibilityLabel={cardAction}
@@ -903,13 +916,14 @@ const styles = StyleSheet.create({
   },
   homeNowArrowPreview:{borderTopColor:'#5B3FC4'},
   homeReason:{
-    flexDirection:'row',alignItems:'center',gap:8,alignSelf:'stretch',paddingHorizontal:12,paddingVertical:10,
+    alignItems:'center',gap:4,alignSelf:'stretch',paddingHorizontal:12,paddingVertical:10,
     borderRadius:14,backgroundColor:'#EEF4FF'
   },
   homeReasonPreview:{backgroundColor:'#F1EDFF'},
   whyText:{fontSize:13,lineHeight:19,fontWeight:'600',color:'#3A4B66'},
-  homeReasonText:{flex:1,fontSize:13,lineHeight:19,fontWeight:'600',color:'#3A4B66'},
-  homeReasonSchedule:{fontWeight:'800',color:'#13254A'},
+  homeReasonHead:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:6,alignSelf:'stretch'},
+  homeReasonText:{alignSelf:'stretch',fontSize:13,lineHeight:19,fontWeight:'600',color:'#3A4B66',textAlign:'center'},
+  homeReasonSchedule:{flexShrink:1,fontSize:14,lineHeight:20,fontWeight:'800',color:'#13254A',textAlign:'center'},
   homeEmptyCaption:{marginTop:5,paddingHorizontal:10,fontSize:12,lineHeight:17,textAlign:'center',color:'#526783'},
   homeTick:{position:'absolute',top:26,width:46,marginLeft:-23,alignItems:'center',gap:4},
   homeTickLabel:{fontSize:11,lineHeight:15,color:'#4B6284',fontWeight:'700',fontVariant:['tabular-nums']},
@@ -920,8 +934,8 @@ const styles = StyleSheet.create({
   homeNowText:{fontSize:11,fontWeight:'800',color:'#FFFFFF',fontVariant:['tabular-nums']},
   homeNowPreview:{backgroundColor:'#5B3FC4'},
   homeNowButton:{
-    position:'absolute',top:40,right:8,zIndex:10,flexDirection:'row',alignItems:'center',gap:3,height:26,
-    paddingHorizontal:9,borderRadius:13,borderWidth:1,borderColor:'#BFD3FA',backgroundColor:'#FFFFFF'
+    flexDirection:'row',alignItems:'center',gap:4,height:28,
+    paddingHorizontal:12,borderRadius:14,borderWidth:1,borderColor:'#DCE6FA',backgroundColor:'#EEF4FF'
   },
   homeNowButtonIcon:{fontSize:14,fontWeight:'900'},
   homePayHintStrong:{fontWeight:'900',color:'#1D55D9'},
