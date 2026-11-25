@@ -20,6 +20,7 @@ import { SESSION_EXPIRED_MESSAGE, startupKeepsSession } from './utils/sessionCor
 import { addServerCardByCode, registerServerCard, removeServerCard, resetServerCards } from './utils/serverCards';
 import { applySignupJob, rememberSignupJob } from './utils/signupJob';
 import { addMorningNotificationOpenListener, cancelPhoneNotifications, requestPhonePermission, syncPhoneNotifications } from './utils/notifications';
+import { addWebPushOpenListener, registerServiceWorker } from './utils/webPush';
 import {
   deleteDemoData,
   hasPendingReset,
@@ -822,6 +823,11 @@ export default function App() {
   }, [authenticated, morningNotificationAgreed]);
 
   useEffect(() => addMorningNotificationOpenListener(() => setMorningSchedulePending(true)), []);
+  // 바탕화면 웹앱: 서비스 워커를 등록하고, 아침 알림을 눌러 열리면 같은 흐름으로 일정 관리를 연다 (2026-11-25)
+  useEffect(() => {
+    registerServiceWorker();
+    return addWebPushOpenListener(() => setMorningSchedulePending(true));
+  }, []);
   useEffect(() => {
     if (!morningSchedulePending || isRestoring || !authenticated || consent?.termsAgreed !== true ||
       privacyOpen || ['Login', 'SignUp', 'Agreement'].includes(currentScreen)) return;
