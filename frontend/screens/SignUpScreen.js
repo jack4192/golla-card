@@ -3,6 +3,7 @@ import FlowHeading from '../components/FlowHeading';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Keyboard, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import ScreenSafeArea from '../components/ScreenSafeArea';
+import { SERVER_MODE } from '../utils/api';
 
 export const phoneDigits = value => String(value || '').replace(/\D/g, '').slice(0, 11);
 export function formatPhone(value) {
@@ -375,7 +376,10 @@ export default function SignUpScreen({
             </Text>}
 
           <Text style={styles.hint}>
-            이메일과 전화번호는 이 기기의 가입 기록에서 중복을 확인해요. 휴대폰 본인 확인은 제공되지 않아요.
+            {/* 서버 모드는 서버 가입 기록에서 중복을 확인한다 (2026-11-25 점검: '이 기기의 가입 기록'이라고 나왔다) */}
+            {SERVER_MODE
+              ? '이메일과 전화번호는 이미 가입된 기록과 겹치는지 확인해요. 휴대폰 본인 확인은 제공되지 않아요.'
+              : '이메일과 전화번호는 이 기기의 가입 기록에서 중복을 확인해요. 휴대폰 본인 확인은 제공되지 않아요.'}
           </Text>
 
         </ScrollView>

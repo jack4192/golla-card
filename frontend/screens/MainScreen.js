@@ -220,12 +220,16 @@ const SettingsItem = ({
       <Ionicons name={icon} size={19} color={danger ? '#C54444' : '#315AAB'} />
     </View>
     <View style={styles.settingTextArea}>
-      <Text style={[styles.settingLabel, danger && styles.dangerText]}>
-        {title}
-      </Text>
+      {/* 설명이 있으면 값(예: 동의함)을 제목 옆에 작게 둔다. 오른쪽에 두면 설명 칸이 좁아져 글자가 이상하게 끊겼다 (2026-11-25) */}
+      <View style={styles.settingTitleRow}>
+        <Text style={[styles.settingLabel, danger && styles.dangerText]}>
+          {title}
+        </Text>
+        {!!value && !!subtitle && <Text style={styles.settingValueChip}>{value}</Text>}
+      </View>
       {!!subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
     </View>
-    {!!value && <Text style={styles.settingValue}>{value}</Text>}
+    {!!value && !subtitle && <Text style={styles.settingValue}>{value}</Text>}
     {!!onPress && <Ionicons name="chevron-forward" size={17} color="#9AA6BA" />}
   </TouchableOpacity>;
 const SettingsToggle = ({
@@ -254,6 +258,7 @@ export default function MainScreen({
   onOpenPrivacy,
   onOpenChat,
   onViewBenefits,
+  onOpenScheduleManager,   // 오늘의 일정 탭 달력 아이콘 → 일정 관리 화면 (2026-11-25)
   scheduleDisabled = false,
   allowAutomaticAds = false,
   walletCards = [],
@@ -479,7 +484,8 @@ export default function MainScreen({
     }
   };
   const resetViewSettings = () => {
-    Alert.alert('화면 설정 초기화', '앱 내 알림과 진동 설정만 기본값으로 바꿀까요? 동의 기록은 유지돼요.', [{
+    // 진동 설정은 화면에서 뺐으므로 안내도 '혜택 알림'만 (2026-11-25 점검). 저장 값의 vibrationOn 은 기본값으로 함께 되돌린다
+    Alert.alert('화면 설정 초기화', '앱 내 혜택 알림 설정을 기본값으로 바꿀까요? 동의 기록은 유지돼요.', [{
       text: '취소',
       style: 'cancel'
     }, {
@@ -492,6 +498,10 @@ export default function MainScreen({
     selectTab(nextTab);
   };
   const visibleBenefits = useMemo(() => allBenefits.filter(item => {
+    // 기간이 끝난 행사는 목록에서 뺀다. 위 '지금 확인할 수 있는 혜택 N건'과 개수가 어긋났다 (2026-11-25 점검: 28건 vs 29개, CU)
+    if (benefitStatus(item) === '기간 종료') {
+      return false;
+    }
     if (filter !== '전체' && item.type !== filter) {
       return false;
     }
@@ -517,7 +527,7 @@ export default function MainScreen({
       id: 'greeting',
       role: 'bot',
       greeting: true,
-      text: `안녕하세요, SOL 카드 도우미예요. ${where} 화면에서 궁금한 점을 물어보세요.` + (currentCard ? ` 지금 결제 카드는 ${currentCard.name}예요.` : '')
+      text: `안녕하세요, Pay·Mate 도우미예요. ${where} 화면에서 궁금한 점을 물어보세요.` + (currentCard ? ` 지금 결제 카드는 ${currentCard.name}예요.` : '')
     }]);
     setChatInput('');
     setChatVisible(true);
@@ -624,6 +634,7 @@ export default function MainScreen({
     aiRefresh={aiRefresh}
     autoOn={auto.on}
     onViewBenefits={onViewBenefits}
+    onOpenManager={onOpenScheduleManager}
     cards={realWalletCards(currentCard, walletCards)}
     selectedCard={currentCard}
     onPay={openPaySheet}
@@ -843,7 +854,7 @@ export default function MainScreen({
         <SettingsGroup title="서비스·이용 동의">
           {PHONE_NOTIFICATIONS_SUPPORTED
             ? <SettingsToggle icon="notifications-outline" title="폰 알림 받기 (알림 수신 동의)" subtitle="매일 오전 7시 일정 입력 안내" value={savedConsent?.morningNotificationAgreed === true} disabled={phoneNotifyBusy || !savedConsent} onChange={togglePhoneNotifications} />
-            : <SettingsItem icon="notifications-outline" title="알림 수신 동의" value={savedConsent ? savedConsent.morningNotificationAgreed ? '선택함' : '선택 안 함' : '기록 없음'} subtitle="폰 알림은 아이폰·안드로이드 앱에서만 받을 수 있어요" />}
+            : <SettingsItem icon="notifications-outline" title="알림 수신 동의" value={savedConsent ? savedConsent.morningNotificationAgreed ? '동의함' : '동의 안 함' : '기록 없음'} subtitle="웹에서는 폰 알림이 오지 않아요. 아이폰·안드로이드 앱에서 받을 수 있어요." />}
         </SettingsGroup>
 
         <SettingsGroup title="앱 정보">
@@ -853,9 +864,9 @@ export default function MainScreen({
           hour: '2-digit',
           minute: '2-digit'
         })} />
-          <SettingsItem icon="refresh-outline" title="화면 설정 초기화" subtitle="혜택 알림·진동만 기본값으로 복원" onPress={resetViewSettings} />
+          <SettingsItem icon="refresh-outline" title="화면 설정 초기화" subtitle="앱 내 혜택 알림을 기본값으로 복원" onPress={resetViewSettings} />
           {/* 맨 위 줄에 있던 데이터 관리를 여기로 옮김 (2026-11-24 사용자 요청) */}
-          {onOpenPrivacy && <SettingsItem icon="shield-checkmark-outline" title="데이터 관리" subtitle="기록 삭제·동의 철회·이 기기 계정 초기화" onPress={onOpenPrivacy} />}
+          {onOpenPrivacy && <SettingsItem icon="shield-checkmark-outline" title="데이터 관리" subtitle="이 기기의 기록 삭제·동의 철회" onPress={onOpenPrivacy} />}
           <SettingsItem icon="log-out-outline" title="로그아웃" subtitle="이메일과 비밀번호로 다시 로그인" onPress={() => setExitOpen(true)} />
         </SettingsGroup>
 
@@ -1075,7 +1086,7 @@ export default function MainScreen({
         <SafeAreaView style={styles.chatRoot}>
           <View style={styles.chatHeader}>
             <Text style={styles.chatTitle}>
-              🤖 SOL 카드 도우미
+              🤖 Pay·Mate 도우미
             </Text>
             <TouchableOpacity onPress={() => setChatVisible(false)}>
               <Ionicons name="close" size={25} color="#27344D" />
@@ -2189,6 +2200,11 @@ const styles = StyleSheet.create({
   settingTextArea: {
     flex: 1,
     paddingRight: 7
+  },
+  settingTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  settingValueChip: {
+    fontSize: 11, fontWeight: '700', color: '#315AAB', backgroundColor: '#EAF1FF',
+    paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8, overflow: 'hidden'
   },
   settingLabel: {
     fontSize: 14,

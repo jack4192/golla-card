@@ -109,7 +109,9 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
 
   // 시간 칸에 타이핑 중인 글자(칸을 벗어나면 09:30 형식으로 맞춰 반영)
   const edit = event => {
-    setForm({ category: event.category, start: event.start, end: event.end, title: event.title || activityNames[event.category] || '', memo: event.memo || '' });
+    // 상황 일정(업종 없음, 오늘의 일정 '일정 추가'로 넣은 것)은 업종을 비워 두고 이름을 그대로 보여 준다 (2026-11-25)
+    setForm({ category: event.category || '', start: event.start, end: event.end,
+      title: event.title || (event.category ? activityNames[event.category] : eventTitle(event)) || '', memo: event.memo || '' });
     setEditing(event.id);
     setEditorOpen(true);
     setError('');
@@ -122,7 +124,9 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
     setError('');
     readEvents().then(records => {
       if (!active) return;
-      const list = records.filter(event => event.date === scheduleDate && event.category);
+      // 시간이 있는 일정은 모두 시간표에 둔다: 장소 일정(업종)뿐 아니라 오늘의 일정 탭 '일정 추가'로 넣은 상황 일정도.
+      //   전에는 업종이 있는 일정만 골라서, 오늘의 일정에서 넣은 일정이 일정 관리에 안 보였다 (2026-11-25 사용자 지적)
+      const list = records.filter(event => event.date === scheduleDate && (event.category || (event.start && event.end)));
       setEvents(list);
       const entry = list.find(event => event.id === entryId);
       if (entry) edit(entry);
@@ -209,7 +213,13 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
       if (!form.title.trim()) {
         throw Error('일정을 입력해주세요. 예: 헬스장, 영화관');
       }
-      const saved = await saveEvent({ ...form, id: editing, date: scheduleDate });
+      // 상황 일정을 이름은 그대로 두고 시간·메모만 바꾸면 상황 일정 그대로 저장한다 (이름을 고치면 enterTitle 이 업종을 붙임)
+      const original = editing ? events.find(event => event.id === editing) : null;
+      const keepSituation = original && !original.category && !form.category;
+      const saved = await saveEvent(keepSituation
+        ? { id: editing, date: scheduleDate, types: original.types, title: original.title || form.title,
+            start: form.start, end: form.end, memo: form.memo }
+        : { ...form, id: editing, date: scheduleDate });
       setEvents(current => [saved, ...current.filter(event => event.id !== saved.id)]);
       resetForm();
       setSavedRange(saved);
@@ -361,7 +371,7 @@ export default function DetailedRoutineScreen({ date, entryId, onBack, onContinu
           <View style={s.editor} accessibilityViewIsModal>
             <View style={s.editorHeader}>
               <Text accessibilityRole="header" style={s.editorTitle}>{editing ? '일정 수정' : '일과 입력'}</Text>
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel="일과 입력 창 닫기"
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={editing ? '일정 수정 창 닫기' : '일과 입력 창 닫기'}
                 onPress={returnToTimeline} disabled={busy} style={s.editorClose}>
                 <Ionicons name="close" size={26} color="#385988" accessible={false} />
               </TouchableOpacity>

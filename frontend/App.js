@@ -156,6 +156,8 @@ export default function App() {
   const [scheduleEditor, setScheduleEditor] = useState({});
   const [morningSchedulePending, setMorningSchedulePending] = useState(false);
   const [routineMode, setRoutineMode] = useState('onboarding');
+  // 오늘의 일정 탭에서 일정 관리 화면을 열었으면 '이전'으로 그 탭에 돌아간다 (2026-11-25 점검)
+  const [routineReturnTab, setRoutineReturnTab] = useState(null);
   // '일정 맞춤 추천'에서 '‹ 일정 다시 확인'을 누르면 돌아갈 곳 (2026-11-24 수정사항):
   //   'DailyRoutine' = 일정 관리(가입 흐름·일정 관리에서 다음), 그 밖은 메인의 그 탭('schedule' = 오늘의 일정, 'home')
   const [recommendBack, setRecommendBack] = useState('DailyRoutine');
@@ -257,6 +259,7 @@ export default function App() {
   //   (2026-11-24 사용자 결정, PR #11 의 '오늘의 일정 탭 먼저'를 바꿈). 가입을 마친 사람은 일정 관리의 '이전'이 홈으로 간다
   //   (routineMode 'edit'). 로그인을 유지한 채 새로고침·앱을 다시 열 때(restore)는 바로 홈.
   const startLoginFlow = completed => {
+    setRoutineReturnTab(null);
     setScheduleEditor({});
     setRoutineMode(completed ? 'edit' : 'onboarding');
     navigate('DailyRoutine');
@@ -1031,7 +1034,12 @@ export default function App() {
             key={scheduleEditor.date || 'today'}
             {...scheduleEditor}
             onContinue={handleRoutineContinue}
-            onBack={() => navigate(routineMode === 'edit' ? 'Main' : 'Agreement')}
+            onBack={() => {
+              if (routineMode !== 'edit') { navigate('Agreement'); return; }
+              navigate('Main');
+              if (routineReturnTab) setMainTab(routineReturnTab);
+              setRoutineReturnTab(null);
+            }}
           />
         );
 
@@ -1077,6 +1085,10 @@ export default function App() {
                 setRoutineMode('edit');
                 setRecommendBack('schedule');
                 navigate('RoutineRecommendation');
+              }}
+              onOpenScheduleManager={() => {
+                setRoutineReturnTab('schedule');
+                openRoutine();
               }}
             />
           </View>
