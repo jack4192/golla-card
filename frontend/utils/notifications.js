@@ -161,9 +161,9 @@ export function syncPhoneNotifications({ agreed }) {
     await ensureChannel();
     await Notifications.scheduleNotificationAsync({
       content: {
-        // 바탕화면 웹앱 웹 푸시와 같은 문구 (2026-11-25 사용자 결정 '추천 안')
-        title: '좋은 아침이에요! 오늘은 어디 가세요?',
-        body: '일정을 알려 주시면 가는 곳마다 혜택 큰 카드를 미리 골라 둘게요.',
+        // 바탕화면 웹앱 웹 푸시와 같은 문구 (2026-11-25 사용자 결정: 짧은 질문형)
+        title: '오늘 어디 가세요?',
+        body: '일정을 알려 주면 카드를 골라 드려요',
         data: { kind: 'morning' },
       },
       trigger: {
