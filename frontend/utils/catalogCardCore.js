@@ -19,4 +19,4 @@ export function catalogActionState({ owned, canAdd, canRemove, applyUrl }) {
 }
 
 export const removeConfirmText = name =>
-  `${name}을(를) 내 카드에서 뺄까요? 이 카드로 한 결제 기록도 함께 지워지고 되돌릴 수 없어요.`;
+  `${name}을(를) 내 카드에서 뺄까요?`;

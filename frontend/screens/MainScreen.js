@@ -5,7 +5,6 @@ import { usePromotions } from '../utils/promotions';
 import { PROMO_TEXT, activePromotions, benefitStatus as statusOn, benefitSummary, emptyPromotionText, promotionAnswer, visibleLogo } from '../utils/promotionsCore';
 import WalletDeck from '../components/WalletDeck';
 import RecommendationLaunchPopup from '../components/RecommendationLaunchPopup';
-import AccountWithdrawal from '../components/AccountWithdrawal';
 import TodaySchedulePanel from '../components/TodaySchedulePanel';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Dimensions, View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform } from 'react-native';
@@ -853,13 +852,11 @@ export default function MainScreen({
           hour: '2-digit',
           minute: '2-digit'
         })} />
-          <SettingsItem icon="refresh-outline" title="화면 설정 초기화" subtitle="혜택 알림·진동만 기본값으로 복원" onPress={resetViewSettings} />
-          {/* 맨 위 줄에 있던 데이터 관리를 여기로 옮김 (2026-11-24 사용자 요청) */}
-          {onOpenPrivacy && <SettingsItem icon="shield-checkmark-outline" title="데이터 관리" subtitle="기록 삭제·동의 철회·이 기기 계정 초기화" onPress={onOpenPrivacy} />}
+          {/* '화면 설정 초기화'·'데이터 관리'는 뺐다 (2026-11-25 사용자 요청) */}
           <SettingsItem icon="log-out-outline" title="로그아웃" subtitle="이메일과 비밀번호로 다시 로그인" onPress={() => setExitOpen(true)} />
         </SettingsGroup>
 
-        <AccountWithdrawal />
+        {/* 설정 맨 아래 '회원 탈퇴'는 뺐다 (2026-11-25 사용자 요청) */}
 
       </ScrollView>
     </>;
@@ -1273,14 +1270,15 @@ export default function MainScreen({
                     {catalogBusy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.catalogApplyText}>내 카드로 추가</Text>}
                   </TouchableOpacity>}
                   <View style={styles.catalogActionsRow}>
+                    {/* 닫기를 왼쪽, 내 카드에서 빼기를 오른쪽으로 (2026-11-25 사용자 요청) */}
+                    <TouchableOpacity accessibilityRole="button" onPress={() => setSelectedCatalog(null)} style={[styles.catalogAction, styles.catalogClose]}>
+                      <Text style={styles.catalogCloseText}>닫기</Text>
+                    </TouchableOpacity>
                     {catalogActions.remove && <TouchableOpacity accessibilityRole="button" accessibilityLabel={(selectedCatalog?.name || '') + ' 내 카드에서 빼기'}
                       disabled={catalogBusy} onPress={() => { setCatalogNotice(''); setCatalogConfirmRemove(true); }}
                       style={[styles.catalogAction, styles.catalogRemove]}>
                       <Text style={styles.catalogRemoveText}>내 카드에서 빼기</Text>
                     </TouchableOpacity>}
-                    <TouchableOpacity accessibilityRole="button" onPress={() => setSelectedCatalog(null)} style={[styles.catalogAction, styles.catalogClose]}>
-                      <Text style={styles.catalogCloseText}>닫기</Text>
-                    </TouchableOpacity>
                     {catalogActions.apply && <TouchableOpacity accessibilityRole="link" accessibilityLabel={(selectedCatalog?.name || '') + ' 카드 신청'}
                       onPress={() => Linking.openURL(catalogApply).catch(() => Alert.alert('카드 신청', '브라우저에서 카드사 신청 페이지를 열어주세요.'))}
                       style={[styles.catalogAction, styles.catalogApplyOutline]}>

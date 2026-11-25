@@ -50,8 +50,10 @@ function MissedDetail({ item }) {
 }
 
 function MissedSection({ missed, onRetry }) {
-  const [open, setOpen] = useState(null);
-  useEffect(() => setOpen(null), [missed.items]);
+  // 여러 카드를 동시에 펼쳐 볼 수 있다 (2026-11-25 사용자 요청: 2위·3위를 함께 비교)
+  const [open, setOpen] = useState(() => new Set());
+  useEffect(() => setOpen(new Set()), [missed.items]);
+  const toggle = index => setOpen(previous => { const next = new Set(previous); if (next.has(index)) next.delete(index); else next.add(index); return next; });
   const [first, ...rest] = missed.items;
   return <View style={s.card}>
     <View style={s.cardHead}>
@@ -78,10 +80,10 @@ function MissedSection({ missed, onRetry }) {
       </View>
       <MissedDetail item={first} />
       {rest.map((item, index) => {
-        const expanded = open === index;
+        const expanded = open.has(index);
         return <View key={item.card_id} style={s.restItem}>
           <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded }}
-            onPress={() => setOpen(expanded ? null : index)} style={s.restRow}>
+            onPress={() => toggle(index)} style={s.restRow}>
             <Text style={s.rank}>{index + 2}위</Text>
             <CardThumb name={item.card_name} />
             <Text style={s.restName} numberOfLines={1}>{item.card_name}</Text>
