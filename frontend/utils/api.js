@@ -113,6 +113,11 @@ export const api = {
   }),
   // 설정 > 폰 알림 받기: 알림 수신 동의만 바꾼다 (users.notification_agreed, 2026-11-24).
   saveNotificationAgreement: agreed => request('/api/users/me/notification-agreement', { method: 'PUT', auth: true, body: { agreed: Boolean(agreed) } }),
+  // 바탕화면 웹앱 웹 푸시 (2026-11-25): VAPID 공개 키, 이 기기 구독 저장·삭제, '지금 알림 받기'(5초 뒤)
+  pushPublicKey: () => request('/api/push/public-key'),
+  savePushSubscription: subscription => request('/api/push/subscriptions', { method: 'POST', auth: true, body: subscription }),
+  deletePushSubscription: endpoint => request('/api/push/subscriptions', { method: 'DELETE', auth: true, body: { endpoint } }),
+  sendTestPush: () => request('/api/push/test', { method: 'POST', auth: true }),
   // 회원 탈퇴 (2026-11-24): 비밀번호를 다시 확인하고 서버에서 계정과 연결된 기록을 모두 지운다. 성공하면 기기 토큰도 지운다
   async withdraw(password) {
     await request('/api/users/me/withdrawal', { method: 'POST', auth: true, body: { password } });
