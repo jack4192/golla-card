@@ -281,20 +281,24 @@ export function Codes({
       </Text>
     </View>;
 }
+let screenProtectionId = 0;
+
 export async function protectScreen() {
-  if (Platform.OS === 'web') return () => {};
   const Capture = require('expo-screen-capture');
-  const Brightness = require('expo-brightness');
-  const key = 'payment-' + Date.now();
-  let blocked = false;
+  const key = 'payment-' + ++screenProtectionId;
+  try {
+    await Capture.preventScreenCaptureAsync(key);
+  } catch (error) {
+    await Capture.allowScreenCaptureAsync(key).catch(() => {});
+    throw error;
+  }
+
+  let Brightness;
   let old = null;
   let bright = false;
   let system = false;
   try {
-    await Capture.preventScreenCaptureAsync(key);
-    blocked = true;
-  } catch {}
-  try {
+    Brightness = require('expo-brightness');
     old = await Brightness.getBrightnessAsync();
     if (Platform.OS === 'android') {
       system = await Brightness.isUsingSystemBrightnessAsync();
@@ -303,10 +307,7 @@ export async function protectScreen() {
     bright = true;
   } catch {}
   return async () => {
-    const tasks = [];
-    if (blocked) {
-      tasks.push(Capture.allowScreenCaptureAsync(key));
-    }
+    const tasks = [Capture.allowScreenCaptureAsync(key)];
     if (bright && Number.isFinite(old)) {
       tasks.push(system ? Brightness.restoreSystemBrightnessAsync() : Brightness.setBrightnessAsync(old));
     }

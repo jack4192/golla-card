@@ -6,7 +6,7 @@
 //   앱에서 바로 결제하는 '이 코드로 결제(시연)' 버튼은 최종본에서 뺐습니다 (2026-11-24 팀 피드백). 결제는 가상 POS 로만.
 // - 카드 변경은 시트 안에서 바로 하고, 자세한 혜택 비교는 '혜택 자세히 보기'로 기존 결제 화면을 엽니다.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, AppState, Image, Modal, PanResponder, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Animated, AppState, Image, Modal, PanResponder, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Codes, makeDemoCode, protectScreen, realWalletCards, reward, useBenefitEstimate } from '../screens/PaymentScreen';
 import { loadPlacementPreview } from '../utils/aiPlacement';
@@ -17,6 +17,11 @@ import { POLL_MS, codeFromServer, receiptFromRecent, shouldPoll } from '../utils
 
 const CODE_SECONDS = 60;
 const CLOSE_DISTANCE = 80;
+const IS_WEB = Platform.OS === 'web';
+
+function isDownwardDrag(x, y) {
+  return y > 6 && y > Math.abs(x);
+}
 
 const won = value => Number(value || 0).toLocaleString('ko-KR') + '원';
 
@@ -65,6 +70,9 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
   const [picking, setPicking] = useState(false);
+  const [sheetDragging, setSheetDragging] = useState(false);
+  const [captureProtection, setCaptureProtection] = useState(IS_WEB ? 'ready' : 'pending');
+  const canShowCode = captureProtection === 'ready';
   const [receipt, setReceipt] = useState(null);   // 결제가 끝나면 { merchantName, amount, totalDiscount, ... }
   const sequence = useRef(0);
   const codeRef = useRef(null);       // 지금 보여 주는 코드 (닫을 때 서버 코드 취소용)
@@ -74,21 +82,73 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   const dragY = useRef(new Animated.Value(0)).current;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const pointerDrag = useRef(null);
+  const dismissing = useRef(false);
 
-  // 위쪽 손잡이를 잡고 내리면 닫는다 (2026-11-24: 폰에서 잡히도록 손잡이 영역을 넓히고, 닫힐 때 아래로 미끄러지게)
   const springBack = () => Animated.spring(dragY, { toValue: 0, useNativeDriver: false }).start();
+  const releaseDrag = (distance, velocity) => {
+    if (distance >= CLOSE_DISTANCE || (distance >= 24 && velocity > 1)) {
+      dismissing.current = true;
+      Animated.timing(dragY, { toValue: 700, duration: 180, useNativeDriver: false }).start(({ finished: completed }) => {
+        if (completed) onCloseRef.current?.();
+      });
+    } else springBack();
+  };
   const pan = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+    // 코드 영역에서 시작한 터치는 시트가 먼저 받아 화면 스크롤과 경합하지 않게 한다.
+    onStartShouldSetPanResponder: (_, gesture) => !dismissing.current && gesture.numberActiveTouches <= 1,
+    onPanResponderGrant: () => setSheetDragging(true),
     onPanResponderTerminationRequest: () => false,
-    onPanResponderMove: (_, gesture) => dragY.setValue(Math.max(0, gesture.dy)),
+    onPanResponderMove: (_, gesture) => dragY.setValue(isDownwardDrag(gesture.dx, gesture.dy) ? gesture.dy : 0),
     onPanResponderRelease: (_, gesture) => {
-      if (gesture.dy > CLOSE_DISTANCE || gesture.vy > 1.0) {
-        Animated.timing(dragY, { toValue: 700, duration: 180, useNativeDriver: false }).start(() => onCloseRef.current?.());
-      } else springBack();
+      setSheetDragging(false);
+      if (isDownwardDrag(gesture.dx, gesture.dy)) releaseDrag(gesture.dy, gesture.vy);
+      else springBack();
     },
-    onPanResponderTerminate: springBack,
+    onPanResponderTerminate: () => {
+      setSheetDragging(false);
+      springBack();
+    },
   })).current;
+  const cancelPointerDrag = event => {
+    if (pointerDrag.current?.id !== event.pointerId) return;
+    pointerDrag.current = null;
+    springBack();
+  };
+  // 카드 목록과 아래 버튼은 기존 제스처를 사용하고, 손잡이와 코드 위에서만 끌어 닫는다.
+  const dragHandlers = IS_WEB ? {
+    onPointerDown: event => {
+      if (!event.isPrimary || event.button !== 0 || dismissing.current) return;
+      event.preventDefault();
+      pointerDrag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, start: event.timeStamp, dragging: false };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    onPointerMove: event => {
+      const drag = pointerDrag.current;
+      if (drag?.id !== event.pointerId) return;
+      const dy = event.clientY - drag.y;
+      drag.dragging ||= isDownwardDrag(event.clientX - drag.x, dy);
+      if (drag.dragging) dragY.setValue(Math.max(0, dy));
+    },
+    onPointerUp: event => {
+      const drag = pointerDrag.current;
+      if (drag?.id !== event.pointerId) return;
+      pointerDrag.current = null;
+      const dy = event.clientY - drag.y;
+      if (drag.dragging || isDownwardDrag(event.clientX - drag.x, dy)) {
+        releaseDrag(dy, dy / Math.max(1, event.timeStamp - drag.start));
+      }
+    },
+    onLostPointerCapture: cancelPointerDrag,
+    onPointerCancel: cancelPointerDrag,
+  } : pan.panHandlers;
+
+  useEffect(() => {
+    pointerDrag.current = null;
+    dragY.setValue(0);
+    dismissing.current = false;
+    setSheetDragging(false);
+  }, [visible, dragY]);
 
   const showCode = next => {
     codeRef.current = next;
@@ -113,7 +173,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   };
 
   const issue = async () => {
-    if (!selected) return;
+    if (!selected || !canShowCode) return;
     const ticket = ++sequence.current;
     setCode(null);
     codeRef.current = null;
@@ -155,10 +215,9 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
       setPickedId(null);
       return undefined;
     }
-    dragY.setValue(0);
     issue();
     return undefined;
-  }, [visible, selected?.id]);
+  }, [visible, selected?.id, canShowCode]);
 
   // 화면이 사라질 때도 결제 안 된 서버 코드는 취소한다.
   useEffect(() => () => cancelServerCode(), []);
@@ -196,14 +255,22 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
     };
   }, [visible]);
 
-  // 휴대폰에서는 결제 코드가 보이는 동안 화면 캡처를 막고 밝기를 올립니다(결제 화면과 같음).
+  // Android 모달은 열릴 때 캡처 차단 플래그를 가져오므로 시트를 띄우기 전에 설정한다.
   useEffect(() => {
-    if (!visible) return undefined;
+    if (IS_WEB) return undefined;
+    if (!visible) {
+      setCaptureProtection('pending');
+      return undefined;
+    }
     let stopped = false;
     let cleanup;
     protectScreen().then(callback => {
-      if (stopped) callback(); else cleanup = callback;
-    }).catch(() => {});
+      if (stopped) return callback();
+      cleanup = callback;
+      setCaptureProtection('ready');
+    }).catch(() => {
+      if (!stopped) setCaptureProtection('unavailable');
+    });
     return () => {
       stopped = true;
       if (cleanup) cleanup();
@@ -214,14 +281,14 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   const expired = !code || seconds === 0 || code.cardId !== selected?.id;
   const paid = Boolean(receipt);
 
-  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+  return <Modal visible={visible && captureProtection !== 'pending'} transparent animationType="slide" onRequestClose={onClose}>
     <View style={s.backdrop}>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="결제 닫기" activeOpacity={1} style={s.backdropTouch} onPress={onClose} />
       <Animated.View style={[s.sheet, { transform: [{ translateY: dragY }] }]} accessibilityViewIsModal>
-        <View {...pan.panHandlers} style={s.handleArea} accessibilityLabel="아래로 끌어 닫기"><View style={s.handle} /></View>
+        <View {...dragHandlers} style={[s.handleArea, IS_WEB && s.webDragArea]} accessibilityLabel="아래로 끌어 닫기"><View style={s.handle} /></View>
 
         {/* 작은 폰(375×667)에서 창이 화면보다 길어 '닫기'·선정 이유가 밖으로 잘렸다 → 창 안을 스크롤 (2026-11-25 점검) */}
-        <ScrollView style={s.body} contentContainerStyle={s.bodyContent} bounces={false} keyboardShouldPersistTaps="handled">
+        <ScrollView style={s.body} contentContainerStyle={s.bodyContent} scrollEnabled={!sheetDragging} bounces={false} keyboardShouldPersistTaps="handled">
         {!selected ? <View style={s.empty}>
           <Text style={s.emptyText}>결제에 사용할 수 있는 카드가 없어요. 카드 탭에서 카드를 등록해주세요.</Text>
           <TouchableOpacity accessibilityRole="button" onPress={onClose} style={s.close}><Text style={s.closeText}>닫기</Text></TouchableOpacity>
@@ -229,7 +296,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
           <View style={s.headRow}>
             <Text accessibilityRole="header" style={s.heading}>QR · 바코드 결제</Text>
             <Text style={[s.timer, expired && !paid && s.timerExpired, paid && s.timerPaid]} accessibilityLiveRegion="polite">
-              {paid ? '결제 완료' : generating ? '발급 중' : expired ? '만료됨' : `${seconds}초`}
+              {!canShowCode ? '표시 불가' : paid ? '결제 완료' : generating ? '발급 중' : expired ? '만료됨' : `${seconds}초`}
             </Text>
           </View>
 
@@ -253,9 +320,10 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
             {!!receipt.approvalNo && <Text style={s.receiptSub}>승인번호 {receipt.approvalNo}</Text>}
             <Text style={s.receiptSub}>가상 결제라 실제 카드 승인·출금은 없어요. 결제 내역에서 다시 볼 수 있어요.</Text>
           </View> : <>
-          <View style={s.codeBox}>
-            {generating ? <ActivityIndicator color="#245DE5" style={s.loading} />
-              : code ? <Codes value={code.value} inactive={expired} /> : null}
+          <View {...dragHandlers} style={[s.codeBox, IS_WEB && s.webDragArea]}>
+            {!canShowCode ? <Text style={s.error} accessibilityRole="alert">화면 캡처 보호를 켜지 못해 결제 코드를 표시할 수 없어요. 결제창을 닫고 다시 열어 주세요.</Text>
+              : generating ? <ActivityIndicator color="#245DE5" style={s.loading} />
+              : visible && code ? <Codes value={code.value} inactive={expired} /> : null}
           </View>
           {/* 서버 모드의 '가상 결제용 코드예요…' 안내는 뺀다 (2026-11-24 팀 피드백). 서버 없는 예시 모드만 안내 */}
           {!SERVER_MODE && <Text style={s.notice}>QR·바코드는 예시이며 실제 결제에 사용할 수 없어요.</Text>}
@@ -263,7 +331,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
           {!!error && <Text style={s.error} accessibilityRole="alert">{error}</Text>}
 
           <View style={s.actions}>
-            <TouchableOpacity accessibilityRole="button" disabled={generating} onPress={issue} style={[s.secondary, generating && s.dim]}>
+            <TouchableOpacity accessibilityRole="button" disabled={generating || !canShowCode} onPress={issue} style={[s.secondary, (generating || !canShowCode) && s.dim]}>
               <Ionicons name="refresh" size={16} color="#245DE5" />
               <Text style={s.secondaryText}>{paid ? '새 결제 코드 받기' : expired ? '새 코드 받기' : '코드 다시 발급'}</Text>
             </TouchableOpacity>
@@ -317,6 +385,7 @@ const s = StyleSheet.create({
   // 손잡이 둘레를 넓게(시트 폭 전체·높이 약 36px) 잡을 수 있게
   handleArea: { alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch', marginHorizontal: -20, paddingTop: 14, paddingBottom: 14, marginBottom: -10 },
   handle: { width: 44, height: 5, borderRadius: 3, backgroundColor: '#D3DBE7' },
+  webDragArea: { touchAction: 'pan-x', cursor: 'grab', userSelect: 'none' },
   headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   heading: { fontSize: 18, fontWeight: '800', color: '#14213D' },
   timer: { fontSize: 18, fontWeight: '800', color: '#245DE5' },
