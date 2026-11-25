@@ -1,3 +1,4 @@
+import { displayMerchant } from './dayTimelineCore.js';   // 결제 완료 화면 가맹점 이름도 '동네 ' 없이 (2026-11-25)
 // QR 결제 창(QuickPaySheet)이 서버 결제 코드 API(2026-11-24, PR #6)를 쓸 때의 순수 도우미.
 // 서버 모드: 코드 발급 → 2초마다 상태 확인(가상 POS 결제 알아채기) 또는 '이 코드로 결제(시연)' → 결과 표시.
 // 테스트: node --test utils/__tests__/paymentCodeCore.test.mjs
@@ -26,7 +27,7 @@ export function receiptFromPayment(res) {
   const promotionAmount = orZero(res.promotionAmount);
   return {
     paymentId: res.paymentId ?? null,
-    merchantName: res.merchantName || '가맹점',
+    merchantName: displayMerchant(res.merchantName) || '가맹점',
     amount: orZero(res.amount),
     benefitName: res.benefitName || null,
     benefitAmount,
@@ -47,7 +48,7 @@ export function receiptFromRecent(list, paymentId) {
   const promotionAmount = orZero(row.promotionAmount);
   return {
     paymentId: row.paymentId,
-    merchantName: row.merchantName || '가맹점',
+    merchantName: displayMerchant(row.merchantName) || '가맹점',
     amount: orZero(row.amount),
     benefitName: null,
     benefitAmount,

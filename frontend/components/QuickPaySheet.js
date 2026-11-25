@@ -220,6 +220,8 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
       <Animated.View style={[s.sheet, { transform: [{ translateY: dragY }] }]} accessibilityViewIsModal>
         <View {...pan.panHandlers} style={s.handleArea} accessibilityLabel="아래로 끌어 닫기"><View style={s.handle} /></View>
 
+        {/* 작은 폰(375×667)에서 창이 화면보다 길어 '닫기'·선정 이유가 밖으로 잘렸다 → 창 안을 스크롤 (2026-11-25 점검) */}
+        <ScrollView style={s.body} contentContainerStyle={s.bodyContent} bounces={false} keyboardShouldPersistTaps="handled">
         {!selected ? <View style={s.empty}>
           <Text style={s.emptyText}>결제에 사용할 수 있는 카드가 없어요. 카드 탭에서 카드를 등록해주세요.</Text>
           <TouchableOpacity accessibilityRole="button" onPress={onClose} style={s.close}><Text style={s.closeText}>닫기</Text></TouchableOpacity>
@@ -290,7 +292,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
           </View>}
 
           {/* 카드를 고르는 동안에는 QR 대신 카드 목록을 보여줍니다. */}
-          {picking && <ScrollView style={s.pickList} contentContainerStyle={s.pickContent}>
+          {picking && <ScrollView style={s.pickList} contentContainerStyle={s.pickContent} nestedScrollEnabled>
             {options.filter(card => card.id !== selected.id).map(card => <TouchableOpacity key={card.id} accessibilityRole="button"
                 onPress={() => { setPicking(false); setPickedId(card.id); onSelectCard?.(card.id); }} style={s.pickRow}>
               {!!card.image && <Image source={typeof card.image === 'string' ? { uri: card.image } : card.image} resizeMode="contain" style={s.pickImage} />}
@@ -300,6 +302,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
 
           <TouchableOpacity accessibilityRole="button" onPress={onClose} style={s.close}><Text style={s.closeText}>닫기</Text></TouchableOpacity>
         </>}
+        </ScrollView>
       </Animated.View>
     </View>
   </Modal>;
@@ -308,7 +311,9 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
 const s = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(12, 22, 44, 0.45)' },
   backdropTouch: { ...StyleSheet.absoluteFillObject },
-  sheet: { width: '100%', maxWidth: 560, alignSelf: 'center', maxHeight: '82%', backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: 24, gap: 12 },
+  sheet: { width: '100%', maxWidth: 560, alignSelf: 'center', maxHeight: '82%', backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: 24 },
+  body: { flexShrink: 1 },
+  bodyContent: { gap: 12 },
   // 손잡이 둘레를 넓게(시트 폭 전체·높이 약 36px) 잡을 수 있게
   handleArea: { alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch', marginHorizontal: -20, paddingTop: 14, paddingBottom: 14, marginBottom: -10 },
   handle: { width: 44, height: 5, borderRadius: 3, backgroundColor: '#D3DBE7' },

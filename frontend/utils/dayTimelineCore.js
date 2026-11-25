@@ -100,6 +100,10 @@ export function paymentAt(payments, minute) {
   return best;
 }
 
+// 가상 데이터의 업종 대표 가맹점 이름 '동네 카페'·'동네 대중교통' 에서 '동네 '를 떼고 보여 준다 (2026-11-25 점검: 어색함).
+//   DB 이름은 그대로 (AI·백엔드 계산과 맞춰야 해서 화면에서만)
+export const displayMerchant = name => String(name || '').replace(/^동네\s+/, '');
+
 // 결제 한 줄 (홈 '최근 이용내역'·카드이용내역 화면, 2026-11-24 '실제 신한처럼'): 날짜는 늘 'yyyy.MM.dd HH:mm',
 // 혜택(카드 혜택+가맹점 행사)은 금액 아래 'N원 할인'
 export function paymentRowText(payment) {
@@ -107,7 +111,7 @@ export function paymentRowText(payment) {
   const benefit = (Number(payment?.benefitAmount) || 0) + (Number(payment?.promotionAmount) || 0);
   return {
     when: `${date.replace(/-/g, '.')} ${time.slice(0, 5)}`.trim(),
-    merchant: String(payment?.merchantName || ''),
+    merchant: displayMerchant(payment?.merchantName),
     amount: won(Number(payment?.amount) || 0),
     card: String(payment?.cardName || '').replace(/^신한카드\s+/, ''),     // 한 줄에 들어가게 '신한카드 ' 머리는 뗀다
     benefit: benefit > 0 ? won(benefit) + ' 할인' : '',

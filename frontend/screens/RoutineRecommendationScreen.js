@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { withParticle } from '../utils/josaCore';
 import { AccessibilityInfo, ActivityIndicator, AppState, Image, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import PromotionOffer from '../components/PromotionOffer';
 import { resolveWalletProduct } from '../components/WalletProductCard';
@@ -170,7 +171,7 @@ export default function RoutineRecommendationScreen({
       .then(record => record && addNotification({
         id: 'card:' + record.id,
         type: record.missed > 0 ? 'savings' : 'card',
-        title: record.missed > 0 ? `${record.recommended.name} 추천` : `${record.recommended.name}이(가) 이 일정에 딱 맞아요`,
+        title: record.missed > 0 ? `${record.recommended.name} 추천` : `${withParticle(record.recommended.name, '가')} 이 일정에 딱 맞아요`,
         body: record.missed > 0
           ? `${record.categoryLabel} 일정에서 이 카드가 있으면 ${record.missed.toLocaleString('ko-KR')}원 더 아낄 수 있어요 · 연말 결산에 기록했어요`
           : `${record.categoryLabel} 일정 맞춤 카드 · 연말 결산에 기록했어요`,
@@ -297,16 +298,24 @@ export default function RoutineRecommendationScreen({
 
               {details && <View style={s.details}>
                   {/* 간결하게: '업종 · 혜택' + (왜 추천했는지 · 전월 실적) 한 줄 */}
-                  {matches.slice(0, 3).map((row, i) => <View key={i} style={s.detail}>
+                  {/* 같은 말이 되풀이되지 않게 (2026-11-25 점검: '점심엔 GS칼텍스 10% 할인 · GS칼텍스 10% 할인',
+                      위에 보인 추천 문장이 아래에 또 나옴) — 이름에 혜택 문구가 들어 있으면 한 번만, 위 문장과 같은 이유는 빼기 */}
+                  {matches.slice(0, 3).map((row, i) => {
+                    const name = String(row.benefit.name || '').split('(')[0].trim();
+                    const amount = benefitText(row.benefit);
+                    const title = !name ? amount : name.includes(amount) ? name : name + ' · ' + amount;
+                    const why = recommendations?.example || row.reasons[0] === reason ? '' : row.reasons[0];
+                    return <View key={i} style={s.detail}>
                         <Text style={s.strong}>
-                          {String(row.benefit.name || '').split('(')[0].trim()} · {benefitText(row.benefit)}
+                          {title}
                         </Text>
 
                         <Text style={s.detailText}>
-                          {[recommendations?.example ? '' : row.reasons[0],
+                          {[why,
                             row.benefit.minPrevSpend == null ? '' : Number(row.benefit.minPrevSpend) === 0 ? '실적 조건 없음' : '전월 ' + money(row.benefit.minPrevSpend) + ' 이상'].filter(Boolean).join(' · ')}
                         </Text>
-                      </View>)}
+                      </View>;
+                  })}
                 </View>}
             </View>
           </> : cardFallback()}

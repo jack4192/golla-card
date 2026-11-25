@@ -132,13 +132,14 @@ export default function RecommendationLaunchPopup({
                 </Text>}
 
               <View style={s.row}>
-                <TouchableOpacity accessibilityRole="button" disabled={saving} onPress={hide} style={[s.hide, saving && s.dim]}>
+                {/* '7일간 보지 않기'는 저절로 뜬 팝업에만. 사용자가 직접 연 창에는 의미가 없다 (2026-11-25 점검) */}
+                {ad?.automatic && <TouchableOpacity accessibilityRole="button" disabled={saving} onPress={hide} style={[s.hide, saving && s.dim]}>
                   {saving ? <ActivityIndicator color="#245DE5" /> : <Text style={s.link}>
                       7일간 보지 않기
                     </Text>}
-                </TouchableOpacity>
+                </TouchableOpacity>}
 
-                <TouchableOpacity accessibilityRole="button" disabled={saving} onPress={close} style={[s.done, saving && s.dim]}>
+                <TouchableOpacity accessibilityRole="button" disabled={saving} onPress={close} style={[s.done, !ad?.automatic && s.doneWide, saving && s.dim]}>
                   <Text style={s.white}>닫기</Text>
                 </TouchableOpacity>
               </View>
@@ -204,6 +205,7 @@ const s = StyleSheet.create({
     minHeight: 48,
     justifyContent: "center"
   },
+  doneWide: { flex: 1, alignItems: 'center' },
   done: {
     padding: 16,
     paddingHorizontal: 28,

@@ -1,22 +1,14 @@
-// 홈 챗봇(SOL 카드 도우미)의 추천 질문과 AI 챗봇에 보낼 이전 대화 (순수 함수).
+// 홈 챗봇(Pay·Mate 도우미)의 추천 질문과 AI 챗봇에 보낼 이전 대화 (순수 함수).
+import { withParticle } from './josaCore.js';
 //
 // 추천 질문은 AI 챗봇 평가 질문(solpay-ai/evaluation/chat_eval.py)에서 골라 탭마다 8개 안팎으로 묶었다 (2026-11-23 결정).
 // 평가 질문의 카드 이름(데모 1번 기준)은 사용자의 실제 카드 이름으로 바꿔 넣는다.
 // 테스트: node --test utils/__tests__/homeChat.test.mjs
 
-const PAIRS = { 로: ['로', '으로'], 으로: ['로', '으로'], 는: ['는', '은'], 은: ['는', '은'], 가: ['가', '이'], 이: ['가', '이'] };
-
-// '카드' + 로 → '카드로', '통장' + 로 → '통장으로'. 영어·숫자로 끝나 받침을 알 수 없으면 '(으)로', '은(는)'처럼 둘 다 적는다.
+// '카드' + 로 → '카드로', 'Discount Plan' + 는 → 'Discount Plan은'. 영어·숫자도 끝소리로 고른다 (utils/josaCore.js).
+//   전에는 영어로 끝나면 '은(는)'처럼 둘 다 적었다 (2026-11-25 점검에서 바꿈)
 export function withJosa(name, particle) {
-  const [plain, final] = PAIRS[particle] || [particle, particle];
-  const letters = String(name || '').replace(/[\s)\]}'"·.,!?-]+$/u, '');
-  const last = letters.charCodeAt(letters.length - 1);
-  if (last >= 0xac00 && last <= 0xd7a3) {
-    const batchim = (last - 0xac00) % 28;
-    const usePlain = batchim === 0 || (plain === '로' && batchim === 8);   // ㄹ 받침 뒤에는 '로'
-    return name + (usePlain ? plain : final);
-  }
-  return name + (plain === '로' ? '(으)로' : `${final}(${plain})`);
+  return withParticle(name, particle);
 }
 
 // 탭별 추천 질문. a = 첫 번째 카드, b = 두 번째 카드 (없으면 그 질문은 뺀다)

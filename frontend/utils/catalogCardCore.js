@@ -1,3 +1,4 @@
+import { withParticle } from './josaCore.js';
 // 카드 탭 상품 상세의 '내 카드로 추가'·'내 카드에서 빼기' (2026-11-24 사용자 결정). 순수 함수만 둔다.
 // 테스트: node --test utils/__tests__/catalogCardCore.test.mjs
 
@@ -19,4 +20,4 @@ export function catalogActionState({ owned, canAdd, canRemove, applyUrl }) {
 }
 
 export const removeConfirmText = name =>
-  `${name}을(를) 내 카드에서 뺄까요? 이 카드로 한 결제 기록도 함께 지워지고 되돌릴 수 없어요.`;
+  `${withParticle(name, '를')} 내 카드에서 뺄까요? 이 카드로 한 결제 기록도 함께 지워지고 되돌릴 수 없어요.`;

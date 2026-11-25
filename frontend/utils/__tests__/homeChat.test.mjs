@@ -14,8 +14,8 @@ test('조사는 받침에 맞추고, 영어로 끝나 알 수 없으면 둘 다 
   assert.equal(withJosa('신한카드 처음 체크 통장', '로'), '신한카드 처음 체크 통장으로');
   assert.equal(withJosa('신한카드 처음 체크 지갑', '로'), '신한카드 처음 체크 지갑으로');
   assert.equal(withJosa('신한카드 처음 체크 서울', '로'), '신한카드 처음 체크 서울로');  // ㄹ 받침은 '로'
-  assert.equal(withJosa('신한카드 Discount Plan', '로'), '신한카드 Discount Plan(으)로');
-  assert.equal(withJosa('신한카드 Discount Plan', '는'), '신한카드 Discount Plan은(는)');
+  assert.equal(withJosa('신한카드 Discount Plan', '로'), '신한카드 Discount Plan으로');   // 영어도 끝소리로 (2026-11-25)
+  assert.equal(withJosa('신한카드 Discount Plan', '는'), '신한카드 Discount Plan은');
 });
 
 test('탭마다 8개 안팎이고, 겹치지 않으며, 내 카드 이름이 들어간다', () => {

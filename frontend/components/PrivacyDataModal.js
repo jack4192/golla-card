@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SERVER_MODE } from '../utils/api';
+// 안내 문구는 실제로 지우는 범위에 맞춘다 (2026-11-25 점검: 없는 기능 'PIN', 서버 일정도 지워지는 것처럼 보이던 문구).
+//   서버 모드: 일정·카드·결제는 서버에 있어 여기서 지우지 않는다. 일정은 오늘의 일정에서, 계정은 설정의 '회원 탈퇴'에서.
 export default function PrivacyDataModal({
   visible,
   pendingReset = false,
@@ -52,8 +55,10 @@ export default function PrivacyDataModal({
             <Text style={styles.title}>데이터 관리</Text>
 
             <Text style={styles.hint}>
-              이 기기에 저장된 기록을 관리해요.
-              실제 금융계좌·카드 발급 및 카드사 데이터는 대상이 아닙니다.
+              {SERVER_MODE
+                ? '이 기기에 저장된 기록과 서비스 동의를 관리해요. 서버에 저장된 일정은 오늘의 일정에서, 계정은 설정의 회원 탈퇴에서 지울 수 있어요.'
+                : '이 기기에 저장된 기록을 관리해요.'}
+              {' '}실제 금융계좌·카드 발급 및 카드사 데이터는 대상이 아니에요.
             </Text>
 
             {pendingReset && <Text style={styles.error}>
@@ -67,9 +72,9 @@ export default function PrivacyDataModal({
               </Text>
 
               <Text style={styles.hint}>
-                평소 일과, 특별 일정, 오늘 확인·카드 계획,
-                추천용 보유·관심 목록을 삭제합니다.
-                PIN과 서비스 동의는 유지합니다.
+                {SERVER_MODE
+                  ? '이 기기에 저장된 평소 일과, 오늘 확인·카드 계획, 추천·보유·관심 설정, 알림함을 지워요. 서버에 저장된 일정과 서비스 동의, 로그인은 그대로예요.'
+                  : '평소 일과, 특별 일정, 오늘 확인·카드 계획, 추천·보유·관심 설정, 알림함을 지워요. 서비스 동의와 로그인은 그대로예요.'}
               </Text>
             </TouchableOpacity>
 
@@ -79,9 +84,9 @@ export default function PrivacyDataModal({
               </Text>
 
               <Text style={styles.hint}>
-                생활 기록, PIN, 서비스 동의, 가입 진행·화면 설정,
-                이 기기에 저장된 계정 정보를 지우고
-                로그인 화면으로 이동합니다.
+                {SERVER_MODE
+                  ? '서비스 동의를 철회하고(서버 기록도 동의 안 함으로 바뀌어요), 이 기기의 기록·화면 설정·로그인 정보를 지운 뒤 로그인 화면으로 이동해요. 계정은 남아 있어 다시 로그인할 수 있어요.'
+                  : '서비스 동의, 생활 기록, 가입 진행·화면 설정, 이 기기에 저장된 계정 정보를 지우고 로그인 화면으로 이동해요.'}
               </Text>
             </TouchableOpacity>
 

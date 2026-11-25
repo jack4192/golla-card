@@ -100,3 +100,11 @@ test('무작위 행사는 최소 결제 금액을 화면 칸에 넘긴다', () =
   assert.equal(toPromotionOffer({ merchant: { offers: [row] } }).offer.minimum, 50000);
   assert.equal(toPromotionOffer({ merchant: { offers: [{ ...row, min_amount: 0 }] } }).offer.minimum, null);
 });
+
+test('행사 제목이 추천 이유와 같으면 유의사항에서 뺀다 (2026-11-25 점검)', () => {
+  const row = { promotion_id: 9, brand: '메가커피', title: '메가커피 마실 땐 SOL페이!', card_name: '신한카드 SOL트래블 체크',
+    window_from: '11:30', window_to: '13:30', copy: { reasons: ['메가커피 마실 땐 SOL페이!'] } };
+  const { offer, reason } = toPromotionOffer({ merchant: { offers: [row] } });
+  assert.equal(reason, '메가커피 마실 땐 SOL페이!');
+  assert.equal(offer.note, '신한카드 SOL트래블 체크로 결제');
+});
