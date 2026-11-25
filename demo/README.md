@@ -61,6 +61,13 @@ SOLPAY_AI_URL=http://127.0.0.1:8000 uvicorn app.main:app --port 8001
 
 backend/.env 에 `POS_DEMO_TERMINAL_KEY` 가 있어야 하고(아래 가), AI 폴더는 `SOLPAY_AI_DIR` 로 바꿀 수 있다(기본 `~/Desktop/solpay/solpay-ai`). 가상 POS 파이썬 환경(`demo/.venv`)은 처음 실행할 때 만든다(인터넷 필요).
 
+### 배포 서버에서는 백엔드 `/pos` (2026-11-25)
+
+배포한 백엔드(예: `https://paymate.duckdns.org`)는 이 파이썬 서버 없이 **`/pos` 주소에서 가상 POS 화면**을 직접 보여 준다
+(`backend/src/main/resources/static/pos/`). 백엔드에 `POS_DEMO_TERMINAL_KEY` 만 있으면 켜지고, 키는 서버 안에서만 쓴다.
+가맹점은 DB 에서 읽어 AI 가 꺼져도 동작하며, https 라 휴대폰·노트북 카메라로 앱 QR 을 찍을 수 있다.
+이 폴더의 파이썬 POS 는 맥에서 휴대폰 시연(`run_phone_demo.sh`)할 때 그대로 쓴다.
+
 ### SOL·Pay 앱 결제와 잇기 (2026-11-24)
 
 가상 POS 가 승인 요청을 SOL·Pay 백엔드(`/api/v1/pos/payments`)로 보내는 방법은 두 가지다. 둘 다 없으면 예전처럼 이 데모 서버가 발급한 코드만 승인한다.

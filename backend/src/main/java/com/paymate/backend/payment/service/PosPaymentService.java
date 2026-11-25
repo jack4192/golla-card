@@ -108,6 +108,30 @@ public class PosPaymentService {
     }
 
 
+    /** 시연용 POS 가 켜져 있는지 (만능 키가 16자 이상으로 설정됨). 백엔드 가상 POS 화면의 스위치로도 쓴다. */
+    public boolean isDemoEnabled() {
+        return demoKey != null;
+    }
+
+    /**
+     * 백엔드 가상 POS 화면(/pos)의 시연 결제 (2026-11-25). 화면은 키를 모르고 가맹점·금액·코드만 보내며,
+     * 만능 키로 온 요청과 같은 계산(고른 가맹점의 단말기)으로 승인·거절한다. 만능 키가 없으면 404 로 꺼져 있다.
+     */
+    @Transactional
+    public PosPaymentResponse payDemo(String rawCode, int amount, Long merchantId) {
+        if (!isDemoEnabled()) {
+            throw new BusinessException(PaymentErrorCode.POS_DEMO_DISABLED);
+        }
+        TerminalRow terminal = pickTerminal(merchantId, null);
+        LocalDateTime now = clock.now();
+        String code = normalizeCode(rawCode);
+        String codeHash = hasher.hash(code);
+        if (!code.matches("\\d{18}")) {
+            return decline(terminal, codeHash, amount, now, "INVALID_FORMAT");
+        }
+        return process(terminal, codeHash, amount, now);
+    }
+
     @Transactional
     public PosPaymentResponse payFromApp(Long userId, Long paymentTokenId, Long merchantId, String category,
                                          Integer requestedAmount) {

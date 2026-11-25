@@ -107,4 +107,37 @@ public interface PosRepository extends Repository<Card, Long> {
                           @Param("amount") int amount,
                           @Param("benefit") int benefit,
                           @Param("promotion") int promotion);
+
+    // ---------- 백엔드 가상 POS 화면 (/pos, 2026-11-25) ----------
+
+    /** 단말기가 있는 가맹점 (화면의 가맹점 고르기). 업종 이름·가맹점 이름·지점 순. */
+    @Query(value = """
+            SELECT m.merchant_id AS "merchantId", m.merchant_name AS "merchantName", m.branch_name AS "branchName",
+                   m.category AS "category", COALESCE(c.category_name, m.category) AS "categoryName"
+              FROM merchants m
+              LEFT JOIN categories c ON c.category = m.category
+             WHERE EXISTS (SELECT 1 FROM terminals t WHERE t.merchant_id = m.merchant_id)
+             ORDER BY "categoryName", m.merchant_name, m.branch_name, m.merchant_id
+            """, nativeQuery = true)
+    List<PosMerchantRow> findDemoMerchants();
+
+    /** 가상 POS 거래 최근 limit 건 (들어온 순서의 역순). 거절은 결제·카드가 없다. */
+    @Query(value = """
+            SELECT p.txn_id AS "txnId", to_char(p.requested_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS "requestedAt",
+                   p.payment_id AS "paymentId", p.decline_reason AS "declineReason", pay.approval_no AS "approvalNo",
+                   m.merchant_name AS "merchantName", m.branch_name AS "branchName",
+                   COALESCE(c.category_name, m.category) AS "categoryName", p.amount AS "amount",
+                   cd.card_name AS "cardName",
+                   COALESCE(pay.benefit_amount, 0) + COALESCE(pay.promotion_amount, 0) AS "totalDiscount"
+              FROM pos_transactions p
+              JOIN terminals t ON t.terminal_id = p.terminal_id
+              JOIN merchants m ON m.merchant_id = t.merchant_id
+              LEFT JOIN categories c ON c.category = m.category
+              LEFT JOIN payments pay ON pay.payment_id = p.payment_id
+              LEFT JOIN user_cards uc ON uc.user_card_id = pay.user_card_id
+              LEFT JOIN cards cd ON cd.card_id = uc.card_id
+             ORDER BY p.txn_id DESC
+             LIMIT :limit
+            """, nativeQuery = true)
+    List<PosTransactionRow> findRecentTransactions(@Param("limit") int limit);
 }
