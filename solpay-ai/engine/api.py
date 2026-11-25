@@ -202,7 +202,7 @@ def _env_on(name: str) -> bool:
 
 
 def check_token(request: Request, x_internal_token: str | None = Header(default=None)) -> None:
-    """내부 호출 검사 (2026-11-24 점검 문제 7, 사용자 결정): SOLPAY_INTERNAL_TOKEN 이 있으면 X-Internal-Token 이 같아야 하고,
+    """내부 호출 검사 (2026-11-24 점검 문제 7, 팀 결정): SOLPAY_INTERNAL_TOKEN 이 있으면 X-Internal-Token 이 같아야 하고,
     없으면 같은 컴퓨터(127.0.0.1·::1)에서 온 요청만 받는다 (배포에서 토큰을 깜빡해도 밖에서 못 부르게).
     SOLPAY_ALLOW_NO_TOKEN=1 은 시험용 (TestClient 의 주소가 'testclient' 라서)."""
     expected = os.environ.get("SOLPAY_INTERNAL_TOKEN")
@@ -218,7 +218,7 @@ def check_token(request: Request, x_internal_token: str | None = Header(default=
 
 
 def require_dev_tools() -> None:
-    """개발용 화면·시연용 API 는 SOLPAY_DEV_TOOLS=on 일 때만 (2026-11-24 사용자 결정). 꺼져 있으면 없는 주소처럼 404."""
+    """개발용 화면·시연용 API 는 SOLPAY_DEV_TOOLS=on 일 때만 (2026-11-24 팀 결정). 꺼져 있으면 없는 주소처럼 404."""
     if not _env_on("SOLPAY_DEV_TOOLS"):
         raise HTTPException(status_code=404, detail="Not Found")
 
@@ -264,7 +264,7 @@ def create_app(service: PlacementService | None = None, chat_client=_DEFAULT) ->
         app.state.service = service or build_service()
         client = openai_client() if chat_client is _DEFAULT else chat_client
         app.state.chat = ChatAgent(app.state.service, client)
-        # 추천 페이지 문구는 기본이 정해진 틀이다 (2026-11-24 사용자 결정: OpenAI 문장 쓰기 2.8~3초가 화면을 늦춘다).
+        # 추천 페이지 문구는 기본이 정해진 틀이다 (2026-11-24 팀 결정: OpenAI 문장 쓰기 2.8~3초가 화면을 늦춘다).
         # SOLPAY_PAGE_COPY_LLM=1 일 때만 OpenAI 가 쓴다
         app.state.page_writer = (PageCopyWriter(client, CopySettings.from_env())
                                  if os.environ.get("SOLPAY_PAGE_COPY_LLM") == "1" else None)

@@ -6,7 +6,7 @@ import { waitForWalletWrites } from '../utils/wallet';
 import { SERVER_MODE, api } from '../utils/api';
 import { canSubmitWithdrawal, withdrawalCopy } from '../utils/withdrawalCore';
 
-// 서버 모드는 비밀번호를 다시 확인하고 서버에서 바로 완전 삭제한 뒤 이 기기 기록을 지운다 (2026-11-24 사용자 결정)
+// 서버 모드는 비밀번호를 다시 확인하고 서버에서 바로 완전 삭제한 뒤 이 기기 기록을 지운다 (2026-11-24 팀 결정)
 const COPY = withdrawalCopy(SERVER_MODE);
 const QUESTIONS = [{
   title: '1. 탈퇴를 결정한 가장 큰 이유는 무엇인가요?',

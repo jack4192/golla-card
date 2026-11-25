@@ -81,7 +81,7 @@ def benefit_text(promo: Promotion) -> str:
 
 def random_offer(state, promotions: list[Promotion], at: datetime, params: Params,
                  excluded: Callable[[datetime], set[int]] | None = None) -> "PromotionOffer | None":
-    """일정과 맞는 행사가 없을 때 띄울 행사 1건 (2026-11-24 사용자 결정). 지금 진행 중이고 확인이 필요 없으며 엔진이 아는
+    """일정과 맞는 행사가 없을 때 띄울 행사 1건 (2026-11-24 팀 결정). 지금 진행 중이고 확인이 필요 없으며 엔진이 아는
     가맹점에서 내 신한카드(제외 규칙 밖)로 받을 수 있는 행사 중 (사용자, 날짜) 씨앗으로 고른다 → 같은 날 다시 열어도 같은 행사.
     받을 수 있는지는 max(행사 최소 금액, RANDOM_AMOUNT) 결제로 보고, 카드는 그 행사에서 받을 금액(행사 + 카드 혜택)이 가장 큰 신한카드.
     일정이 없으니 item_id 는 0 (결제 화면 팝업에는 쓰지 않는다)."""

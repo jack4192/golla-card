@@ -114,7 +114,7 @@ def test_new_terminal_saves_key_and_gives_sql(tmp_path):
     assert "setval(pg_get_serial_sequence('public.terminals', 'terminal_id')" in sql
 
 
-# ---------- 시연용 만능 키 (2026-11-24 사용자 결정: 아무 가맹점이나 골라 결제) ----------
+# ---------- 시연용 만능 키 (2026-11-24 팀 결정: 아무 가맹점이나 골라 결제) ----------
 DEMO_KEY = "demo-terminal-key-0123456789"
 
 

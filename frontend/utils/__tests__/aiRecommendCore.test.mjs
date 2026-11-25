@@ -56,7 +56,7 @@ test('탭은 AI 규칙을 따른다', () => {
 });
 
 test('카드 추천 탭: AI 를 묻는 동안은 불러오는 중, 답이 오면 AI 카드, 실패·카드 없음·데모·다른 날은 앱 계산', () => {
-  // 앱 계산 카드를 먼저 보이다가 AI 카드로 바뀌지 않게 (2026-11-23 사용자 결정)
+  // 앱 계산 카드를 먼저 보이다가 AI 카드로 바뀌지 않게 (2026-11-23 팀 결정)
   assert.equal(cardSource({ asksAi: true, aiState: 'loading', aiCard: null }), 'loading');
   assert.equal(cardSource({ asksAi: true, aiState: 'ready', aiCard: { card: {} } }), 'ai');
   assert.equal(cardSource({ asksAi: true, aiState: 'ready', aiCard: null }), 'local');

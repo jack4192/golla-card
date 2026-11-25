@@ -129,7 +129,7 @@ public class ScheduleService {
         if ((start == null) != (end == null)) {
             throw new BusinessException(ScheduleErrorCode.TIME_PAIR_REQUIRED);
         }
-        // 하루 안에서 시작 < 끝 (끝은 최대 24:00). 시작=끝·밤샘 일정은 받지 않는다 (2026-11-24 사용자 결정)
+        // 하루 안에서 시작 < 끝 (끝은 최대 24:00). 시작=끝·밤샘 일정은 받지 않는다 (2026-11-24 팀 결정)
         if (start != null && start.compareTo(end) >= 0) {
             throw new BusinessException(ScheduleErrorCode.INVALID_TIME_RANGE);
         }

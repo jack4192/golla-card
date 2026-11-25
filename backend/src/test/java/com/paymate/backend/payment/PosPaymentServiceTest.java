@@ -200,7 +200,7 @@ class PosPaymentServiceTest {
         verify(calculator, never()).calculate(any(), any(), any(), any(), any(), anyInt(), any());
     }
 
-    // ---------- 시연용 만능 키 (2026-11-24 사용자 결정: 가상 POS 에서 아무 가맹점이나 골라 결제) ----------
+    // ---------- 시연용 만능 키 (2026-11-24 팀 결정: 가상 POS 에서 아무 가맹점이나 골라 결제) ----------
 
     @Test
     @DisplayName("시연용 만능 키면 POS 가 고른 가맹점의 단말기로 결제한다")

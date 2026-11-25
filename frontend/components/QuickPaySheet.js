@@ -3,7 +3,7 @@
 // - 열리면 60초짜리 결제 코드를 발급하고, 시간이 지나면 '새 코드 받기'로 다시 발급합니다.
 //   서버 모드는 서버가 발급한 코드(2026-11-24, 결제 API)이고, 데모 모드는 기기에서 만든 예시 코드입니다.
 // - 서버 모드: 2초마다 코드 상태를 확인해 가상 POS 에서 결제되면 알아채고, 결과를 보여 준 뒤 onPaid 로 홈을 새로 고칩니다.
-//   앱에서 바로 결제하는 '이 코드로 결제(시연)' 버튼은 최종본에서 뺐습니다 (2026-11-24 사용자 요청). 결제는 가상 POS 로만.
+//   앱에서 바로 결제하는 '이 코드로 결제(시연)' 버튼은 최종본에서 뺐습니다 (2026-11-24 팀 피드백). 결제는 가상 POS 로만.
 // - 카드 변경은 시트 안에서 바로 하고, 자세한 혜택 비교는 '혜택 자세히 보기'로 기존 결제 화면을 엽니다.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, AppState, Image, Modal, PanResponder, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -44,7 +44,7 @@ function usePlacementPreview(options, visible) {
 export default function QuickPaySheet({ visible, cards = [], cardId, context, autoOn = true, onSelectCard, onClose, onOpenDetails, onPaid }) {
   const options = useMemo(() => realWalletCards(cards.find(card => card.id === cardId), cards), [cards, cardId]);
   const selected = options.find(card => card.id === cardId) || options[0];
-  // 결제 카드 아래 '선정 이유' (2026-11-24 사용자 결정 '맞을 때만 보이기'): 규칙은 utils/cardReasonCore.js
+  // 결제 카드 아래 '선정 이유' (2026-11-24 팀 결정 '맞을 때만 보이기'): 규칙은 utils/cardReasonCore.js
   const [pickedId, setPickedId] = useState(null);   // 이 결제 창에서 직접 바꾼 카드
   const placement = usePlacementPreview(options, visible);
   const baseline = options.find(item => item.id !== selected?.id) || selected;
@@ -257,7 +257,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
             {generating ? <ActivityIndicator color="#245DE5" style={s.loading} />
               : code ? <Codes value={code.value} inactive={expired} /> : null}
           </View>
-          {/* 서버 모드의 '가상 결제용 코드예요…' 안내는 뺀다 (2026-11-24 사용자 요청). 서버 없는 예시 모드만 안내 */}
+          {/* 서버 모드의 '가상 결제용 코드예요…' 안내는 뺀다 (2026-11-24 팀 피드백). 서버 없는 예시 모드만 안내 */}
           {!SERVER_MODE && <Text style={s.notice}>QR·바코드는 예시이며 실제 결제에 사용할 수 없어요.</Text>}
           </>}
           {!!error && <Text style={s.error} accessibilityRole="alert">{error}</Text>}

@@ -293,7 +293,7 @@ export default function MainScreen({
     : null;
   const catalogOwned = Boolean(catalogWalletCard);
   const catalogApply = selectedCatalog && !catalogOwned ? applyUrl(selectedCatalog) : null;
-  // '내 카드로 추가'·'내 카드에서 빼기' (2026-11-24 사용자 결정)
+  // '내 카드로 추가'·'내 카드에서 빼기' (2026-11-24 팀 결정)
   const catalogActions = catalogActionState({ owned: catalogOwned, canAdd: typeof onRegisterCard === 'function',
     canRemove: typeof onRemoveCard === 'function', applyUrl: catalogApply });
   const [catalogBusy, setCatalogBusy] = useState(false);
@@ -897,7 +897,7 @@ export default function MainScreen({
 
         <SettingsGroup title="편의 기능">
           <SettingsItem icon="qr-code-outline" title="결제" subtitle="QR·바코드 보기" onPress={() => openPaySheet({ cardId: currentCard?.id })} />
-          {/* 버튼 진동·진동 확인은 폰에서 체감이 없어 뺐다 (2026-11-24 사용자 요청) */}
+          {/* 버튼 진동·진동 확인은 폰에서 체감이 없어 뺐다 (2026-11-24 팀 피드백) */}
           <SettingsItem icon="card-outline" title="카드 관리" subtitle="등록된 카드 목록" onPress={() => goFromSettings('cards')} />
         </SettingsGroup>
 
@@ -922,7 +922,7 @@ export default function MainScreen({
           minute: '2-digit'
         })} />
           <SettingsItem icon="refresh-outline" title="화면 설정 초기화" subtitle="앱 내 혜택 알림을 기본값으로 복원" onPress={resetViewSettings} />
-          {/* 맨 위 줄에 있던 데이터 관리를 여기로 옮김 (2026-11-24 사용자 요청) */}
+          {/* 맨 위 줄에 있던 데이터 관리를 여기로 옮김 (2026-11-24 팀 피드백) */}
           {onOpenPrivacy && <SettingsItem icon="shield-checkmark-outline" title="데이터 관리" subtitle="이 기기의 기록 삭제·동의 철회" onPress={onOpenPrivacy} />}
           <SettingsItem icon="log-out-outline" title="로그아웃" subtitle="이메일과 비밀번호로 다시 로그인" onPress={() => setExitOpen(true)} />
         </SettingsGroup>

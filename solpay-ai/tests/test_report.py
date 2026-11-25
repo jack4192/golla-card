@@ -321,7 +321,7 @@ def test_monthly_report_형식과_캐시(report_svc):
 
     assert st["base_reason"] is None                       # 구간 지키기로 정한 기본 카드가 아니다 (V3, hold_tiers 끔)
 
-    # 숫자는 부를 때마다 다시 계산한다 (2026-11-22 사용자 결정). 결제가 그대로면 at 만 다르고 나머지는 같다
+    # 숫자는 부를 때마다 다시 계산한다 (2026-11-22 팀 결정). 결제가 그대로면 at 만 다르고 나머지는 같다
     second = report_svc.monthly_report(1, at(10, 7, 20))
     assert second["cached"] is False and second["at"] == at(10, 7, 20).isoformat()
     for key in ("cards", "totals", "solpay_effect", "month", "prev_month"):      # 전략의 '지금 순서'는 시각에 따라 다를 수 있다
@@ -398,7 +398,7 @@ def test_서비스_요점은_OpenAI_가_고른_엔진_후보_문장(report_svc):
 
 
 def test_monthly_report_사실이_같으면_OpenAI_를_다시_부르지_않는다(report_svc):
-    # 2026-11-22 사용자 결정: 숫자는 매번 계산하고, OpenAI 답(제목·고른 문장)만 보내는 사실이 같을 때 다시 쓴다
+    # 2026-11-22 팀 결정: 숫자는 매번 계산하고, OpenAI 답(제목·고른 문장)만 보내는 사실이 같을 때 다시 쓴다
     seen = []
 
     class Writer:
@@ -571,7 +571,7 @@ def test_팀DB_1번_10월_숫자가_card_month_status_와_같다(service):
         "다만 지난달 실적으로 닿은 구간은 어느 방식이든 먼저 지켜서, 지금은 신한카드 Discount Plan+ 실적부터 채우고 있어요."]
 
 
-# ---------- 지난달 효과: 프로모션은 기록값, 규칙은 만든 뒤 결제에만 (2026-11-22 재검토 7·8번, 사용자 결정) ----------
+# ---------- 지난달 효과: 프로모션은 기록값, 규칙은 만든 뒤 결제에만 (2026-11-22 재검토 7·8번, 팀 결정) ----------
 from dataclasses import replace as _replace  # noqa: E402
 
 from engine.report import promotion_of  # noqa: E402

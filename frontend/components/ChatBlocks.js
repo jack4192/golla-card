@@ -1,4 +1,4 @@
-// 챗봇 답 아래 표 (2026-11-24 사용자 결정 '앱에서 표 그리기').
+// 챗봇 답 아래 표 (2026-11-24 팀 결정 '앱에서 표 그리기').
 // view 모양은 utils/chatBlocks.js 의 chatBlockViews 가 만든다. 결제 화면 챗봇(PaymentBenefitChat)과 홈 챗봇(MainScreen)이 함께 쓴다.
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';

@@ -1,6 +1,6 @@
-"""챗봇 고도화 3단계 (2026-11-24, docs/superpowers/specs/2026-11-24-chatbot-stage3-design.md).
+"""챗봇 고도화 3단계 (2026-11-24, docs/설계/2026-11-24-chatbot-stage3-design.md).
 
-채팅으로 일정 초안(draft_schedule), 규칙 지우기 초안(draft_rule_delete). ('자세히' 버튼은 2026-11-24 사용자 결정으로 뺐다)
+채팅으로 일정 초안(draft_schedule), 규칙 지우기 초안(draft_rule_delete). ('자세히' 버튼은 2026-11-24 팀 결정으로 뺐다)
 저장은 앱이 기존 API 로 한다 (일정: saveEvent → POST /api/schedules, 규칙: GET·PUT /api/ai/rules).
 """
 

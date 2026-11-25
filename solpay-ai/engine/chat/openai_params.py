@@ -1,4 +1,4 @@
-"""OpenAI 모델과 '온도/생각 단계' 설정 (2026-11-24 사용자 결정: gpt-4o-mini → GPT-6.1 Terra).
+"""OpenAI 모델과 '온도/생각 단계' 설정 (2026-11-24 팀 결정: gpt-4o-mini → GPT-6.1 Terra).
 
 GPT-5.6·6 계열은 온도(temperature)를 보내면 400 으로 거절하고, Chat Completions 에서 도구를 쓰려면
 생각 단계(reasoning_effort)가 none 이어야 한다. 그래서 생각 단계를 정하면 온도는 보내지 않는다.

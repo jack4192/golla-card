@@ -1,4 +1,4 @@
-"""v2.1 데이터(v2 + 개인 루틴) 검증 (2026-11-23 사용자 결정: 배경 50%·루틴 1~2개·±30분·60~90%, 결제 수 유지, 데모 그대로).
+"""v2.1 데이터(v2 + 개인 루틴) 검증 (2026-11-23 팀 결정: 배경 50%·루틴 1~2개·±30분·60~90%, 결제 수 유지, 데모 그대로).
 
 먼저 생성한 뒤 실행:  SOLPAY_DATA_VERSION=v2.1 uv run python -m generate.main && uv run pytest tests/test_generated_v2_1.py
 out_v2.1 / out_v2 와 load_config(..., "v2.1") 만 읽는다.

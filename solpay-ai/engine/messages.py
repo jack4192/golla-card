@@ -143,13 +143,13 @@ def _promotion_message(score: CardScore) -> Message:
 
 def _shows_promotion(score: CardScore, params) -> bool:
     """행사 문구를 낼 만한지: 문구에 적힐 금액(10원 단위로 맞춘 기대 금액)이 promo_message_min 이상일 때만
-    (2026-11-21 사용자 결정). 기대 금액은 그 가게에 갈 확률을 곱한 값이라 작으면 '약 30원' 같은 문구가 된다."""
+    (2026-11-21 팀 결정). 기대 금액은 그 가게에 갈 확률을 곱한 값이라 작으면 '약 30원' 같은 문구가 된다."""
     return score.promotion > 0 and int(round(score.promotion, -1)) >= params.promo_message_min
 
 
 def _fallback_message(state: UserState, user_card_id: int, at, params) -> Message:
     """혜택으로 말할 것이 없을 때. 최근 두 달(지난달과 이번 달) 이 시간대 현장 결제에서 이 카드를 가장 많이,
-    HABIT_MIN 번 이상 썼을 때만 습관 문구를 쓰고, 아니면 혜택 차이가 없다고 그대로 말한다 (2026-11-21 사용자 결정.
+    HABIT_MIN 번 이상 썼을 때만 습관 문구를 쓰고, 아니면 혜택 차이가 없다고 그대로 말한다 (2026-11-21 팀 결정.
     1년 재생에서 습관 문구의 1순위 카드가 실제로 쓰던 카드와 같은 경우는 54%였다)."""
     slot = slot_of(at, params)
     used = Counter(p.user_card_id for p in (*state.prev_rows, *state.cur_rows)
@@ -163,7 +163,7 @@ def previous_base_filled(state: UserState, catalog: Catalog, last_base: int, par
     """직전 기본 카드가 이번 달 실적 구간을 실제로 채웠는지 ('앞 카드 실적을 채워 …' 문구를 낼 수 있는지).
     이번 달 실적이 그 카드의 첫 구간 이상이고, 구간 지키기를 쓰면 지난달 받던 구간 이상이어야 한다.
     구간이 없는 카드, 이번 달 실적이 모자란 카드(달이 바뀐 첫 화면, 고정 규칙으로 잠깐 앞에 온 카드)는 아니다
-    (2026-11-21 사용자 결정. 1년 재생에서 이 문구의 14.6%가 달이 바뀐 첫 화면이었다)."""
+    (2026-11-21 팀 결정. 1년 재생에서 이 문구의 14.6%가 달이 바뀐 첫 화면이었다)."""
     card_id = state.card_ids.get(last_base)
     tiers = catalog.tiers.get(card_id, ()) if card_id is not None else ()
     if not tiers or last_base not in state.ledger:

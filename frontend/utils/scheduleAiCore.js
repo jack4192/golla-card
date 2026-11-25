@@ -1,6 +1,6 @@
 // 홈 일정 카드·일정 결제 화면을 AI 카드 배치(일정 모드)에 맞추는 순수 함수 (2026-11-23 설계서 home-schedule-ai).
 //
-// 사용자 결정: 'AI 가 그 일정을 보고 정했으면 행사가 있든 없든 AI 1순위 카드와 그 거래를 쓴다'(일정 중엔 늘 AI),
+// 팀 결정: 'AI 가 그 일정을 보고 정했으면 행사가 있든 없든 AI 1순위 카드와 그 거래를 쓴다'(일정 중엔 늘 AI),
 // 홈은 추천 기록을 남기지 않는 미리보기(/api/ai/rank?record=false)로 묻는다.
 // 'AI 가 그 일정을 보고 정함' = 배치 응답이 fallback 아님 · version === 'schedule' · example 있음 ·
 //   example.category_code === SERVER_CATEGORY[일정 업종] (· 1순위 카드가 지갑에 있음은 scheduleAiMatch 가 본다).

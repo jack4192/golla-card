@@ -305,7 +305,7 @@ def test_최초_추천_방식은_월간_맞춤을_거친다(svc, tmp_path):
     assert out["status"] in ("ready", "insufficient_history") and out["strategy"] in ("value", "main_top", "first_tier", "none")
 
 
-# ---------- 입력 검사·카드 없는 사용자 (2026-11-22 재검토 1~3번, 사용자 결정) ----------
+# ---------- 입력 검사·카드 없는 사용자 (2026-11-22 재검토 1~3번, 팀 결정) ----------
 AT = "2026-10-07T12:20:00+09:00"
 
 
@@ -393,7 +393,7 @@ def test_내_카드가_아닌_규칙은_저장하지_않고_422다(svc):
         assert c.put("/internal/users/1/rules", json=[ok]).json() == {"saved": 1}
 
 
-# ---------- 기록을 못 남겨도 추천은 준다 (2026-11-22 재검토 5번, 사용자 결정) ----------
+# ---------- 기록을 못 남겨도 추천은 준다 (2026-11-22 재검토 5번, 팀 결정) ----------
 def _boom(*args, **kwargs):
     raise RuntimeError("read-only transaction")
 
@@ -548,7 +548,7 @@ def test_놓친_혜택은_시작_달의_전달_결제만_실적_준비로_쓴다
 
 
 # ---------- 내부 API 보호 (2026-11-24 점검 문제 7) ----------
-# 사용자 결정: 토큰이 없으면 같은 컴퓨터(127.0.0.1·::1)에서 온 요청만, 개발 화면·시연 API 는 SOLPAY_DEV_TOOLS=on 일 때만.
+# 팀 결정: 토큰이 없으면 같은 컴퓨터(127.0.0.1·::1)에서 온 요청만, 개발 화면·시연 API 는 SOLPAY_DEV_TOOLS=on 일 때만.
 # 이 파일의 다른 시험은 conftest 가 SOLPAY_ALLOW_NO_TOKEN=1·SOLPAY_DEV_TOOLS=on 을 켜 둔 상태로 돈다.
 
 def test_토큰이_없으면_다른_컴퓨터에서_온_내부_호출은_막는다(svc, monkeypatch):

@@ -257,7 +257,7 @@ export default function App() {
     setCurrentScreen(screen);
   }, []);
   // 직접 로그인(약관 동의 포함)하면 가입을 마친 사람도 처음 가입 때처럼 일정 관리 → 카드 추천 → 홈 순서로 보여 준다
-  //   (2026-11-24 사용자 결정, PR #11 의 '오늘의 일정 탭 먼저'를 바꿈). 가입을 마친 사람은 일정 관리의 '이전'이 홈으로 간다
+  //   (2026-11-24 팀 결정, PR #11 의 '오늘의 일정 탭 먼저'를 바꿈). 가입을 마친 사람은 일정 관리의 '이전'이 홈으로 간다
   //   (routineMode 'edit'). 로그인을 유지한 채 새로고침·앱을 다시 열 때(restore)는 바로 홈.
   const startLoginFlow = completed => {
     setRoutineReturnTab(null);
@@ -465,7 +465,7 @@ export default function App() {
     const completed = finished === 'yes' && savedConsent?.termsAgreed === true;
     await DemoStore.setItemAsync(SESSION_KEY, 'active');
     setAuthenticated(true);
-    setAllowAutomaticAds(false); // 2026-11-24 사용자 결정: 로그인 뒤 자동 팝업(오늘의 카드 추천·프로모션)은 띄우지 않는다. 혜택 탭 버튼으로만 연다
+    setAllowAutomaticAds(false); // 2026-11-24 팀 결정: 로그인 뒤 자동 팝업(오늘의 카드 추천·프로모션)은 띄우지 않는다. 혜택 탭 버튼으로만 연다
     setConsent(savedConsent);
     setOnboardingComplete(completed);
     setRoutineMode('onboarding');
@@ -632,7 +632,7 @@ export default function App() {
     }
   };
 
-  // 로그인 만료(서버 401): 서버 로그아웃 없이 이 기기 세션만 정리하고 로그인 화면으로 (2026-11-24 사용자 결정)
+  // 로그인 만료(서버 401): 서버 로그아웃 없이 이 기기 세션만 정리하고 로그인 화면으로 (2026-11-24 팀 결정)
   const expireSession = useRef(null);
   expireSession.current = async () => {
     if (!authenticated) return;
@@ -1132,7 +1132,7 @@ export default function App() {
     </TouchableOpacity>
   );
 
-  // 맨 위 줄의 '데이터 관리'·'카드 등록·추천' 버튼은 뺐다 (2026-11-24 사용자 요청).
+  // 맨 위 줄의 '데이터 관리'·'카드 등록·추천' 버튼은 뺐다 (2026-11-24 팀 피드백).
   // 데이터 관리는 설정 탭 '앱 정보'로 옮겼고, 카드 추천은 일정 패널의 혜택 보기로 들어간다.
   return (
     // iPhone 노치·홈 인디케이터에 가려지지 않도록 전체를 안전 영역 안에 둡니다.

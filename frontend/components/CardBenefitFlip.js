@@ -35,7 +35,7 @@ function BenefitBack({ card, cards, showAiMessage }) {
   const known = Number.isFinite(selectedBenefit.value);
   const ai = placement.result;
   const aiTop = showAiMessage && ai?.topId === selected.id && !ai?.fallback;
-  // 앞면에 카드가 보이니 설명 앞의 카드 이름은 뗀다 (2026-11-25 사용자 요청)
+  // 앞면에 카드가 보이니 설명 앞의 카드 이름은 뗀다 (2026-11-25 팀 피드백)
   const aiMessage = aiTop ? dropCardName(String(ai?.message || '').trim(), selected.name) : '';
   if (aiMessage) {
     return <View style={s.aiRow}>

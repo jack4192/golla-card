@@ -69,7 +69,7 @@ class ErrorFormatApiTest {
     }
 
     @Test
-    @DisplayName("로그인 유지 시간(토큰 만료)은 기본 12시간 (2026-11-24 사용자 결정, 예전 1시간)")
+    @DisplayName("로그인 유지 시간(토큰 만료)은 기본 12시간 (2026-11-24 팀 결정, 예전 1시간)")
     void tokenLifetime() {
         Claims claims = jwt.getClaims(jwt.createAccessToken(1L, "test1@example.com", "USER"));
         long lifetime = claims.getExpiration().getTime() - claims.getIssuedAt().getTime();
@@ -80,7 +80,7 @@ class ErrorFormatApiTest {
     private long rankTimeoutMs;
 
     @Test
-    @DisplayName("결제 화면 카드 순서는 AI 를 기본 2초까지 기다린다 (공용 RDS 첫 계산 0.9~1.9초, 2026-11-24 사용자 결정, 예전 0.8초)")
+    @DisplayName("결제 화면 카드 순서는 AI 를 기본 2초까지 기다린다 (공용 RDS 첫 계산 0.9~1.9초, 2026-11-24 팀 결정, 예전 0.8초)")
     void rankTimeout() {
         assertThat(rankTimeoutMs).isEqualTo(2000L);
     }

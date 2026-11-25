@@ -1,5 +1,5 @@
 // 실행: node --test utils/__tests__/josaCore.test.mjs
-// 카드 이름 뒤 조사 (2026-11-25 사용자 결정 '이름에 맞게 자동', PR #13 보완)
+// 카드 이름 뒤 조사 (2026-11-25 팀 결정 '이름에 맞게 자동', PR #13 보완)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

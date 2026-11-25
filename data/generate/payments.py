@@ -267,7 +267,7 @@ class Simulator:
         name = _weighted(rng, {k: v[1] for k, v in modes.items()})
         return name, modes[name][0] + int(rng.choice(self.d["transit"]["surcharge"]))
 
-    # ---------- 개인 루틴 (v2.1, 2026-11-23 사용자 결정) ----------
+    # ---------- 개인 루틴 (v2.1, 2026-11-23 팀 결정) ----------
     @staticmethod
     def _minute(hhmm: str) -> int:
         h, m = hhmm.split(":")

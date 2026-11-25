@@ -188,7 +188,7 @@ export default function PaymentCardOrder({
   const requestMove = (cards, from, to) => {
     if (!canDrag) return;
     saveMove(cards, from, to);
-    // 결제 화면(syncSelection=false, 2026-11-24 사용자 결정 'PR #10: 맨 위가 바뀔 때만 선택'):
+    // 결제 화면(syncSelection=false, 2026-11-24 팀 결정 'PR #10: 맨 위가 바뀔 때만 선택'):
     // 끌어서 맨 위 카드가 실제로 바뀌었을 때만 그 카드를 결제 카드로 고른다. 맨 위가 그대로면 AI·일정이 고른 카드를 지킨다.
     if (!syncSelection && from !== to) {
       const next = [...cards];

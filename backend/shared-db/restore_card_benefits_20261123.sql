@@ -1,4 +1,4 @@
--- 최종 카드 DB 로 옮기며 빠졌던 카드 혜택 6줄을 되살린다 (2026-11-23 사용자 결정, 설계서 docs/superpowers/specs/2026-11-23-recommend-fixes-design.md).
+-- 최종 카드 DB 로 옮기며 빠졌던 카드 혜택 6줄을 되살린다 (2026-11-23 팀 결정, 설계서 docs/설계/2026-11-23-recommend-fixes-design.md).
 --
 -- 무엇: 혜택 284~289 (① 나라사랑 CGV 관람권 ② 나라사랑 테마파크 ③ Discount Plan 테마파크 ④ Discount Plan+ 테마파크
 --       ⑤ SOL메이트 담을수록 OTT·멤버십 100% 적립 ⑥ SOL LINK SOL페이 0.1% 추가), 구간 674~694, 대상 662~674,

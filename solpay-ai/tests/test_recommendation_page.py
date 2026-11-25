@@ -96,7 +96,7 @@ def test_오늘_일정이_하나도_없으면_평소_소비():
 
 
 def test_남은_일정이_없으면_오늘_지난_일정으로():
-    # 2026-11-24 사용자 결정: 12~13시 동물병원을 18시에 넣어도 그 일정으로 카드를 고른다 (평소 소비로 넘어가지 않는다)
+    # 2026-11-24 팀 결정: 12~13시 동물병원을 18시에 넣어도 그 일정으로 카드를 고른다 (평소 소비로 넘어가지 않는다)
     assert today_items([coffee(7)], habit_payments(), page_catalog(), at(10, 7, 9), Params(), 1) == ("schedule", [coffee(7)])
 
 
@@ -171,7 +171,7 @@ def test_2주_안에_추천한_카드는_빼고_오늘_기록은_막지_않는�
 
 
 def test_같은_카드는_2주가_지나면_다시_추천한다():
-    # 2026-11-21 사용자 결정: 같은 카드를 다시 추천하지 않는 기간 30일 → 2주
+    # 2026-11-21 팀 결정: 같은 카드를 다시 추천하지 않는 기간 30일 → 2주
     assert RULE_2W.recommend_same_card_days == 14
     ago = lambda days: [{"at": NOW - timedelta(days=days), "card_id": 9, "trigger": CYCLE}]
     assert pick_card(state_of(), habit_payments(), [coffee()], ago(13), NOW, RULE_2W) is None
@@ -179,7 +179,7 @@ def test_같은_카드는_2주가_지나면_다시_추천한다():
 
 
 def test_매번_카드_탭이면_2주_안에_추천한_카드도_다시_보여준다():
-    # 2026-11-24 사용자 결정 '다시 보여주기': 오늘 더 주는 카드가 며칠 전에 추천한 카드뿐이어도 카드 탭을 비우지 않는다
+    # 2026-11-24 팀 결정 '다시 보여주기': 오늘 더 주는 카드가 며칠 전에 추천한 카드뿐이어도 카드 탭을 비우지 않는다
     for days in (1, 5, 13):
         ago = [{"at": NOW - timedelta(days=days), "card_id": 9, "trigger": CYCLE}]
         assert pick_card(state_of(), habit_payments(), [coffee()], ago, NOW, TODAY).card_id == 9
@@ -206,7 +206,7 @@ def test_카드날은_두_탭():
 
 
 def test_매번_카드_탭도_보여준다():
-    # 2026-11-24 사용자 결정: 더 주는 새 카드가 있으면 카드날이 아니어도 매번 카드 탭과 프로모션 탭을 함께
+    # 2026-11-24 팀 결정: 더 주는 새 카드가 있으면 카드날이 아니어도 매번 카드 탭과 프로모션 탭을 함께
     assert Params().page_card_every_time is True
     page = build_page(state_of(), habit_payments(), [coffee()], YESTERDAY, PROMOS, NOW, TODAY)
     assert (page.card_day, page.tabs, page.trigger, page.card.card_id) == (True, ["card", "merchant"], CYCLE, 9)
@@ -448,7 +448,7 @@ def test_개발용_테스트_화면(page_svc):
     assert "왜 이 카드가 1순위야?" in r.text
 
 
-# ---------- 작은 금액은 숨기기 (2026-11-19 사용자 결정: 500원 미만) ----------
+# ---------- 작은 금액은 숨기기 (2026-11-19 팀 결정: 500원 미만) ----------
 def test_작은_금액이면_금액을_숨긴다():
     small = build_page(state_of(), habit_payments(), [coffee(amount=4_000)], [], PROMOS, NOW, TODAY)
     assert small.card.gain == 360                                   # 스타벅스 4,000원: 새 카드 400 − KB 40
@@ -458,7 +458,7 @@ def test_작은_금액이면_금액을_숨긴다():
     assert big.to_dict(page_catalog(), TODAY)["card"]["show_amount"] is True     # 540원
 
 
-# ---------- 1년 이득순 (2026-11-21 사용자 결정: 오늘 더 주는 카드 중 지난 1년 소비로 가장 이득인 카드) ----------
+# ---------- 1년 이득순 (2026-11-21 팀 결정: 오늘 더 주는 카드 중 지난 1년 소비로 가장 이득인 카드) ----------
 def year_payments():
     """8~10월 KB 로: 스타벅스 10,000원을 달마다 20번(10월은 5번) + 마트 20만 원, 10월 6일 GS 주유 5만 원.
     1년 계산(첫 달 8월은 실적만, 9~10월 두 달): 보유 카드로 7,000원.
@@ -545,13 +545,13 @@ def test_실제_데이터에서_1년_금액은_연말정산_화면과_같다():
         rows = [p for p in context.payments if when - timedelta(days=365) <= p.paid_at < when]
         yearly = {m["card_id"]: m for m in missed_benefit(svc.build_state(context, when), rows,
                                                          svc.engine.params.switch_threshold)}
-        # 관련 업종 카드는 보유 카드보다 더 주지 않아도 추천한다 (2026-11-24 사용자 결정)
+        # 관련 업종 카드는 보유 카드보다 더 주지 않아도 추천한다 (2026-11-24 팀 결정)
         assert card["keyword"] and card["yearly_gain"] > 0 and (card["gain"] > 0 or card["related"])
         assert (card["yearly_gain"], card["yearly_months"]) == (yearly[card["card_id"]]["gain"], yearly[card["card_id"]]["months"])
     assert shown >= 4
 
 
-# ---------- 오늘 일정 혜택 중심 (2026-11-21 사용자 결정: 일정 업종 혜택이 있는 카드 먼저, 그 안에서 1년 이득순. 큰 글씨는 오늘 혜택) ----------
+# ---------- 오늘 일정 혜택 중심 (2026-11-21 팀 결정: 일정 업종 혜택이 있는 카드 먼저, 그 안에서 1년 이득순. 큰 글씨는 오늘 혜택) ----------
 from engine.page import benefit_keyword
 
 NAMES = {"CAFE": "카페/커피전문점", "FUEL": "주유", "TRANSIT": "대중교통(버스/지하철)", "MART": "대형마트"}
@@ -605,7 +605,7 @@ def test_대표_항목은_일정_업종_혜택이_먼저다():
     assert (card["keyword"], card["keywords"]) == ("STAR 10% 할인", ["STAR 10% 할인", "모든 가맹점 5% 할인"])
 
 
-# ---------- 관련 업종 카드 먼저 (2026-11-24 사용자 결정 "금액은 신경쓰지 말고 관련 업종이면 그 카드로 추천") ----------
+# ---------- 관련 업종 카드 먼저 (2026-11-24 팀 결정 "금액은 신경쓰지 말고 관련 업종이면 그 카드로 추천") ----------
 CGV_M = 90
 
 
@@ -664,7 +664,7 @@ def test_관련_카드도_1년_손해면_뺀다(monkeypatch):
 
 
 def test_추천_페이지_문구는_기본이_정해진_틀이다(page_svc, monkeypatch):
-    """2026-11-24 사용자 결정: OpenAI 문장 쓰기(2.8~3초)가 느려 기본은 정해진 틀. OpenAI 키가 있어도 부르지 않는다."""
+    """2026-11-24 팀 결정: OpenAI 문장 쓰기(2.8~3초)가 느려 기본은 정해진 틀. OpenAI 키가 있어도 부르지 않는다."""
     from tests.test_page_copy import GOOD, FakeClient
     monkeypatch.delenv("SOLPAY_PAGE_COPY_LLM", raising=False)
     _save_coffee(page_svc)
@@ -674,7 +674,7 @@ def test_추천_페이지_문구는_기본이_정해진_틀이다(page_svc, monk
     assert body["copy_source"] == "template" and client.requests == []
 
 
-# ---------- 무작위 행사 1건 (2026-11-24 사용자 결정: 일정과 맞는 행사가 없으면 받을 수 있는 행사 1건, 같은 날 같은 행사) ----------
+# ---------- 무작위 행사 1건 (2026-11-24 팀 결정: 일정과 맞는 행사가 없으면 받을 수 있는 행사 1건, 같은 날 같은 행사) ----------
 from datetime import date as _date
 
 FUEL_ITEM = ScheduleItem(1, 1, at(10, 7, 19), at(10, 7, 20), "FUEL", 50_000)
@@ -783,7 +783,7 @@ def test_일정_없이_건너뛰면_무작위_행사_문구는_평소_소비로_
 
 
 def test_2주_규칙은_기본으로_꺼져_있어_같은_카드를_다시_추천한다():
-    # 2026-11-24 사용자 결정 '2주 규칙을 없애줘': 5일 전에 추천한 카드도 3일 카드날 규칙에서 다시 고른다
+    # 2026-11-24 팀 결정 '2주 규칙을 없애줘': 5일 전에 추천한 카드도 3일 카드날 규칙에서 다시 고른다
     assert Params().recommend_same_card_days == 0
     three_days = Params(page_yearly=False, page_card_every_time=False)
     pick = pick_card(state_of(), habit_payments(), [coffee()], [{"at": NOW - timedelta(days=5), "card_id": 9}], NOW, three_days)

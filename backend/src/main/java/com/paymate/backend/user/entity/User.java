@@ -57,12 +57,12 @@ public class User {
         this.workplaceName = workplaceName == null || workplaceName.isBlank() ? null : workplaceName.trim();
     }
 
-    /** 필수 서비스 이용 동의 (2026-11-24 사용자 결정: 기존 mydata_agreed 칸에 저장, 철회하면 false). */
+    /** 필수 서비스 이용 동의 (2026-11-24 팀 결정: 기존 mydata_agreed 칸에 저장, 철회하면 false). */
     public void agreeMydata(boolean agreed) {
         this.mydataAgreed = agreed;
     }
 
-    /** 알림 수신 동의 (선택, 2026-11-24 사용자 결정: 서버에도 저장). */
+    /** 알림 수신 동의 (선택, 2026-11-24 팀 결정: 서버에도 저장). */
     public void changeNotificationAgreed(boolean agreed) {
         this.notificationAgreed = agreed;
     }

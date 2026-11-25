@@ -138,7 +138,7 @@ def strategy_now(result: RankResult, rows: list[dict]) -> dict:
 
 def promotion_of(payments: list[Payment], promotions: list, card_of: dict[int, tuple[str, int]]
                  ) -> Callable[[int, Payment], int]:
-    """지난달 효과에서 '이 결제를 이 카드로 냈다면 받는 프로모션'을 주는 함수 (replay_month 의 promo, 2026-11-22 사용자 결정).
+    """지난달 효과에서 '이 결제를 이 카드로 냈다면 받는 프로모션'을 주는 함수 (replay_month 의 promo, 2026-11-22 팀 결정).
     - 실제로 낸 카드: 기록값 (팀 DB payments.promotion_amount). 조건은 맞아도 마이샵을 켜지 않아 못 받은 결제가 많다
       (2026-10: 조건으로 세면 2,104,530원, 기록은 475,100원).
     - 다른 카드(추천): 이벤트는 조건이 맞으면 받는다고 보고, 마이샵은 그달에 그 브랜드에서 실제로 받은 기록이 있을 때만

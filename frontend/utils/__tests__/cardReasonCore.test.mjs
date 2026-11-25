@@ -1,5 +1,5 @@
 // 실행: node --test utils/__tests__/cardReasonCore.test.mjs
-// 결제 창 '선정 이유' (2026-11-24 사용자 결정 '맞을 때만 보이기')
+// 결제 창 '선정 이유' (2026-11-24 팀 결정 '맞을 때만 보이기')
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AI_TOP_REASON, AUTO_OFF_REASON, PICKED_REASON, cardReason, dropCardName } from '../cardReasonCore.js';
@@ -50,7 +50,7 @@ test("정해진 문장에는 'AI가' 가 없다 (수정사항2 결정 5)", () =>
   assert.equal(AUTO_OFF_REASON, '자동 배치가 꺼져 있어 1순위 카드로 결제해요');   // 홈 일정 패널과 같은 문장
 });
 
-// 카드가 함께 보이는 곳(홈 카드 뒷면·결제 창)에서는 AI 설명 앞의 카드 이름을 뗀다 (2026-11-25 사용자 요청)
+// 카드가 함께 보이는 곳(홈 카드 뒷면·결제 창)에서는 AI 설명 앞의 카드 이름을 뗀다 (2026-11-25 팀 피드백)
 const HOLD = '신한카드 Discount Plan+ 120만 원 구간까지 188,210원 남았어요. 채우면 다음 달에도 지금 혜택을 받아요';
 
 test('AI 설명이 카드 이름으로 시작하면 이름을 뗀다', () => {

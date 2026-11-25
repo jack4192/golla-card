@@ -1,6 +1,6 @@
 // 실행: node --test utils/__tests__/cardImages.test.mjs
 // 카드 그림은 모두 가로(너비 ≥ 높이)여야 한다. 카드를 보여 주는 틀이 모두 가로라 세로 그림은 작고 옆으로 누워 보인다
-// (2026-11-24 사용자 요청 '가로로 길게'). 세로 그림을 새로 넣을 때는 왼쪽(반시계)으로 돌려서 넣는다.
+// (2026-11-24 팀 피드백 '가로로 길게'). 세로 그림을 새로 넣을 때는 왼쪽(반시계)으로 돌려서 넣는다.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';

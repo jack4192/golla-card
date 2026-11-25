@@ -1,4 +1,4 @@
-"""챗봇 고도화 2단계 도구의 계산 (2026-11-24, docs/superpowers/specs/2026-11-24-chatbot-stage2-design.md).
+"""챗봇 고도화 2단계 도구의 계산 (2026-11-24, docs/설계/2026-11-24-chatbot-stage2-design.md).
 
 결제 요약(spending), 지난 결제 다시 보기(review), 올해 받은 혜택(year_totals). 엔진 상태를 바꾸지 않는다.
 OpenAI 로 가는 결과에는 업종·금액·날짜·카드 이름·카드사 목록 브랜드(brand_code)만 넣는다. 가맹점 원문(merchant.name)은 넣지 않는다.

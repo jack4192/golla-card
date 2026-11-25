@@ -30,8 +30,8 @@ KST = ZoneInfo("Asia/Seoul")
 NO_BENEFIT = "9999-12"          # 혜택 계산은 학습에 필요 없다
 
 # 2026-11-23 튜닝 (v2.1 가상 데이터, 1~4월 학습·5~6월 검증, 약 30조합): 검증 로그 손실 1.6452 → 1.6404.
-# 이전 값: 학습률 0.05, 잎 15, L2 5, max_bin 255. 재생 혜택률은 그대로(1.316%)였고 사용자 결정으로 설정값만 바꿨다.
-# 근거: artifacts/data_v2_1/tune, docs/superpowers/specs/2026-11-23-data-v2.1-routines-design.md
+# 이전 값: 학습률 0.05, 잎 15, L2 5, max_bin 255. 재생 혜택률은 그대로(1.316%)였고 팀 결정으로 설정값만 바꿨다.
+# 근거: artifacts/data_v2_1/tune, docs/설계/2026-11-23-data-v2.1-routines-design.md
 LGB_PARAMS = {"learning_rate": 0.03, "num_leaves": 31, "min_data_in_leaf": 40, "feature_fraction": 0.7,
               "lambda_l2": 20.0, "seed": 20261127, "verbose": -1, "num_threads": 4}
 MAX_BIN = 63            # Dataset 을 만들 때 정해지는 값

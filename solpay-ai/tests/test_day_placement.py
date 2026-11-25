@@ -25,7 +25,7 @@ def _result(top: int | None) -> RankResult:
 
 
 def test_하루_점은_매시_정각과_일정_시작_끝이다():
-    # 2026-11-24 사용자 결정: 표시줄은 일정 시각에 맞춘다 (일정 창 30분 앞뒤는 평소 카드)
+    # 2026-11-24 팀 결정: 표시줄은 일정 시각에 맞춘다 (일정 창 30분 앞뒤는 평소 카드)
     lunch = ScheduleItem(1, 1, at(hour=12, minute=15), at(hour=13, minute=40), "RESTAURANT", 9000)
     points = day_points(D, [lunch])
     assert len(points) == 26

@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-/** 회원 탈퇴 (2026-11-24 사용자 결정: 비밀번호 다시 확인, 데모·가상 계정 1~1005번은 막기, 바로 완전 삭제). */
+/** 회원 탈퇴 (2026-11-24 팀 결정: 비밀번호 다시 확인, 데모·가상 계정 1~1005번은 막기, 바로 완전 삭제). */
 class UserWithdrawalTest {
 
     private final UserRepository users = mock(UserRepository.class);

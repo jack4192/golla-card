@@ -2,11 +2,11 @@
 
 일정을 저장하거나 건너뛰면 뜨는 페이지다. 무엇을 보여 줄지는 엔진이 정하고, 문구는 engine.chat.page_copy 가 쓴다.
 
-카드 고르기 (2026-11-21 사용자 결정): 오늘 항목에서 보유 카드보다 더 주는 카드 중, 지난 1년 소비로 따져 연회비를 빼고도
+카드 고르기 (2026-11-21 팀 결정): 오늘 항목에서 보유 카드보다 더 주는 카드 중, 지난 1년 소비로 따져 연회비를 빼고도
 이득인 카드만 남긴다. 그중 오늘 일정 업종·브랜드를 콕 집은 혜택(음식점 10% 할인 등)이 있는 카드를 먼저 보고, 1년 순이득이 가장 큰 카드.
 화면의 큰 글씨는 오늘 일정에서 받는 혜택 키워드('음식점 10% 할인')이고, 1년 순이득(연말정산 놓친 혜택과 같은 숫자)은 그 아래 한 줄이다.
 
-표시 규칙 (2026-11-19 사용자 결정):
+표시 규칙 (2026-11-19 팀 결정):
   카드날     : 카드 탭 + 가맹점 탭 (있는 것만, 카드 먼저)
   카드날 아님: 가맹점 탭. 프로모션이 없으면 카드 탭
   카드날 = 오늘 이전의 마지막 카드 추천에서 3일 이상 지났거나 기록이 없다.
@@ -80,7 +80,7 @@ def pattern_items(payments: list[Payment], catalog: Catalog, at: datetime, user_
 def today_items(schedules: list[ScheduleItem], payments: list[Payment], catalog: Catalog, at: datetime,
                 params: Params, user_id: int) -> tuple[str, list[ScheduleItem]]:
     """("schedule", 아직 끝나지 않은 일정) → 없으면 ("schedule", 오늘 이미 지난 일정) → 그것도 없으면 ("pattern", 평소 소비 항목).
-    2026-11-24 사용자 결정: 신청할 카드 추천이라 지난 일정이어도 그 일정으로 고른다 (12~13시 동물병원을 18시에 넣어도
+    2026-11-24 팀 결정: 신청할 카드 추천이라 지난 일정이어도 그 일정으로 고른다 (12~13시 동물병원을 18시에 넣어도
     평소 소비로 넘어가 관계없는 카드를 추천하지 않게). schedules 는 그날 일정만 온다 (store.context)."""
     tail = timedelta(minutes=params.schedule_tail_min)
     remaining = [s for s in schedules if s.end + tail >= at]
@@ -222,7 +222,7 @@ def _related(b, category: str, brand: str | None) -> bool:
 
 
 def _related_row(state, card: Card, item: ScheduleItem, usual: str | None, owned) -> CardPickItem | None:
-    """관련 업종 카드 단계 (2026-11-24 사용자 결정): 그 업종(직접 넣은 브랜드가 있으면 그 브랜드) 전용 혜택으로 받는 금액.
+    """관련 업종 카드 단계 (2026-11-24 팀 결정): 그 업종(직접 넣은 브랜드가 있으면 그 브랜드) 전용 혜택으로 받는 금액.
     보유 카드보다 더 주는지는 보지 않는다 (owned_value 는 같은 금액·브랜드의 보유 최고 혜택, 화면 참고용).
     브랜드: 직접 넣은 브랜드 → 평소 브랜드(카드가 그 브랜드에 혜택을 주거나 업종 전체 혜택일 때) → 카드가 혜택을 주는 브랜드.
     금액: 일정 금액에서 전용 혜택을 받으면 그 금액, 못 받으면(최소 결제 조건) 가장 작은 최소 결제 금액부터 올려 본다 (at_least).
@@ -285,11 +285,11 @@ def pick_card(state, payments: list[Payment], items: list[ScheduleItem], history
     """아직 없는 신한카드 중 오늘 항목에서 보유 카드보다 더 주는 카드(0원이면 후보가 아니다)를 모으고,
     그중 지난 1년 소비로 따져 연회비를 빼고도 이득인 카드만 남긴다 (남는 카드가 없으면 추천하지 않는다).
     남은 카드 가운데 오늘 일정 업종·브랜드를 콕 집은 혜택이 있는 카드를 먼저 보고(page_schedule_first, 없으면 나머지에서),
-    1년 순이득이 가장 큰 카드를 고른다. 같으면 오늘 더 받는 금액이 큰 카드, 그다음 card_id (2026-11-21 사용자 결정).
+    1년 순이득이 가장 큰 카드를 고른다. 같으면 오늘 더 받는 금액이 큰 카드, 그다음 card_id (2026-11-21 팀 결정).
     결제 이력이 두 달 미만이거나 page_yearly=False 면 1년 계산 없이: 오늘 더 받는 금액 큰 순 → 연회비 낮은 순 → card_id.
     항목은 대표 항목이 맨 앞에 오게 둔다: 일정 업종 혜택 먼저, 그다음 더 받는 금액이 큰 순.
     자격 제한 카드는 뺀다. 3일 카드날 규칙(page_card_every_time=False)일 때만 2주(recommend_same_card_days) 안에
-    추천한 카드(오늘 기록 제외)도 뺀다 — 매번 카드 탭이면 같은 카드를 다시 보여 준다 (2026-11-24 사용자 결정)."""
+    추천한 카드(오늘 기록 제외)도 뺀다 — 매번 카드 탭이면 같은 카드를 다시 보여 준다 (2026-11-24 팀 결정)."""
     catalog = state.catalog
     blocked = set() if params.page_card_every_time else recently_recommended(history, at, params)
     owned = [(uc, catalog.cards[uc.card_id]) for uc in state.cards if not uc.excluded]
@@ -304,7 +304,7 @@ def pick_card(state, payments: list[Payment], items: list[ScheduleItem], history
                                        owned)) is not None]
 
     if params.page_related_first and params.page_schedule_first:
-        # 1단계: 관련 업종 카드 (2026-11-24 사용자 결정). 함께 받는 혜택으로 나머지 항목에서 더 주는 것도 붙인다
+        # 1단계: 관련 업종 카드 (2026-11-24 팀 결정). 함께 받는 혜택으로 나머지 항목에서 더 주는 것도 붙인다
         related = []
         for card in pool:
             rows = [r for item in items if (r := _related_row(state, card, item, usual[item.category], owned)) is not None]

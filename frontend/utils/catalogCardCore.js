@@ -1,5 +1,5 @@
 import { withParticle } from './josaCore.js';
-// 카드 탭 상품 상세의 '내 카드로 추가'·'내 카드에서 빼기' (2026-11-24 사용자 결정). 순수 함수만 둔다.
+// 카드 탭 상품 상세의 '내 카드로 추가'·'내 카드에서 빼기' (2026-11-24 팀 결정). 순수 함수만 둔다.
 // 테스트: node --test utils/__tests__/catalogCardCore.test.mjs
 
 // 상품(catalogCode)에 해당하는 내 지갑 카드. 지갑 카드는 앱 22장 코드와 40장 코드가 섞여 있어

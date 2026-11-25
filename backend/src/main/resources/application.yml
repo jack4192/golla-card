@@ -20,7 +20,7 @@ spring:
         format_sql: true
 jwt:
   secret: ${JWT_SECRET}
-  # 로그인 유지 시간(ms). 2026-11-24 사용자 결정 12시간 (예전 1시간). JWT_ACCESS_EXPIRE_MS 로 바꿀 수 있다
+  # 로그인 유지 시간(ms). 2026-11-24 팀 결정 12시간 (예전 1시간). JWT_ACCESS_EXPIRE_MS 로 바꿀 수 있다
   access-token-expire-time: ${JWT_ACCESS_EXPIRE_MS:43200000}
 
 # AI 엔진(solpay-ai, FastAPI) 연결
@@ -29,7 +29,7 @@ ai:
   # AI 엔진의 SOLPAY_INTERNAL_TOKEN 과 같은 값. 비우면 헤더를 보내지 않는다
   internal-token: ${AI_INTERNAL_TOKEN:}
   # 카드 배치 제한 시간(ms). 넘기면 기본 순서로 답한다.
-  # 공용 RDS 에서 사용자별 이달 첫 계산이 0.9~1.9초라 2초 (2026-11-24 사용자 결정, 예전 0.8초). 앱은 4초까지 기다린다
+  # 공용 RDS 에서 사용자별 이달 첫 계산이 0.9~1.9초라 2초 (2026-11-24 팀 결정, 예전 0.8초). 앱은 4초까지 기다린다
   rank-timeout-ms: ${AI_RANK_TIMEOUT_MS:2000}
   # 챗봇·리포트 등 나머지 호출 제한 시간(ms)
   timeout-ms: ${AI_TIMEOUT_MS:20000}

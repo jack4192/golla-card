@@ -488,7 +488,7 @@ export default function TodaySchedulePanel({
     }),
   ].sort((a, b) => (a.time || '24:00').localeCompare(b.time || '24:00'));
   const walletKey = cards.map(card => card.id).join(',');
-  // AI 가 지금 일정을 보고 순서를 정하는 창 안이면 그 판단을 쓴다 (사용자 결정 '일정 중엔 늘 AI').
+  // AI 가 지금 일정을 보고 순서를 정하는 창 안이면 그 판단을 쓴다 (팀 결정 '일정 중엔 늘 AI').
   // 창 열쇠가 바뀔 때만 묻고(1분마다 묻지 않는다), 홈 호출은 추천 기록을 남기지 않는다(미리보기).
   // aiRefresh: 홈이 열린 채로 AI 쪽 상태가 바뀌면(홈 추천 팝업이 일정 행사를 계산함, 챗봇 규칙 확정) 다시 묻는다.
   //   열쇠는 그대로라 새 답이 올 때까지 지난 미리보기를 계속 보인다 (2026-11-23 리뷰).
@@ -689,7 +689,7 @@ export default function TodaySchedulePanel({
         {/* 큰 카드: 누르면 뒤집혀 '이 거래의 예상 혜택' (결제 화면과 같은 계산, 2026-11-24). 카드 그림만 뒤집힌다 */}
         {artwork && <View style={styles.homeCardStage}>
           <View pointerEvents="none" style={styles.homeCardHalo} />
-          {/* '실제 혜택 계산하기'는 홈에서 빼고 결제 화면 예상 혜택 아래로 옮겼다 (2026-11-24 사용자 요청).
+          {/* '실제 혜택 계산하기'는 홈에서 빼고 결제 화면 예상 혜택 아래로 옮겼다 (2026-11-24 팀 피드백).
               뒷면 AI 문구는 자동 배치가 켜져 있고 미리보기가 아닐 때만 (지금 시각 1순위 카드 이야기라서, PR #11 검토) */}
           <CardBenefitFlip card={card} cards={cards} artwork={artwork} artworkStyle={[styles.homeArtwork, styles.homeScheduledArtwork]}
             showAiMessage={autoOn && !scrubbing} />
@@ -723,7 +723,7 @@ export default function TodaySchedulePanel({
       </TouchableOpacity>
     </View>;
   }
-  // 들어왔을 때는 모든 일정을 접어 둔다. 일정을 눌러야 카드 추천이 펼쳐진다 (2026-11-24 사용자 요청)
+  // 들어왔을 때는 모든 일정을 접어 둔다. 일정을 눌러야 카드 추천이 펼쳐진다 (2026-11-24 팀 피드백)
   const activeKey = selection?.scope === day ? selection.key : null;
   return <View style={styles.panel}>
     <View style={styles.hero}>

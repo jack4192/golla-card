@@ -94,7 +94,7 @@ def test_yaml_프로모션을_읽는다():
     except FileNotFoundError:
         pytest.skip("가상 데이터가 없습니다")
     promos = loader.load_popup_promotions(catalog)
-    assert len(promos) == 29                 # 2026-11-23 사용자 결정: 식별불가 마이샵 30·31 을 yml 에서도 뺐다 (31 → 29)
+    assert len(promos) == 29                 # 2026-11-23 팀 결정: 식별불가 마이샵 30·31 을 yml 에서도 뺐다 (31 → 29)
     assert sum(p.needs_check for p in promos) == 2      # 응모·선착순 5·6 (식별불가 2건이 빠져 4 → 2)
     assert all(p.issuer == "SHINHAN" for p in promos)
     mega = next(p for p in promos if p.brand == "메가MGC커피")

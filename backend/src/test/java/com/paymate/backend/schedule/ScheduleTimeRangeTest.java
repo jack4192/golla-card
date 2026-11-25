@@ -22,7 +22,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 
-/** 일정 시간 순서 검사 (2026-11-24 사용자 결정: 시작=끝, 끝이 시작보다 빠른 일정(밤샘)은 400. 끝 최대 24:00). */
+/** 일정 시간 순서 검사 (2026-11-24 팀 결정: 시작=끝, 끝이 시작보다 빠른 일정(밤샘)은 400. 끝 최대 24:00). */
 class ScheduleTimeRangeTest {
 
     private final ScheduleRepository repository = mock(ScheduleRepository.class);

@@ -38,7 +38,7 @@ self.addEventListener('notificationclick', event => {
     } else {
       await self.clients.openWindow(url);
     }
-    // 시연용: 누른 알림을 다시 띄워 다음 사람도 같은 알림을 눌러 볼 수 있게 한다 (2026-11-25 사용자 요청)
+    // 시연용: 누른 알림을 다시 띄워 다음 사람도 같은 알림을 눌러 볼 수 있게 한다 (2026-11-25 팀 피드백)
     await self.registration.showNotification(data.title || 'Pay·Mate', notificationOptions(data));
   })());
 });

@@ -14,7 +14,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * 바탕화면 웹앱 아침 일정 알림 (2026-11-25 사용자 결정: 매일 7시 + '지금 알림 받기', 문구는 짧은 질문형).
+ * 바탕화면 웹앱 아침 일정 알림 (2026-11-25 팀 결정: 매일 7시 + '지금 알림 받기', 문구는 짧은 질문형).
  * 아이폰이 웹앱 알림에 'from Pay·Mate' 줄을 자동으로 붙인다(끌 수 없음).
  * 7시 예약은 PUSH_MORNING_ENABLED=on 인 서버(EC2)에서만 보낸다 — 팀원 로컬 백엔드가 같은 RDS 를 봐도 여러 번 가지 않게.
  */

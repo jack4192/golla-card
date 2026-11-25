@@ -1,4 +1,4 @@
-"""최종 프로모션 (generate.promotions, 2026-11-18 사용자 결정)."""
+"""최종 프로모션 (generate.promotions, 2026-11-18 팀 결정)."""
 
 from datetime import date
 

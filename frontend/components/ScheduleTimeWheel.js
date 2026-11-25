@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const ROW_HEIGHT = 36;
-const MINUTE_STEP = 5;          // 분 휠은 5분 단위 (2026-11-24 사용자 요청)
+const MINUTE_STEP = 5;          // 분 휠은 5분 단위 (2026-11-24 팀 피드백)
 const SETTLE_MS = 140;          // 웹: 마지막 스크롤 뒤 이만큼 멈추면 값 확정 (웹에는 관성 끝 이벤트가 없다)
 const WEB = Platform.OS === 'web';
 const pad = value => String(value).padStart(2, '0');

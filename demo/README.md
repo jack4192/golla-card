@@ -109,7 +109,7 @@ SOLPAY_BACKEND_URL=http://127.0.0.1:8090 SOLPAY_AI_URL=http://127.0.0.1:8031 uvi
 
 ### 카메라로 찍기
 
-승인 요청 아래 "카메라로 QR·바코드 찍기" 를 누르면 카메라로 QR·Code128 을 읽어 번호를 채우고 바로 승인 요청을 보낸다. 브라우저에 BarcodeDetector 가 없으면 ZXing(jsDelivr)을 불러오므로 인터넷이 필요하다. 카메라는 localhost 또는 https 에서만 켜진다 (Claude 앱 안 브라우저는 카메라를 막으므로 크롬 등 일반 브라우저로 연다).
+승인 요청 아래 "카메라로 QR·바코드 찍기" 를 누르면 카메라로 QR·Code128 을 읽어 번호를 채우고 바로 승인 요청을 보낸다. 브라우저에 BarcodeDetector 가 없으면 ZXing(jsDelivr)을 불러오므로 인터넷이 필요하다. 카메라는 localhost 또는 https 에서만 켜진다 (앱 안에 들어간 미리보기 브라우저는 카메라를 막을 수 있으니 크롬·사파리에서 연다).
 
 ## 시연 순서
 

@@ -1,5 +1,5 @@
 // 실행: node --test utils/__tests__/chatBlocks.test.mjs
-// 챗봇 답 아래 표 (2026-11-24 사용자 결정 '앱에서 표 그리기'). 픽스처는 AI 서버 도구가 데모 1번에게 실제로 돌려준 blocks.
+// 챗봇 답 아래 표 (2026-11-24 팀 결정 '앱에서 표 그리기'). 픽스처는 AI 서버 도구가 데모 1번에게 실제로 돌려준 blocks.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

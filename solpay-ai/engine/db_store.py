@@ -296,7 +296,7 @@ class TeamDbPgStore:
 
     def schedules_or_empty(self, user_id: int, day) -> list[ScheduleItem]:
         """배치용 일정. 읽지 못하면(암호 키가 바뀜, 값이 깨짐) 일정이 없는 것으로 보고 소비 패턴으로 배치하게 한다
-        (2026-11-22 사용자 결정: 추천은 계속 주기). 일정 조회 API 는 schedules 를 그대로 써서 오류를 알린다."""
+        (2026-11-22 팀 결정: 추천은 계속 주기). 일정 조회 API 는 schedules 를 그대로 써서 오류를 알린다."""
         try:
             return self.schedules(user_id, day)
         except Exception:

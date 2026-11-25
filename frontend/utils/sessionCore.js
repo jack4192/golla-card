@@ -1,4 +1,4 @@
-// 로그인 만료 처리 (2026-11-24 점검 문제 6, 사용자 결정 '자동 로그아웃 + 안내'). 순수 함수만 둔다.
+// 로그인 만료 처리 (2026-11-24 점검 문제 6, 팀 결정 '자동 로그아웃 + 안내'). 순수 함수만 둔다.
 // 테스트: node --test utils/__tests__/sessionCore.test.mjs
 
 export const SESSION_EXPIRED_MESSAGE = '로그인 시간이 지나 다시 로그인해 주세요.';

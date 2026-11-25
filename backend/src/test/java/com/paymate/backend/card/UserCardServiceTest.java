@@ -22,7 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.springframework.dao.DataIntegrityViolationException;
 
-/** 내 카드에서 빼기 (2026-11-24 사용자 결정 '카드 빼기도 같이 만들기'). DB 없이 저장소를 흉내 낸다. */
+/** 내 카드에서 빼기 (2026-11-24 팀 결정 '카드 빼기도 같이 만들기'). DB 없이 저장소를 흉내 낸다. */
 class UserCardServiceTest {
 
     private final UserCardRepository userCards = mock(UserCardRepository.class);

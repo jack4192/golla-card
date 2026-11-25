@@ -89,7 +89,7 @@ def test_하루에_한_번까지_같은_카드는_2주_동안_다시_추천하�
     assert recommend(state, [], [item], [{"at": at(9, 24, 0), "card_id": 4}], at(10, 7, 8), p) is None          # 13일 8시간 전
     assert recommend(state, [], [item], [{"at": at(9, 23, 0), "card_id": 4}], at(10, 7, 8), p) is not None      # 14일 8시간 전
     assert recommend(state, [], [item], [{"at": at(9, 1, 0), "card_id": 4}], at(10, 7, 8), p) is not None
-    # 기본(2026-11-24 사용자 결정 '2주 규칙을 없애줘'): 6일 전에 추천한 카드도 다시 추천한다. 하루 한 번 규칙은 그대로
+    # 기본(2026-11-24 팀 결정 '2주 규칙을 없애줘'): 6일 전에 추천한 카드도 다시 추천한다. 하루 한 번 규칙은 그대로
     off = params.with_(special_categories=("CVS",))
     assert off.recommend_same_card_days == 0
     assert recommend(state, [], [item], [{"at": at(10, 1, 0), "card_id": 4}], at(10, 7, 8), off) is not None
@@ -104,7 +104,7 @@ def test_연말정산_놓친_혜택은_기존_카드의_구간을_지키는_만�
     assert card4["months"] == 3 and card4["gain"] == 3 * 500           # 첫 달은 실적만, 이후 매달 10만 원 × 0.5%
 
 
-# 2026-11-19 사용자 결정: 가진 카드 하나를 그 신한카드로 바꿨다고 보는 계산도 하고 큰 쪽을 쓴다. 문구는 정해진 틀.
+# 2026-11-19 팀 결정: 가진 카드 하나를 그 신한카드로 바꿨다고 보는 계산도 하고 큰 쪽을 쓴다. 문구는 정해진 틀.
 def _year_rows(extra=()):
     rows = [pay(101, 100_000, "CVS", at(m, d, 12)) for m in (7, 8, 9, 10) for d in (10, 11, 12, 13)]
     for card, amount, category in extra:

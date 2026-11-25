@@ -1,4 +1,4 @@
-// 회원 탈퇴 화면의 순수 함수 (2026-11-24 사용자 결정: 서버 모드는 비밀번호를 다시 확인하고 서버에서 바로 완전 삭제).
+// 회원 탈퇴 화면의 순수 함수 (2026-11-24 팀 결정: 서버 모드는 비밀번호를 다시 확인하고 서버에서 바로 완전 삭제).
 // 테스트: node --test utils/__tests__/withdrawalCore.test.mjs
 
 export function withdrawalCopy(serverMode) {

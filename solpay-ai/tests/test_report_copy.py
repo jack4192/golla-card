@@ -117,7 +117,7 @@ def test_사실에_가맹점_이름과_사용자_번호가_없다():
 
 
 def test_사실에_전략이_없다():
-    # 방식·기본 카드 이야기는 엔진 문장(strategy_lines)만 한다 (전략 문장도 엔진, 2026-11-22 사용자 결정)
+    # 방식·기본 카드 이야기는 엔진 문장(strategy_lines)만 한다 (전략 문장도 엔진, 2026-11-22 팀 결정)
     r = report(base_reason="어느 방식이든 지난달 받은 구간을 지킬 수 있으면 그 카드를 먼저 채워요", base_source="hold")
     f = facts_of(r)
     text = json.dumps(f, ensure_ascii=False)
@@ -341,7 +341,7 @@ def test_전략_문장은_카드_이름_바로_뒤에_조사를_붙이지_않는
             assert line[line.index(name) + len(name):].startswith((" 실적", "부터")), line
 
 
-# ---------- 후보 문장 (엔진이 쓴다. 2026-11-22 사용자 결정: OpenAI 는 고르기만, 닿은 구간·지킬 구간도 후보에) ----------
+# ---------- 후보 문장 (엔진이 쓴다. 2026-11-22 팀 결정: OpenAI 는 고르기만, 닿은 구간·지킬 구간도 후보에) ----------
 NO_TIER = dict(first_tier=None, tier_reached=None, achieved=None, short_of_first=None)
 
 
@@ -599,7 +599,7 @@ def test_프롬프트에_실제_카드_이름과_금액_예시가_없다():
     assert "추천" in SYSTEM and "방식" in SYSTEM and "채우" in SYSTEM  # 효과·전략 표현은 쓰지 말라고 말한다
 
 
-# ---------- 혜택 0원·결제 없는 달 (2026-11-22 사용자 결정: 문장 표현) ----------
+# ---------- 혜택 0원·결제 없는 달 (2026-11-22 팀 결정: 문장 표현) ----------
 
 def _zero(r, month, payments):
     """month('this_month'·'prev_month')의 혜택을 0원으로, 결제 수를 payments 로."""

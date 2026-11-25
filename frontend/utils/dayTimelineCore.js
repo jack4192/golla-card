@@ -68,7 +68,7 @@ export function scrubbedCard({ segments, minute, walletCards, fallbackCard }) {
   return card ? { card, note: segment.message } : { card: fallbackCard, note: NO_AI_CARD };
 }
 
-// 카드가 바뀌는 시각(표시줄 노란 점, 2026-11-24 사용자 요청): 후보 경계(하루 배치 구간·일정의 시작·끝)마다
+// 카드가 바뀌는 시각(표시줄 노란 점, 2026-11-24 팀 피드백): 후보 경계(하루 배치 구간·일정의 시작·끝)마다
 // 그 시각의 큰 카드와 1분 전 큰 카드가 다르면 점을 찍는다. cardIdAt(분) → 그 시각 큰 카드 id. 0시·24시와 겹친 경계는 뺀다.
 export function cardChangeDots(boundaries, cardIdAt) {
   const minutes = [...new Set((boundaries || []).filter(minute => Number.isFinite(minute) && minute > 0 && minute < DAY_MINUTES))]

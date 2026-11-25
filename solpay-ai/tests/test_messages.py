@@ -86,7 +86,7 @@ def test_기본_카드를_유지해도_프로모션이_가장_크면_프로모�
     assert result.reason_code == "PROMOTION" and "카페 마이샵" in result.cards[0].message
 
 
-# ---------- 2026-11-21 사용자 결정: 사실과 어긋나던 문구 세 가지 ----------
+# ---------- 2026-11-21 팀 결정: 사실과 어긋나던 문구 세 가지 ----------
 # 1년 재생(189,250건)에서 행사 문구의 41.5%가 100원 미만이었고, 습관 문구는 실제 습관 카드와 54%만 맞았고,
 # 카드 변경 문구는 달이 바뀐 첫 화면·고정 규칙 뒤에도 나갔다.
 from engine.messages import BASE_CHANGED, GENERAL_BENEFIT, HABIT, NEUTRAL, PROMOTION, card_message, previous_base_filled

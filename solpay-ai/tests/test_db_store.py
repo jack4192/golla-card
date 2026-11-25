@@ -204,7 +204,7 @@ def test_reset_is_refused_for_a_shared_db(db):
 
 
 def test_일정을_읽지_못하면_일정_없이_배치한다(caplog):
-    # 2026-11-22 재검토 5번 (사용자 결정): 암호 키가 바뀌었거나 값이 깨져도 결제 화면 배치는 소비 패턴으로 계속한다
+    # 2026-11-22 재검토 5번 (팀 결정): 암호 키가 바뀌었거나 값이 깨져도 결제 화면 배치는 소비 패턴으로 계속한다
     from datetime import date
 
     from engine.db_store import TeamDbPgStore

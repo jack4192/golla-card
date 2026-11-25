@@ -1,4 +1,4 @@
-# v2 소비 분포 (2026-11-22 사용자 결정). 기본 distributions.yml 위에 겹쳐 쓴다 (사전은 합치고 목록은 바꿈).
+# v2 소비 분포 (2026-11-22 팀 결정). 기본 distributions.yml 위에 겹쳐 쓴다 (사전은 합치고 목록은 바꿈).
 
 dawn:
   archetype_mult: { HOMEMAKER: 0.5, SELFEMP: 1.0, SHIFT: 1.0, FIELD: 0.8, RETIRED: 0.3 }
@@ -120,7 +120,7 @@ archetypes:
     commute: { days: none }
     rides_per_day: { weekday: 0.8, weekend: 0.6 }
 
-# 나이대 효과 (같은 직업의 30대 대비, 배경 사용자에게만. 2026-11-22 사용자 결정)
+# 나이대 효과 (같은 직업의 30대 대비, 배경 사용자에게만. 2026-11-22 팀 결정)
 #   category_mult  생성기 종류별 업종 가중치 배율
 #   amount_mult    일반·충동 결제 건당 금액 배율
 #   edu_share      학원비 자동이체(맞벌이·전업주부)를 내는 비율 (없으면 전원)

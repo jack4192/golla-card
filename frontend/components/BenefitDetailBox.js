@@ -49,7 +49,7 @@ export default function BenefitDetailBox({ scenario, selected, baseline, selecte
       </View>}
     </View>
 
-    {/* '이 카드 vs 비교 카드' 두 칸은 뺐다 (2026-11-24 사용자 요청). 비교 결과는 위 배지 한 줄로 */}
+    {/* '이 카드 vs 비교 카드' 두 칸은 뺐다 (2026-11-24 팀 피드백). 비교 결과는 위 배지 한 줄로 */}
 
     {!!exampleLine && <Text style={s.note}>{exampleLine}</Text>}
     {!!why && <View style={s.why}>

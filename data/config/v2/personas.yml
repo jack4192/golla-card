@@ -1,4 +1,4 @@
-# v2 사용자 유형과 데모 사용자 (2026-11-22 사용자 결정). 기본 personas.yml 위에 겹쳐 쓴다.
+# v2 사용자 유형과 데모 사용자 (2026-11-22 팀 결정). 기본 personas.yml 위에 겹쳐 쓴다.
 archetypes:
   HOMEMAKER:
     name: 전업주부
@@ -21,7 +21,7 @@ archetypes:
     habit: { habit: 0.85, random: 0.15 }
     choice_model: { type: category_habit, main_prob: 0.3 }
 
-# 데모 사용자: 소비 패턴·월 지출(amount_level)은 v1 그대로, 카드만 사용자가 고른 3~5장 구성 (2026-11-22)
+# 데모 사용자: 소비 패턴·월 지출(amount_level)은 v1 그대로, 카드만 팀이 고른 3~5장 구성 (2026-11-22)
 # 모두의카드를 가진 사람은 그 카드를 K-패스 등록 카드이자 교통 대표 카드로 둔다
 demo_users:
   - id: 1

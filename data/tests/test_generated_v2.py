@@ -1,4 +1,4 @@
-"""v2 데이터(배경 1000명 + 데모 5명) 검증 (2026-11-22 설계서 docs/superpowers/specs/2026-11-22-data-v2-1000-design.md).
+"""v2 데이터(배경 1000명 + 데모 5명) 검증 (2026-11-22 설계서 docs/설계/2026-11-22-data-v2-1000-design.md).
 
 먼저 생성한 뒤 실행:  SOLPAY_DATA_VERSION=v2 uv run python -m generate.main && uv run pytest tests/test_generated_v2.py
 v1 테스트와 같은 프로세스에서 돌도록 out_v2 와 load_config(..., "v2") 만 읽는다.

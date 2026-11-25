@@ -43,7 +43,7 @@ class PlacementEngine:
                    promo_offers: dict[int, list[tuple[int, int, str]]] | None = None) -> RankResult:
         """promo_offers: 일정 팝업에서 추천한 프로모션 (engine.popup.offers_by_item). 그 일정 시간이면 3~6단계 대신
         받을 금액이 가장 큰 신한카드를 1순위로 둔다. 고정 규칙이 더 우선이고, 제외된 카드는 건너뛴다."""
-        if not state.cards:                 # 등록한 카드가 없으면 빈 순서 (2026-11-22 사용자 결정: 200 + 빈 목록, 기록 없음)
+        if not state.cards:                 # 등록한 카드가 없으면 빈 순서 (2026-11-22 팀 결정: 200 + 빈 목록, 기록 없음)
             from engine.messages import NO_CARD
             return RankResult([], 0, NO_CARD, None, "pattern", "none", None)
         if self.models is not None:
@@ -156,7 +156,7 @@ class PlacementService:
         # 일정 '직접 입력' 분류 결과 (정리한 글 → 사용자와 무관한 분류). 같은 글자는 OpenAI 를 다시 부르지 않는다
         self.place_cache: dict = {}
         # 월간 리포트의 OpenAI 답: 사용자 → (보낸 사실, 문구, 기록). 숫자는 부를 때마다 다시 계산하고, OpenAI 답만
-        # 보낸 사실이 같을 때 다시 쓴다 (2026-11-22 사용자 결정. 사용자마다 마지막 답 하나, 정해진 문구는 두지 않는다).
+        # 보낸 사실이 같을 때 다시 쓴다 (2026-11-22 팀 결정. 사용자마다 마지막 답 하나, 정해진 문구는 두지 않는다).
         self.reports: dict = {}
         self._popup_promotions: list[Promotion] | None = None
 
@@ -385,7 +385,7 @@ class PlacementService:
         """(추천 기록 번호, 배치 결과). 등록한 카드가 없으면 기록을 남기지 않고 번호는 None 이다.
         record=False(앱 홈 일정 카드 미리보기)도 같은 계산을 하고 기록만 남기지 않는다: 기록의 base_card 가
         다음 배치의 '직전 기본 카드(last_base)'가 되므로, 홈에서 남기면 결제 화면의 '앞 카드 실적을 채워 …'
-        안내가 먹힐 수 있다 (2026-11-23 사용자 결정 '기록 없는 미리보기')."""
+        안내가 먹힐 수 있다 (2026-11-23 팀 결정 '기록 없는 미리보기')."""
         context = self.store.context(req.user_id, req.at)
         state = self.build_state(context, req.at)
         result = self.engine.rank_state(state, req, context.rules, context.weights, self._all_promotions(context),
@@ -397,7 +397,7 @@ class PlacementService:
 
     def _log_rank(self, req: RankRequest, result: RankResult) -> int | None:
         """추천 기록을 남기고 번호를 준다. 저장에 실패해도(읽기 전용 계정, DB 장애) 배치는 돌려주도록 None 을 준다
-        (2026-11-22 사용자 결정: 추천은 계속 주기. 그 추천은 챗봇의 '이 추천 이유 설명'에 쓸 수 없다)."""
+        (2026-11-22 팀 결정: 추천은 계속 주기. 그 추천은 챗봇의 '이 추천 이유 설명'에 쓸 수 없다)."""
         record = {
             "user_id": req.user_id, "at": req.at,
             "version": result.version, "scenario_mode": result.scenario_mode, "base_card": result.base_card,
@@ -624,7 +624,7 @@ class PlacementService:
     def missed_benefit(self, user_id: int, at, days: int = 365, start=None, only: set[int] | None = None) -> list[dict]:
         """연말정산 안내: 지난 days 일 동안 각 신한카드가 있었다면 더 받았을 금액 (상위 3장).
         start(date, 2026-11-24 연말 결산): 주면 그 달부터 at 까지 센다. 전달 1일부터 start 전 결제는 실적만 쌓는다.
-        params.missed_min_gain 원 미만인 카드는 뺀다 (2026-11-24 사용자 결정).
+        params.missed_min_gain 원 미만인 카드는 뺀다 (2026-11-24 팀 결정).
         only(card_id 들, 챗봇 카드 지정 비교): 그 카드들만 계산하고 금액 기준·상위 3장 자르기 없이 모두 돌려준다.
         항목마다 계산한 기간 from·until('YYYY-MM-DD')을 붙인다 (연말 결산이 '1월 1일부터 11월 24일까지'로 밝히게, 2026-11-24)."""
         from datetime import datetime, timedelta
@@ -655,7 +655,7 @@ class PlacementService:
         숫자는 엔진이 정한다. 카드 숫자 요점(summary.points)도 엔진이 후보 문장으로 쓰고 (report_copy.candidates_of),
         writer(ReportCopyWriter)는 제목을 쓰고 보여 줄 후보 1~2개를 고른다 (None 이면 정해진 문구. 고른 번호는 copy_log.picks).
         SOL페이 효과 문장·이유(summary.effect, report_copy.effect_lines)와 배치 전략 문장(summary.strategy, strategy_lines)은
-        엔진이 쓴다 (2026-11-22 사용자 결정).
+        엔진이 쓴다 (2026-11-22 팀 결정).
         숫자·효과·전략은 부를 때마다 다시 계산한다 (운영에서는 Spring 이 결제를 DB 에 넣으므로 캐시를 지울 계기가 없다).
         OpenAI 답만, 보낸 사실과 프롬프트가 지난번과 같으면 다시 쓴다 (cached=true). 정해진 문구로 떨어진 답은 두지 않아
         다음에 다시 시도한다."""
@@ -700,7 +700,7 @@ class PlacementService:
     def _last_month_effect(self, user_id: int, context, prev_start, this_start) -> dict | None:
         """지난달 SOL페이 효과 (engine.report.replay_month): 지난달 결제화면 결제를 그때 엔진의 1순위 카드로 냈다면.
         시작 상태는 지난달 1일 전 결제로 그때마다 새로 만든다 (월간 맞춤 방식도 지난달 기준, 늦게 들어온 결제 포함).
-        일정·일정 팝업은 쓰지 않는다. 2026-11-22 사용자 결정:
+        일정·일정 팝업은 쓰지 않는다. 2026-11-22 팀 결정:
         - 규칙은 그 결제 때 이미 있던 규칙만 쓴다 (rules.rules_at. 오늘 만든 규칙이 지난달 효과를 바꾸지 않게).
         - 프로모션: 실제 쪽은 기록값, 추천 쪽은 이벤트와 그달 켜 둔 것이 확인된 마이샵만 (report.promotion_of).
         행사는 저장소 전체 목록에서 결제 시각에 진행 중인 것만 쓴다 (context 의 행사는 at 기준이라 지난달에 끝난 행사가 빠진다)."""

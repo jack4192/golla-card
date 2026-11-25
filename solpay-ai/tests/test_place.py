@@ -1,4 +1,4 @@
-"""일정 '직접 입력' 업종·가맹점 분류 (2026-11-23 설계서 docs/superpowers/specs/2026-11-23-place-classify-design.md)."""
+"""일정 '직접 입력' 업종·가맹점 분류 (2026-11-23 설계서 docs/설계/2026-11-23-place-classify-design.md)."""
 
 from datetime import timedelta
 
@@ -373,7 +373,7 @@ def test_여러_브랜드가_한_업종이면_업종은_정함(svc, text, catego
     assert (r["category"], r["brand"], r["source"]) == (category, None, "search") and client.requests == []
 
 
-# ---------- '야구' = LG트윈스 홈경기 (2026-11-24 사용자 결정) ----------
+# ---------- '야구' = LG트윈스 홈경기 (2026-11-24 팀 결정) ----------
 # LG트윈스 신한카드 체크의 입장권 혜택은 '공연/문화 티켓' + LG트윈스 브랜드로만 계산된다. 가맹점 목록에는 LG트윈스가 없다.
 
 @pytest.mark.parametrize("text", ["야구", "야구장", "잠실 야구 직관", "엘지트윈스", "LG트윈스 경기", "프로야구 보러 감"])

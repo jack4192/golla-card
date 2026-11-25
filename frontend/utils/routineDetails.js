@@ -36,7 +36,7 @@ export function routineLabel(row) {
 }
 
 export const DETAIL_CATEGORIES = {
-  // 2026-11-24: 야구 = LG트윈스 홈경기 (사용자 결정). 카드 혜택 이름·조건에서 찾을 말
+  // 2026-11-24: 야구 = LG트윈스 홈경기 (팀 결정). 카드 혜택 이름·조건에서 찾을 말
   baseball: {
     label: '야구',
     words: ['야구', '야구장', 'LG트윈스', '트윈스', '홈경기', '입장권', '구단'],

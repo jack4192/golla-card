@@ -70,7 +70,7 @@ export function toPromotionOffer(page, baseUrl = '') {
   };
 }
 
-// 카드 추천 탭에 무엇을 보일지: 'loading'(AI 답 기다림) | 'ai' | 'local'(앱 계산) (2026-11-23 사용자 결정).
+// 카드 추천 탭에 무엇을 보일지: 'loading'(AI 답 기다림) | 'ai' | 'local'(앱 계산) (2026-11-23 팀 결정).
 //   AI 를 묻는 경우(asksAi: 서버 모드·오늘 날짜)에는 답이 올 때까지 불러오는 중을 보이고 앱 계산 카드를 먼저 보이지 않는다
 //   (예전에는 앱 계산 카드가 보이다가 AI 카드로 바뀌었다). AI 가 실패하거나 카드를 주지 못하면(새 가입자 등) 앱 계산.
 export function cardSource({ asksAi, aiState, aiCard }) {

@@ -1,4 +1,4 @@
-"""OpenAI 모델 설정 (2026-11-24 사용자 결정: gpt-4o-mini → GPT-6.1 Terra).
+"""OpenAI 모델 설정 (2026-11-24 팀 결정: gpt-4o-mini → GPT-6.1 Terra).
 
 GPT-5.6·6 계열은 온도(temperature)를 받지 않고, 생각 단계(reasoning_effort)가 none 이어야
 Chat Completions 도구 호출이 된다. 생각 단계를 빈 값으로 두면 옛 모델처럼 온도를 보낸다 (gpt-4o-mini 로 되돌릴 때).

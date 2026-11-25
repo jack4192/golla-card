@@ -44,7 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>시연용 만능 키(app.pos.demo-terminal-key, 환경 변수 POS_DEMO_TERMINAL_KEY): 이 키로 온 요청은 POS 가 보낸 가맹점
  * (없으면 업종)의 단말기로 결제한다. DB 단말기는 키 원문을 저장하지 않아, 가상 POS 에서 아무 가맹점이나 고르려면 필요하다
- * (2026-11-24 사용자 결정). 비우거나 16자보다 짧으면 꺼진다.
+ * (2026-11-24 팀 결정). 비우거나 16자보다 짧으면 꺼진다.
  */
 @Slf4j
 @Service
