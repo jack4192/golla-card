@@ -51,5 +51,11 @@ app:
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:8081,http://localhost:19006}
 
+# 프록시(배포 서버의 Caddy) 뒤에서는 프록시가 알려 주는 원래 주소(X-Forwarded-Proto·Host)를 믿는다 (2026-11-25).
+# 안 그러면 https://paymate.duckdns.org/pos 화면이 같은 주소로 보낸 결제(POST)를 다른 사이트로 보고 CORS 로 막는다(403).
+# native = Tomcat 이 내부 주소(127.x·172.16~31.x 등, docker 포함)에서 온 머리글만 믿는다.
+server:
+  forward-headers-strategy: native
+
 logging.level:
   org.hibernate.SQL: debug
