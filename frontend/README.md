@@ -1,32 +1,57 @@
-# Pay·Mate
+# Pay·Mate 앱
 
-React Native와 Expo로 만든 모바일·웹 프런트엔드입니다. 회원가입, 이메일 로그인, 오늘의 일정, 카드·프로모션 추천, 카드 지갑, 혜택 및 결제 화면을 제공합니다.
+Expo(React Native)로 만든 앱입니다. 같은 코드로 휴대폰(Expo Go)과 웹에서 돌아갑니다.
 
-## 로컬에서 실행
+## 화면 흐름
 
-```sh
+1. **회원가입·로그인** → 약관 동의
+2. **일정 관리**: 오늘 갈 곳과 시간을 입력합니다
+3. **카드 추천**: 입력한 일정으로 받을 수 있는 혜택과 카드를 보여 줍니다
+4. **메인 탭**
+
+| 탭 | 내용 |
+|---|---|
+| 홈 | 지금 결제에 쓸 카드 순서, 오늘 일정과 하루 시간 표시줄(카드가 바뀌는 시각), 최근 이용 내역, 연말 결산, 챗봇 |
+| 혜택 | 진행 중인 행사와 내 카드로 받을 수 있는 혜택 |
+| 결제 | 결제 QR·바코드, 카드별 예상 혜택, 결제 카드 순서 |
+| 오늘의 일정 | 오늘 일정과 일정별 추천 카드, 일정 추가·수정 |
+| 카드 | 카드 상품 목록·상세, 내 카드 추가·빼기 |
+
+## 실행
+
+```bash
 npm ci
-npm start -- --go
+EXPO_PUBLIC_API_URL=http://localhost:8080 npx expo start --go
 ```
 
-Expo Go에서 터미널의 QR 코드를 스캔하면 모바일에서 열 수 있습니다. 웹만 실행하려면 `npm run web`을 사용하세요. Windows PowerShell에서 실행 정책으로 npm이 차단되면 `npm.cmd`를 사용하세요.
+- 휴대폰: 같은 와이파이에서 Expo Go로 QR 코드를 찍습니다. 이때 주소는 `localhost` 대신 PC의 IP로 넣습니다.
+- 웹: http://localhost:8081
+- Windows는 `.\scripts\start-with-backend.ps1` 이 같은 일을 합니다.
+- `EXPO_PUBLIC_API_URL` 을 넣지 않으면 서버 없이 앱 안의 예시 데이터로 동작합니다 (예시 계정 `demo@example.com` / `Demo1234!`).
 
-## 웹 빌드
+## 웹 배포 (AWS Amplify)
 
-```sh
-npx expo export --platform web
+`main` 브랜치에 올리면 Amplify가 자동으로 빌드해 배포합니다.
+
+- 빌드 결과는 `npx expo export --platform web` 으로 만든 `dist/` 입니다. Amplify 정적 호스팅에서 `_expo` 경로의 JS 를 못 찾을 때는 `node scripts/prepare-amplify.js` 로 경로를 고칩니다.
+- 서버 주소는 Amplify 환경 변수 `EXPO_PUBLIC_API_URL=https://paymate.duckdns.org` 로 넣습니다. 빌드할 때 앱에 들어가는 값이라 바꾸면 다시 빌드해야 합니다.
+- 아이폰 사파리에서 배포 주소를 열고 공유 → **홈 화면에 추가**를 누르면 주소창 없는 앱처럼 열립니다. 아이콘과 전체 화면 설정은 `public/` (index.html, manifest.json)에 있습니다.
+- 아침 알림(웹 푸시)은 홈 화면에 추가한 앱에서 받을 수 있습니다 (`public/sw.js`).
+- 개발용 '화면 미리보기' 메뉴는 배포 웹에 나오지 않습니다. 필요하면 빌드할 때 `EXPO_PUBLIC_DEV_MENU=on` 을 넣습니다.
+
+## 폴더
+
+| 폴더 | 내용 |
+|---|---|
+| `screens/` | 화면 (로그인, 회원가입, 약관, 일정 관리, 카드 추천, 메인, 결제) |
+| `components/` | 화면 조각 (카드 지갑, 일정 패널, 결제 시트, 연말 결산, 챗봇 표 등) |
+| `utils/` | API 호출(`api.js`), 서버·예시 모드 데이터, 계산 로직. `*Core.js` 는 화면과 떨어진 순수 함수입니다 |
+| `data/` | 예시 모드용 카드 목록과 결제 데이터 |
+| `assets/` | 카드 이미지, 아이콘 |
+| `docs/` | AI 연동 정리(`AI_연동.md`), API 명세서, 새 노트북 설정 |
+
+## 테스트
+
+```bash
+node --test utils/__tests__/*.mjs
 ```
-
-빌드 결과는 `dist/`에 생성됩니다.
-
-- 배포한 웹(빌드 결과)에는 '화면 미리보기' 개발 메뉴가 나오지 않습니다. 배포 웹에서도 보려면 빌드할 때 `EXPO_PUBLIC_DEV_MENU=on` 을 넣으세요.
-- 아이폰 바탕화면에 앱처럼 두기: 사파리로 배포 주소(https) 열기 → 공유 → **홈 화면에 추가**. 아이콘·이름·전체 화면 설정은 `public/`(index.html, manifest.json, 아이콘)에 있습니다.
-- 서버에 붙이려면 빌드 때 `EXPO_PUBLIC_API_URL=https://<백엔드 주소>` (https 웹에서는 https 서버만 부를 수 있음). Windows에서 AWS Amplify용 ZIP이 필요하면 `웹배포_실행.cmd`를 실행하세요. 이 명령은 `solpay-web-ready.zip`을 생성합니다. Android 개발 빌드 설정은 `eas.json`에 있습니다.
-
-## 데이터와 인증
-
-- 회원가입은 로컬 저장소를 사용합니다. 이메일과 전화번호의 중복 여부는 저장된 가입 기록으로 확인합니다. 웹에서도 로그인 데이터는 브라우저(localStorage)에 남아, 탭이나 바탕화면 웹앱을 닫았다 열어도 로그인이 유지됩니다(로그아웃하면 지워짐).
-- 백엔드 연동(서버 모드): `.\scripts\start-with-backend.ps1` 로 실행하면 `EXPO_PUBLIC_API_URL`이 설정되어 로그인·회원가입·중복 확인·로그아웃을 Spring 백엔드로 처리합니다. 그냥 `npx expo start`나 Vercel 빌드는 기존 데모 모드로 동작합니다. API 호출 코드는 `utils/api.js`에 있습니다.
-- 테스트 로그인은 `demo@example.com`과 `Demo1234!`를 사용합니다. 신규 가입 비밀번호는 영문·숫자·특수문자를 포함한 8자 이상이어야 합니다.
-- 카드 조회에는 40종 카탈로그를 사용합니다. 카드 이미지 매칭 기록과 카드사 출처를 확인한 별도 조사 자료는 `data/`에 있습니다.
-- 실제 회원 인증, 금융기관 연동, 결제 처리를 위한 백엔드는 연결되어 있지 않습니다. 회원가입 및 결제 확인에는 테스트 정보를 사용하세요.
