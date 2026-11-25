@@ -18,6 +18,7 @@ import { CAPTURE_WARNING, captureView, dragStep, shouldCloseSheet } from '../uti
 
 const CODE_SECONDS = 60;
 const IS_WEB = Platform.OS === 'web';
+const WEB_CODE_ID = 'quick-pay-private-code';
 const CAPTURE_TIMEOUT_MS = 4000;   // 캡처 보호 설정이 이보다 늦으면 경고와 함께 창을 띄운다
 
 const won = value => Number(value || 0).toLocaleString('ko-KR') + '원';
@@ -67,6 +68,8 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
   const [picking, setPicking] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [pageActive, setPageActive] = useState(() => !IS_WEB || AppState.currentState !== 'background');
   const [sheetDragging, setSheetDragging] = useState(false);
   const [captureProtection, setCaptureProtection] = useState(IS_WEB ? 'ready' : 'pending');
   // 캡처 보호를 켜지 못해도 결제가 막히지 않게 경고와 함께 코드는 보여 준다 (PR #16 보완, utils/paySheetCore.captureView)
@@ -84,19 +87,41 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   const pointerDrag = useRef(null);
   const nativeDrag = useRef(false);   // 폰: 이번 몸짓에서 아래로 끌기가 시작됐는지
   const dismissing = useRef(false);
+  const sheetHeight = useRef(700);
+
+  const beginClose = () => {
+    if (dismissing.current) return false;
+    dismissing.current = true;
+    sequence.current += 1;
+    cancelServerCode();
+    return true;
+  };
+  const closeSheet = () => {
+    if (beginClose()) onCloseRef.current?.();
+  };
 
   const springBack = () => Animated.spring(dragY, { toValue: 0, useNativeDriver: false }).start();
   const releaseDrag = (distance, velocity) => {
-    if (shouldCloseSheet(distance, velocity)) {
+    if (!shouldCloseSheet(distance, velocity)) {
+      springBack();
+      return;
+    }
+    if (dismissing.current) return;
+    if (IS_WEB) {
+      beginClose();
+      setClosing(true);
+    } else {
       dismissing.current = true;
-      Animated.timing(dragY, { toValue: 700, duration: 180, useNativeDriver: false }).start(({ finished: completed }) => {
-        if (completed) onCloseRef.current?.();
-        else {   // 닫히다 끊기면 반쯤 내려간 채 멈추지 않게 되돌린다
+    }
+    Animated.timing(dragY, { toValue: Math.max(sheetHeight.current, distance), duration: IS_WEB ? 130 : 180, useNativeDriver: false })
+      .start(({ finished: completed }) => {
+        if (!dismissing.current) return;
+        if (completed || IS_WEB) onCloseRef.current?.();
+        else {
           dismissing.current = false;
           springBack();
         }
       });
-    } else springBack();
   };
   const pan = useRef(PanResponder.create({
     // 코드 영역에서 시작한 터치는 시트가 먼저 받아 화면 스크롤과 경합하지 않게 한다.
@@ -161,8 +186,9 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
 
   useEffect(() => {
     pointerDrag.current = null;
-    dragY.setValue(0);
     dismissing.current = false;
+    dragY.setValue(0);
+    setClosing(false);
     setSheetDragging(false);
   }, [visible, dragY]);
 
@@ -189,7 +215,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   };
 
   const issue = async () => {
-    if (!selected || !canShowCode) return;
+    if (!selected || !canShowCode || dismissing.current) return;
     const ticket = ++sequence.current;
     setCode(null);
     codeRef.current = null;
@@ -226,6 +252,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
       sequence.current += 1;
       cancelServerCode();
       setCode(null);
+      setGenerating(false);
       setReceipt(null);
       setPicking(false);
       setPickedId(null);
@@ -236,7 +263,10 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   }, [visible, selected?.id, canShowCode]);
 
   // 화면이 사라질 때도 결제 안 된 서버 코드는 취소한다.
-  useEffect(() => () => cancelServerCode(), []);
+  useEffect(() => () => {
+    sequence.current += 1;
+    cancelServerCode();
+  }, []);
 
   // 서버 모드: 2초마다 코드 상태를 확인해 가상 POS(다른 기기)에서 결제되면 결과를 보여 준다.
   useEffect(() => {
@@ -247,9 +277,9 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
       if (stopped || !shouldPoll(codeRef.current, null) || codeRef.current?.tokenId !== tokenId) return;
       try {
         const status = await api.paymentTokenStatus(tokenId);
-        if (stopped || status?.status !== 'COMPLETED' || finished.current === tokenId) return;
+        if (stopped || dismissing.current || status?.status !== 'COMPLETED' || finished.current === tokenId) return;
         const recent = await api.paymentsRecent({ limit: 5 }).catch(() => []);
-        if (!stopped) finish(tokenId, receiptFromRecent(recent, status.paymentId));
+        if (!stopped && !dismissing.current) finish(tokenId, receiptFromRecent(recent, status.paymentId));
       } catch {
         // 상태를 못 읽어도 코드는 그대로 보여 준다 (다음 확인 때 다시)
       }
@@ -260,16 +290,28 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
     };
   }, [visible, code?.tokenId, receipt]);
 
-  // 남은 시간 표시, 앱이 백그라운드로 가면 시간만 갱신
+  // 남은 시간을 갱신하고 웹 탭이 숨겨져 있는 동안 코드를 가린다.
   useEffect(() => {
     if (!visible) return undefined;
-    const timer = setInterval(() => setNow(Date.now()), 250);
-    const subscription = AppState.addEventListener('change', () => setNow(Date.now()));
+    let timer;
+    const updateClock = () => {
+      clearTimeout(timer);
+      const current = Date.now();
+      setNow(current);
+      const remaining = code?.expiresAt - current;
+      if (remaining > 0) timer = setTimeout(updateClock, remaining % 1000 || 1000);
+    };
+    const syncAppState = state => {
+      if (IS_WEB) setPageActive(state !== 'background');
+      updateClock();
+    };
+    syncAppState(AppState.currentState);
+    const subscription = AppState.addEventListener('change', syncAppState);
     return () => {
-      clearInterval(timer);
+      clearTimeout(timer);
       subscription.remove();
     };
-  }, [visible]);
+  }, [visible, code?.expiresAt]);
 
   // Android 모달은 열릴 때 캡처 차단 플래그를 가져오므로 시트를 띄우기 전에 설정한다.
   useEffect(() => {
@@ -305,18 +347,21 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
   const seconds = code ? Math.max(0, Math.ceil((code.expiresAt - now) / 1000)) : 0;
   const expired = !code || seconds === 0 || code.cardId !== selected?.id;
   const paid = Boolean(receipt);
+  const maskWebCode = IS_WEB && (closing || !pageActive || expired);
 
-  return <Modal visible={visible && capture.open} transparent animationType="slide" onRequestClose={onClose}>
+  return <Modal visible={visible && capture.open} transparent animationType={IS_WEB ? 'none' : 'slide'} onRequestClose={closeSheet}>
     <View style={s.backdrop}>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel="결제 닫기" activeOpacity={1} style={s.backdropTouch} onPress={onClose} />
-      <Animated.View style={[s.sheet, { transform: [{ translateY: dragY }] }]} accessibilityViewIsModal>
+      {IS_WEB && <style>{`@media print { #${WEB_CODE_ID} { visibility: hidden !important; } }`}</style>}
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="결제 닫기" activeOpacity={1} style={s.backdropTouch} onPress={closeSheet} />
+      <Animated.View style={[s.sheet, { transform: [{ translateY: dragY }] }]} accessibilityViewIsModal
+        onLayout={event => { sheetHeight.current = event.nativeEvent.layout.height; }}>
         <View {...dragHandlers} style={[s.handleArea, IS_WEB && s.webDragArea]} accessibilityLabel="아래로 끌어 닫기"><View style={s.handle} /></View>
 
         {/* 작은 폰(375×667)에서 창이 화면보다 길어 '닫기'·선정 이유가 밖으로 잘렸다 → 창 안을 스크롤 (2026-11-25 점검) */}
         <ScrollView style={s.body} contentContainerStyle={s.bodyContent} scrollEnabled={!sheetDragging} bounces={false} keyboardShouldPersistTaps="handled">
         {!selected ? <View style={s.empty}>
           <Text style={s.emptyText}>결제에 사용할 수 있는 카드가 없어요. 카드 탭에서 카드를 등록해주세요.</Text>
-          <TouchableOpacity accessibilityRole="button" onPress={onClose} style={s.close}><Text style={s.closeText}>닫기</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" onPress={closeSheet} style={s.close}><Text style={s.closeText}>닫기</Text></TouchableOpacity>
         </View> : <>
           <View style={s.headRow}>
             <Text accessibilityRole="header" style={s.heading}>QR · 바코드 결제</Text>
@@ -348,7 +393,9 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
           {capture.warning && <Text style={s.captureWarning} accessibilityRole="alert">{CAPTURE_WARNING}</Text>}
           <View style={s.codeBox}>
             {generating ? <ActivityIndicator color="#245DE5" style={s.loading} />
-              : visible && code ? <Codes value={code.value} inactive={expired} dragProps={dragHandlers} dragStyle={IS_WEB ? s.webDragArea : null} /> : null}
+              : visible && code ? <View nativeID={IS_WEB ? WEB_CODE_ID : undefined} style={maskWebCode && s.hiddenWebCode}>
+                <Codes value={code.value} inactive={!IS_WEB && expired} dragProps={dragHandlers} dragStyle={IS_WEB ? s.webDragArea : null} />
+              </View> : null}
           </View>
           {/* 서버 모드의 '가상 결제용 코드예요…' 안내는 뺀다 (2026-11-24 팀 피드백). 서버 없는 예시 모드만 안내 */}
           {!SERVER_MODE && <Text style={s.notice}>QR·바코드는 예시이며 실제 결제에 사용할 수 없어요.</Text>}
@@ -360,7 +407,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
               <Ionicons name="refresh" size={16} color="#245DE5" />
               <Text style={s.secondaryText}>{paid ? '새 결제 코드 받기' : expired ? '새 코드 받기' : '코드 다시 발급'}</Text>
             </TouchableOpacity>
-            {!!onOpenDetails && <TouchableOpacity accessibilityRole="button" onPress={onOpenDetails} style={s.secondary}>
+            {!!onOpenDetails && <TouchableOpacity accessibilityRole="button" onPress={() => { if (beginClose()) onOpenDetails(); }} style={s.secondary}>
               <Ionicons name="stats-chart-outline" size={16} color="#245DE5" />
               <Text style={s.secondaryText}>혜택 자세히 보기</Text>
             </TouchableOpacity>}
@@ -393,7 +440,7 @@ export default function QuickPaySheet({ visible, cards = [], cardId, context, au
             </TouchableOpacity>)}
           </ScrollView>}
 
-          <TouchableOpacity accessibilityRole="button" onPress={onClose} style={s.close}><Text style={s.closeText}>닫기</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" onPress={closeSheet} style={s.close}><Text style={s.closeText}>닫기</Text></TouchableOpacity>
         </>}
         </ScrollView>
       </Animated.View>
@@ -439,6 +486,7 @@ const s = StyleSheet.create({
   pickName: { flex: 1, fontSize: 14, color: '#14213D', fontWeight: '600' },
   context: { fontSize: 13, lineHeight: 19, color: '#3D5170' },
   codeBox: { minHeight: 290, justifyContent: 'center' },
+  hiddenWebCode: { visibility: 'hidden' },
   loading: { marginVertical: 40 },
   notice: { fontSize: 12, color: '#687B97', textAlign: 'center' },
   error: { fontSize: 13, color: '#C53D56', textAlign: 'center' },
