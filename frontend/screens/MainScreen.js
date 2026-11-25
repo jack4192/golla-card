@@ -11,6 +11,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Dimensions, View, Text, Image, Linking, TouchableOpacity, ScrollView, FlatList, StyleSheet, SafeAreaView, TextInput, Switch, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DEV_MENU_ENABLED } from '../utils/devMenu';
+import ScreenSafeArea from '../components/ScreenSafeArea';
 import YearEndReport from '../components/YearEndReport';
 import PaymentCardOrder from '../components/PaymentCardOrder';
 import AutoPlacementSwitch from '../components/AutoPlacementSwitch';
@@ -862,7 +863,7 @@ export default function MainScreen({
 
       </ScrollView>
     </>;
-  return <SafeAreaView style={styles.root}><RecommendationLaunchPopup onClosed={refreshAi} selectedWalletCard={currentCard} allowAutomaticAds={tab === 'home' && allowAutomaticAds} onViewPromotions={() => selectTab('benefits')} promotions={activeNow} emptyText={emptyPromotionText(promotions.status)} openRequest={adRequest} enabled={(tab === 'home' || tab === 'benefits') && !settingsOpen && !exitOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
+  return <ScreenSafeArea style={styles.root}><RecommendationLaunchPopup onClosed={refreshAi} selectedWalletCard={currentCard} allowAutomaticAds={tab === 'home' && allowAutomaticAds} onViewPromotions={() => selectTab('benefits')} promotions={activeNow} emptyText={emptyPromotionText(promotions.status)} openRequest={adRequest} enabled={(tab === 'home' || tab === 'benefits') && !settingsOpen && !exitOpen && !chatVisible && !selectedBenefit && !walletBenefitDetailsOpen && !selectedCatalog} />
       {!settingsOpen && tab !== 'payment' && <View style={[styles.topBar, tab === 'cards' && styles.walletTopBar]}>
           <View style={styles.headerBrand}>
             {tab === 'schedule' && <TouchableOpacity accessibilityRole="button" accessibilityLabel="홈으로 돌아가기"
@@ -1292,7 +1293,7 @@ export default function MainScreen({
         </View>
       </Modal>
 
-    </SafeAreaView>;
+    </ScreenSafeArea>;
 }
 const styles = StyleSheet.create({
   promoState: { alignItems: 'center', gap: 10, paddingVertical: 24, paddingHorizontal: 16, borderRadius: 16, backgroundColor: '#F4F7FC' },

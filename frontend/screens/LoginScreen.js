@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, ScrollView, Keyboard, KeyboardAvoidingView, Platform, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import ScreenSafeArea from '../components/ScreenSafeArea';
 import { Ionicons } from '@expo/vector-icons';
 import FlowHeading from '../components/FlowHeading';
 import { isValidEmail, normalizeEmail } from '../utils/demoEmail';
@@ -80,7 +81,7 @@ export default function LoginScreen({
     Keyboard.dismiss();
     onSignUp?.();
   };
-  return <SafeAreaView style={styles.safeArea}>
+  return <ScreenSafeArea style={styles.safeArea}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex:1}}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.container}>
         <View style={styles.heading}>
           <FlowHeading brand icon="wallet-outline">내 지갑에 로그인</FlowHeading>
@@ -115,7 +116,7 @@ export default function LoginScreen({
           </TouchableOpacity>
         </View>
       </ScrollView></KeyboardAvoidingView>
-    </SafeAreaView>;
+    </ScreenSafeArea>;
 }
 const styles = StyleSheet.create({
   safeArea: {
