@@ -119,3 +119,10 @@ test('카드가 바뀌는 시각: 구간 카드가 없어 결제 카드로 돌�
   assert.deepEqual(cardChangeDots([], cardIdAt), []);
   assert.deepEqual(cardChangeDots(undefined, cardIdAt), []);
 });
+
+test('결제 한 줄: 가상 데이터의 \'동네 \' 가맹점 이름은 떼고 보여 준다 (2026-11-25 점검)', async () => {
+  const { paymentRowText, displayMerchant } = await import('../dayTimelineCore.js');
+  assert.equal(displayMerchant('동네 대중교통'), '대중교통');
+  assert.equal(displayMerchant('스타벅스 강남역점'), '스타벅스 강남역점');
+  assert.equal(paymentRowText({ merchantName: '동네 카페', paidAt: '2026-11-25T09:00:00', amount: 5000, cardName: '신한카드 SOL트래블 체크' }).merchant, '카페');
+});

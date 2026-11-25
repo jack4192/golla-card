@@ -445,7 +445,7 @@ export default function SpecialScheduleModal({
         <View style={s.addEditor} accessibilityViewIsModal>
           <View style={s.addHeader}>
             <Text accessibilityRole="header" style={s.addTitle}>{editing ? '일정 수정' : '일과 입력'}</Text>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel="일과 입력 창 닫기"
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={editing ? '일정 수정 창 닫기' : '일과 입력 창 닫기'}
               disabled={busy} onPress={close} style={s.addClose}>
               <Ionicons name="close" size={26} color="#385988" accessible={false} />
             </TouchableOpacity>

@@ -11,7 +11,8 @@ export default function PromotionOffer({ offer, reason, description, status, onB
   // 로고는 서버가 준다 (offer.logo = { uri }, 2026-11-23 행사 DB 이전). 없거나 받지 못하면 이름만
   const logo = offer.logo;
   const hasLogo = Boolean(logo) && logoStatus !== 'failed';
-  const summary = String(offer.benefit || offer.merchant).replace(' 마이신한포인트', 'P');
+  // 목록과 같은 말로 보인다 ('500 마이신한포인트 적립'). 전에는 여기서만 '500P 적립'으로 줄여 서로 달라 보였다 (2026-11-25 점검)
+  const summary = String(offer.benefit || offer.merchant);
   const detailsLabel = expanded ? '상세 혜택 접기' : '더 자세한 혜택 보기';
   const { motionStyle } = useRecommendationReveal({
     ready: !hasLogo || logoStatus === 'loaded',
@@ -51,7 +52,8 @@ export default function PromotionOffer({ offer, reason, description, status, onB
         ['결제 조건', offer.method],
         ['최소 결제', offer.minimum == null ? null : money(offer.minimum) + ' 이상'],
         ['최대 혜택한도', offer.cap == null ? null : money(offer.cap)],
-        ['기간', offer.start && offer.end ? offer.start + ' ~ ' + offer.end : null],
+        // 'HH:MM ~ HH:MM'(그날 행사 시간대)이면 '시간', 날짜면 '기간' (시간대를 '기간'으로 보여 상세와 달라 보였다, 2026-11-25 점검)
+        [/^\d{1,2}:\d{2}$/.test(String(offer.start || '')) ? '시간' : '기간', offer.start && offer.end ? offer.start + ' ~ ' + offer.end : null],
         ['혜택 지급일', offer.payout],
         ['현재 기간 상태', status],
         ['유의사항', offer.note],
