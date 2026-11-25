@@ -21,6 +21,7 @@ import RecentPayments from '../components/RecentPayments';
 import QuickPaySheet from '../components/QuickPaySheet';
 import NotificationCenter, { NotificationBell, useInbox } from '../components/NotificationCenter';
 import { PHONE_NOTIFICATIONS_SUPPORTED, refreshDailyNotifications, requestPhonePermission } from '../utils/notifications';
+import { currentWebPushState, disableWebPush, enableWebPush, isWebPushOn, sendTestPush } from '../utils/webPush';
 import { eventTitle, readEvents } from '../utils/routineData';
 import { Alert } from '../utils/demoAlert';
 import * as SecureStore from '../utils/demoStore';
@@ -390,6 +391,15 @@ export default function MainScreen({
   };
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [phoneNotifyBusy, setPhoneNotifyBusy] = useState(false);
+  // 바탕화면 웹앱 웹 푸시 (2026-11-25): 'ready' 면 설정에서 켜고 '지금 알림 받기', 'install' 이면 홈 화면 추가 안내
+  const webPushState = useMemo(() => (SERVER_MODE ? currentWebPushState() : 'unsupported'), []);
+  const [webPushOn, setWebPushOn] = useState(false);
+  useEffect(() => {
+    if (webPushState !== 'ready') return undefined;
+    let active = true;
+    isWebPushOn().then(on => { if (active) setWebPushOn(on); }).catch(() => {});
+    return () => { active = false; };
+  }, [webPushState]);
   const inbox = useInbox();
   const [appNotice, setAppNotice] = useState(true);
   const [vibrationOn, setVibrationOn] = useState(true);
@@ -459,6 +469,46 @@ export default function MainScreen({
       onConsentChange?.(next);
     } catch {
       Alert.alert('저장 실패', '알림 설정을 저장하지 못했어요. 다시 시도해주세요.');
+    } finally {
+      setPhoneNotifyBusy(false);
+    }
+  };
+  // 바탕화면 웹앱: 켜면 알림 허락 → 구독 저장 → 알림 수신 동의 저장. 끄면 구독 지우고 동의도 끈다 (2026-11-25)
+  //   아이폰은 알림 허락 창을 버튼을 누른 그 순간에 열어야 해서, 첫 await 가 enableWebPush 안의 권한 요청이다.
+  const toggleWebPush = async value => {
+    if (phoneNotifyBusy) return;
+    setPhoneNotifyBusy(true);
+    try {
+      if (value) await enableWebPush();
+      else await disableWebPush();
+      await api.saveNotificationAgreement(value);
+      const next = { ...(savedConsent || {}), morningNotificationAgreed: value, savedAt: new Date().toISOString() };
+      await SecureStore.setItemAsync(CONSENT_KEY, JSON.stringify(next));
+      setSavedConsent(next);
+      onConsentChange?.(next);
+      setWebPushOn(value);
+    } catch (problem) {
+      if (problem?.message === 'denied') {
+        Alert.alert('알림 권한 필요', '아이폰 설정 > 알림 > Pay·Mate 에서 알림을 허용한 뒤 다시 켜 주세요.');
+      } else if (problem?.message === 'disabled' || problem?.code === 'PUSH_DISABLED') {
+        Alert.alert('알림 준비 중', '알림 서버가 아직 준비되지 않았어요. 잠시 뒤 다시 시도해 주세요.');
+      } else {
+        Alert.alert('저장 실패', '알림 설정을 저장하지 못했어요. 다시 시도해주세요.');
+      }
+      isWebPushOn().then(setWebPushOn).catch(() => {});
+    } finally {
+      setPhoneNotifyBusy(false);
+    }
+  };
+  // '지금 알림 받기': 서버가 5초 뒤 이 계정의 기기로 아침 알림을 보낸다 (시연용)
+  const sendPushNow = async () => {
+    if (phoneNotifyBusy) return;
+    setPhoneNotifyBusy(true);
+    try {
+      await sendTestPush();
+      Alert.alert('알림을 보냈어요', '5초 뒤 알림이 와요. 홈 화면으로 나가 보세요.');
+    } catch (problem) {
+      Alert.alert('알림을 보내지 못했어요', problem?.message || '잠시 뒤 다시 시도해 주세요.');
     } finally {
       setPhoneNotifyBusy(false);
     }
@@ -843,7 +893,14 @@ export default function MainScreen({
         <SettingsGroup title="서비스·이용 동의">
           {PHONE_NOTIFICATIONS_SUPPORTED
             ? <SettingsToggle icon="notifications-outline" title="폰 알림 받기 (알림 수신 동의)" subtitle="매일 오전 7시 일정 입력 안내" value={savedConsent?.morningNotificationAgreed === true} disabled={phoneNotifyBusy || !savedConsent} onChange={togglePhoneNotifications} />
-            : <SettingsItem icon="notifications-outline" title="알림 수신 동의" value={savedConsent ? savedConsent.morningNotificationAgreed ? '선택함' : '선택 안 함' : '기록 없음'} subtitle="폰 알림은 아이폰·안드로이드 앱에서만 받을 수 있어요" />}
+            : webPushState === 'ready'
+              ? <>
+                  <SettingsToggle icon="notifications-outline" title="폰 알림 받기 (알림 수신 동의)" subtitle="매일 오전 7시 일정 입력 안내" value={webPushOn} disabled={phoneNotifyBusy} onChange={toggleWebPush} />
+                  {webPushOn && <SettingsItem icon="paper-plane-outline" title="지금 알림 받기" subtitle="5초 뒤 알림이 와요. 홈 화면으로 나가 보세요" onPress={sendPushNow} />}
+                </>
+              : webPushState === 'install'
+                ? <SettingsItem icon="notifications-outline" title="폰 알림 받기" subtitle="홈 화면에 추가한 Pay·Mate 앱에서 켤 수 있어요" />
+                : <SettingsItem icon="notifications-outline" title="알림 수신 동의" value={savedConsent ? savedConsent.morningNotificationAgreed ? '선택함' : '선택 안 함' : '기록 없음'} subtitle="폰 알림은 아이폰·안드로이드 앱에서만 받을 수 있어요" />}
         </SettingsGroup>
 
         <SettingsGroup title="앱 정보">

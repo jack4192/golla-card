@@ -73,6 +73,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET,
                                 "/api/users/email-availability",
                                 "/api/users/phone-availability").permitAll()
+                        // 웹 푸시 VAPID 공개 키 (2026-11-25): 공개 값이라 로그인 없이. 구독·지금 받기는 로그인 필요
+                        .requestMatchers(HttpMethod.GET, "/api/push/public-key").permitAll()
                         .requestMatchers("/error").permitAll()
                         // 가상 POS 결제: 단말기는 로그인 토큰이 없어서 단말기 키(terminalKey)로 확인한다 (PosPaymentService, 2026-11-24)
                         .requestMatchers(HttpMethod.POST, "/api/v1/pos/payments").permitAll()

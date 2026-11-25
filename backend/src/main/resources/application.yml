@@ -46,6 +46,13 @@ app:
   # 비우면(기본) 꺼짐, 16자 이상이어야 켜진다. 값은 backend/.env 에만 두고 GitHub 에 올리지 않는다
   pos:
     demo-terminal-key: ${POS_DEMO_TERMINAL_KEY:}
+  # 바탕화면 웹앱 아침 일정 웹 푸시 (2026-11-25). 키는 backend/.env(EC2)에만, GitHub 에 올리지 않는다.
+  # 키가 없으면 알림 기능만 꺼진다. 매일 7시 알림은 morning-enabled=on 인 서버(EC2)에서만 보낸다
+  push:
+    vapid-public-key: ${VAPID_PUBLIC_KEY:}
+    vapid-private-key: ${VAPID_PRIVATE_KEY:}
+    vapid-subject: ${VAPID_SUBJECT:https://paymate.duckdns.org}
+    morning-enabled: ${PUSH_MORNING_ENABLED:off}
 
 # 웹(Expo 웹, Vercel)에서 부를 수 있게 허용할 주소 (쉼표 구분)
 cors:
