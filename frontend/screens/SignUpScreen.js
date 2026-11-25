@@ -2,6 +2,7 @@ import { isValidEmail, normalizeEmail } from '../utils/demoEmail';
 import FlowHeading from '../components/FlowHeading';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Keyboard, KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import ScreenSafeArea from '../components/ScreenSafeArea';
 
 export const phoneDigits = value => String(value || '').replace(/\D/g, '').slice(0, 11);
 export function formatPhone(value) {
@@ -286,7 +287,7 @@ export default function SignUpScreen({
       </Text>
     </TouchableOpacity>
   );
-  return <SafeAreaView style={styles.screen}>
+  return <ScreenSafeArea style={styles.screen}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <TouchableOpacity accessibilityRole="button" disabled={pending} style={styles.back} onPress={back}>
           <Text style={styles.link}>← 뒤로</Text>
@@ -385,7 +386,7 @@ export default function SignUpScreen({
           {pending ? <ActivityIndicator color="#FFF" /> : <Text style={styles.white}>회원가입</Text>}
         </TouchableOpacity>
       </KeyboardAvoidingView>
-    </SafeAreaView>;
+    </ScreenSafeArea>;
 }
 const styles = StyleSheet.create({
   screen: {
