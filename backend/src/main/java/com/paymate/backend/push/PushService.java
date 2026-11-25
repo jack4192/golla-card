@@ -1,10 +1,12 @@
 package com.paymate.backend.push;
 
 import com.paymate.backend.common.exception.BusinessException;
+import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.TaskScheduler;
@@ -107,10 +109,33 @@ public class PushService {
                 || !keyLength(request.keys().p256dh(), 65) || !keyLength(request.keys().auth(), 16)) {
             throw new BusinessException(PushErrorCode.INVALID_SUBSCRIPTION);
         }
+        if (!knownPushService(request.endpoint().trim())) {
+            throw new BusinessException(PushErrorCode.INVALID_SUBSCRIPTION);
+        }
         try {
             WebPushCrypto.publicKey(WebPushCrypto.b64(request.keys().p256dh()));
         } catch (RuntimeException e) {
             throw new BusinessException(PushErrorCode.INVALID_SUBSCRIPTION);
+        }
+    }
+
+    /**
+     * 브라우저 푸시 서비스 주소만 받는다 — 아무 https 주소나 등록해 서버가 엉뚱한 곳(내부 주소 등)에 요청을 보내지 않게 (2026-11-25 검토).
+     * 아이폰·맥 사파리 = web.push.apple.com, 크롬·안드로이드 = fcm.googleapis.com, 파이어폭스 = *.push.services.mozilla.com, 엣지 = *.notify.windows.com
+     */
+    static boolean knownPushService(String endpoint) {
+        try {
+            URI uri = URI.create(endpoint);
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+            if (!"https".equals(uri.getScheme()) || uri.getPort() != -1 && uri.getPort() != 443) {
+                return false;
+            }
+            return host.equals("web.push.apple.com") || host.endsWith(".push.apple.com")
+                    || host.equals("fcm.googleapis.com") || host.equals("android.googleapis.com")
+                    || host.equals("push.services.mozilla.com") || host.endsWith(".push.services.mozilla.com")
+                    || host.endsWith(".notify.windows.com");
+        } catch (IllegalArgumentException e) {
+            return false;
         }
     }
 
