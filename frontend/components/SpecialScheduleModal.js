@@ -326,10 +326,10 @@ export default function SpecialScheduleModal({
       onClose?.();
       return;
     }
+    // 일정을 추가하면 창을 바로 닫는다 (2026-11-25 사용자 요청). 추가된 일정은 바깥 목록에 바로 보인다
     resetAdd();
-    scrollRef.current?.scrollTo({ y: 0, animated: true });
-    notify(`${dateHeading(saved.date)}에 '${eventTitle(saved)}' 일정을 추가했어요.`);
     onChanged?.({ saved });
+    onClose?.();
   });
   const remove = id => run(async () => {
     await deleteEvent(id);
