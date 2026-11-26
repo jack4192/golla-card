@@ -28,3 +28,11 @@ export function createExpiryNotifier() {
 export function startupKeepsSession(error) {
   return error?.status !== 401;
 }
+
+// 로그인 뒤 첫 화면 (2026-11-26 팀 결정: 직접 로그인하면 동의를 마친 사람도 약관 동의 화면을 항상 거친다, 지난 선택은 체크된 채).
+// 로그인을 유지한 채 새로고침·앱을 다시 열 때(resumed)는 가입을 마쳤으면 바로 홈.
+// 'LoginFlow' 는 일정 관리 → 카드 추천 → 홈 순서.
+export function screenAfterLogin({ termsAgreed, completed, resumed }) {
+  if (!resumed || termsAgreed !== true) return 'Agreement';
+  return completed ? 'Main' : 'LoginFlow';
+}

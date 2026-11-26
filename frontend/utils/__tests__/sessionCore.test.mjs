@@ -1,7 +1,7 @@
 // 실행: node --test utils/__tests__/sessionCore.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createExpiryNotifier, isSessionExpired, startupKeepsSession } from '../sessionCore.js';
+import { createExpiryNotifier, isSessionExpired, screenAfterLogin, startupKeepsSession } from '../sessionCore.js';
 
 test('로그인이 필요한 요청이 401 이면 만료 (로그인·로그아웃 요청과 다른 상태는 아님)', () => {
   assert.equal(isSessionExpired({ status: 401, auth: true, path: '/api/cards/user-cards' }), true);
@@ -31,4 +31,16 @@ test('앱을 켤 때 토큰 확인이 실패하면: 401 이면 로그아웃, 연
   assert.equal(startupKeepsSession({ status: 0 }), true);     // 서버에 연결하지 못함
   assert.equal(startupKeepsSession({ status: 503 }), true);
   assert.equal(startupKeepsSession(undefined), true);
+});
+
+test('직접 로그인하면 동의를 마친 사람도 약관 동의 화면부터', () => {
+  assert.equal(screenAfterLogin({ termsAgreed: true, completed: true, resumed: false }), 'Agreement');
+  assert.equal(screenAfterLogin({ termsAgreed: true, completed: false, resumed: false }), 'Agreement');
+  assert.equal(screenAfterLogin({ termsAgreed: false, completed: false, resumed: false }), 'Agreement');
+});
+
+test('로그인 유지로 다시 열면 가입을 마친 사람은 바로 홈, 동의가 없으면 동의 화면, 동의만 했으면 일정 관리부터', () => {
+  assert.equal(screenAfterLogin({ termsAgreed: true, completed: true, resumed: true }), 'Main');
+  assert.equal(screenAfterLogin({ termsAgreed: false, completed: false, resumed: true }), 'Agreement');
+  assert.equal(screenAfterLogin({ termsAgreed: true, completed: false, resumed: true }), 'LoginFlow');
 });

@@ -16,7 +16,7 @@ import * as DemoStore from './utils/demoStore';
 import { createRandomHex, hashPassword } from './utils/demoCrypto';
 import { DEV_MENU_ENABLED } from './utils/devMenu';
 import { SERVER_MODE, api, clearToken, readToken, setSessionExpiredHandler } from './utils/api';
-import { SESSION_EXPIRED_MESSAGE, startupKeepsSession } from './utils/sessionCore';
+import { SESSION_EXPIRED_MESSAGE, screenAfterLogin, startupKeepsSession } from './utils/sessionCore';
 import { addServerCardByCode, registerServerCard, removeServerCard, resetServerCards } from './utils/serverCards';
 import { applySignupJob, rememberSignupJob } from './utils/signupJob';
 import { addMorningNotificationOpenListener, cancelPhoneNotifications, requestPhonePermission, syncPhoneNotifications } from './utils/notifications';
@@ -486,13 +486,9 @@ export default function App() {
 
     await reloadWallet();
 
-    if (savedConsent?.termsAgreed !== true) {
-      navigate('Agreement');
-    } else if (completed && resumed) {
-      navigate('Main');
-    } else {
-      startLoginFlow(completed);
-    }
+    const next = screenAfterLogin({ termsAgreed: savedConsent?.termsAgreed === true, completed, resumed });
+    if (next === 'LoginFlow') startLoginFlow(completed);
+    else navigate(next);
   };
 
   const handleLogin = (email, password) => runAction(async () => {
